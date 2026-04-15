@@ -1,0 +1,28 @@
+[package]
+name = "plnk-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Planka kanban SDK — HTTP client, domain models, auth, API traits"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+url = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+dirs = { workspace = true }
+rpassword = { workspace = true }
+
+[dev-dependencies]
+wiremock = "0.6"
+tempfile = "3"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+[lints]
+workspace = true
