@@ -103,7 +103,7 @@ async fn do_login(
     let user = validate_token(&server, &token).await?;
 
     if format == OutputFormat::Json {
-        render_item(&user, format);
+        render_item(&user, format, false);
     } else {
         eprintln!(
             "Logged in as {} ({})",
@@ -148,7 +148,7 @@ async fn do_whoami(
 ) -> Result<(), PlankaError> {
     let creds = resolve_credentials(flag_server, flag_token)?;
     let user = validate_token(&creds.server, &creds.token).await?;
-    render_item(&user, format);
+    render_item(&user, format, false);
     Ok(())
 }
 

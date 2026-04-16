@@ -32,11 +32,11 @@ pub trait Tabular {
 
 impl Tabular for Project {
     fn headers() -> Vec<&'static str> {
-        vec!["ID", "Name", "Created"]
+        vec!["ID", "Name"]
     }
 
     fn row(&self) -> Vec<String> {
-        vec![self.id.clone(), self.name.clone(), self.created_at.clone()]
+        vec![self.id.clone(), self.name.clone()]
     }
 }
 

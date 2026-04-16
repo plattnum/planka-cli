@@ -278,7 +278,7 @@ fn tabular_project_rows() {
     };
 
     let headers = Project::headers();
-    assert_eq!(headers, vec!["ID", "Name", "Created"]);
+    assert_eq!(headers, vec!["ID", "Name"]);
 
     let row = project.row();
     assert_eq!(row[0], "123");

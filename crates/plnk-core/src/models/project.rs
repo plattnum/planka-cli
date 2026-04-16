@@ -18,6 +18,9 @@ pub struct Project {
 #[derive(Debug, Clone, Serialize)]
 pub struct CreateProject {
     pub name: String,
+    /// Planka requires `"type": "private"` or `"shared"` for project creation.
+    #[serde(rename = "type")]
+    pub project_type: String,
 }
 
 /// Parameters for updating a project.

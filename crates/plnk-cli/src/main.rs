@@ -7,6 +7,9 @@ mod output;
 
 use app::{App, Command};
 use output::render_error;
+use plnk_core::api::PlankaClientV1;
+use plnk_core::auth::resolve_credentials;
+use plnk_core::client::HttpClient;
 
 fn init_tracing(verbosity: u8, quiet: bool) {
     use tracing_subscriber::EnvFilter;
@@ -27,6 +30,16 @@ fn init_tracing(verbosity: u8, quiet: bool) {
         .with_writer(std::io::stderr)
         .with_target(false)
         .init();
+}
+
+/// Build a `PlankaClientV1` from resolved credentials.
+fn build_client(
+    flag_server: Option<&str>,
+    flag_token: Option<&str>,
+) -> Result<PlankaClientV1, plnk_core::error::PlankaError> {
+    let creds = resolve_credentials(flag_server, flag_token)?;
+    let http = HttpClient::new(creds.server, &creds.token)?;
+    Ok(PlankaClientV1::new(http))
 }
 
 #[tokio::main]
@@ -50,6 +63,35 @@ async fn main() {
             )
             .await
         }
+        // All resource commands need a client
+        Command::User(cmd) => match build_client(app.server.as_deref(), app.token.as_deref()) {
+            Ok(client) => commands::user::execute(&client, cmd.action, app.output, app.full).await,
+            Err(e) => Err(e),
+        },
+        Command::Project(cmd) => match build_client(app.server.as_deref(), app.token.as_deref()) {
+            Ok(client) => {
+                commands::project::execute(&client, cmd.action, app.output, app.yes, app.full).await
+            }
+            Err(e) => Err(e),
+        },
+        Command::Board(cmd) => match build_client(app.server.as_deref(), app.token.as_deref()) {
+            Ok(client) => {
+                commands::board::execute(&client, cmd.action, app.output, app.yes, app.full).await
+            }
+            Err(e) => Err(e),
+        },
+        Command::List(cmd) => match build_client(app.server.as_deref(), app.token.as_deref()) {
+            Ok(client) => {
+                commands::list::execute(&client, cmd.action, app.output, app.yes, app.full).await
+            }
+            Err(e) => Err(e),
+        },
+        Command::Card(cmd) => match build_client(app.server.as_deref(), app.token.as_deref()) {
+            Ok(client) => {
+                commands::card::execute(&client, cmd.action, app.output, app.yes, app.full).await
+            }
+            Err(e) => Err(e),
+        },
     };
 
     match result {

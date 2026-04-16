@@ -8,19 +8,20 @@ use serde::Serialize;
 use crate::app::OutputFormat;
 
 /// Render a collection of items to stdout.
-#[allow(dead_code)] // Used once resource commands land
-pub fn render_collection<T: Serialize + Tabular>(items: &[T], format: OutputFormat) {
+pub fn render_collection<T: Serialize + Tabular>(items: &[T], format: OutputFormat, full: bool) {
     match format {
-        OutputFormat::Json => json::print_collection(items),
+        OutputFormat::Json if full => json::print_collection_full(items),
+        OutputFormat::Json => json::print_collection_trimmed(items),
         OutputFormat::Table => table::print_collection(items),
         OutputFormat::Markdown => markdown::print_collection(items),
     }
 }
 
 /// Render a single item to stdout.
-pub fn render_item<T: Serialize + Tabular>(item: &T, format: OutputFormat) {
+pub fn render_item<T: Serialize + Tabular>(item: &T, format: OutputFormat, full: bool) {
     match format {
-        OutputFormat::Json => json::print_item(item),
+        OutputFormat::Json if full => json::print_item_full(item),
+        OutputFormat::Json => json::print_item_trimmed(item),
         OutputFormat::Table => table::print_item(item),
         OutputFormat::Markdown => markdown::print_item(item),
     }

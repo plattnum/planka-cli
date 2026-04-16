@@ -1,8 +1,20 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Opaque string identifier. Supports UUIDs, numeric IDs, or any
 /// future format Planka might use.
 pub type ResourceId = String;
+
+/// Deserialize null JSON values as `T::default()`.
+///
+/// Planka returns null for some fields on system/archive lists.
+/// This deserializer treats null the same as missing, giving the default value.
+pub fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Option::unwrap_or_default)
+}
 
 /// Card/task insertion position.
 #[derive(Debug, Clone, PartialEq)]

@@ -1,13 +1,16 @@
 use serde::{Deserialize, Serialize};
 
 use super::ResourceId;
+use super::common::null_as_default;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct List {
     pub id: ResourceId,
     pub board_id: ResourceId,
+    #[serde(default, deserialize_with = "null_as_default")]
     pub name: String,
+    #[serde(default, deserialize_with = "null_as_default")]
     pub position: f64,
     #[serde(default)]
     pub color: Option<String>,
