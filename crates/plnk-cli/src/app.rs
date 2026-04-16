@@ -78,6 +78,51 @@ pub enum Command {
     Attachment(AttachmentCommand),
     /// Manage project/board memberships
     Membership(MembershipCommand),
+
+    // ── Plural aliases (spec section 3.5) ───────────────────────────
+    // Hidden from --help. Map to `<resource> list` with the same args.
+    /// Alias for `board list --project <id>`
+    #[command(hide = true)]
+    Boards {
+        /// Parent project ID
+        #[arg(long)]
+        project: String,
+    },
+    /// Alias for `list list --board <id>`
+    #[command(hide = true)]
+    Lists {
+        /// Parent board ID
+        #[arg(long)]
+        board: String,
+    },
+    /// Alias for `card list --list <id>`
+    #[command(hide = true)]
+    Cards {
+        /// Parent list ID
+        #[arg(long)]
+        list: String,
+    },
+    /// Alias for `task list --card <id>`
+    #[command(hide = true)]
+    Tasks {
+        /// Parent card ID
+        #[arg(long)]
+        card: String,
+    },
+    /// Alias for `comment list --card <id>`
+    #[command(hide = true)]
+    Comments {
+        /// Parent card ID
+        #[arg(long)]
+        card: String,
+    },
+    /// Alias for `label list --board <id>`
+    #[command(hide = true)]
+    Labels {
+        /// Parent board ID
+        #[arg(long)]
+        board: String,
+    },
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────────
@@ -651,9 +696,12 @@ pub enum AttachmentAction {
     Download {
         /// Attachment ID
         id: String,
-        /// Output file path
+        /// Parent card ID (used to resolve the real filename)
         #[arg(long)]
-        out: String,
+        card: String,
+        /// Output file path (defaults to attachment's original filename)
+        #[arg(long)]
+        out: Option<String>,
     },
     /// Delete an attachment
     Delete {

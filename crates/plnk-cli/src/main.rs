@@ -2,6 +2,7 @@ use clap::Parser;
 
 mod app;
 mod commands;
+mod help;
 mod input;
 mod output;
 
@@ -42,8 +43,14 @@ fn build_client(
     Ok(PlankaClientV1::new(http))
 }
 
+#[allow(clippy::too_many_lines)]
 #[tokio::main]
 async fn main() {
+    // Machine-readable help: if --help + --output json, render JSON help and exit.
+    if help::try_machine_help() {
+        return;
+    }
+
     let app = App::parse();
 
     init_tracing(app.verbose, app.quiet);
@@ -134,6 +141,98 @@ async fn main() {
             match build_client(app.server.as_deref(), app.token.as_deref()) {
                 Ok(client) => {
                     commands::membership::execute(&client, cmd.action, app.output, app.full).await
+                }
+                Err(e) => Err(e),
+            }
+        }
+
+        // ── Plural aliases → canonical list actions ─────────────────
+        Command::Boards { project } => {
+            match build_client(app.server.as_deref(), app.token.as_deref()) {
+                Ok(client) => {
+                    commands::board::execute(
+                        &client,
+                        app::BoardAction::List { project },
+                        app.output,
+                        app.yes,
+                        app.full,
+                    )
+                    .await
+                }
+                Err(e) => Err(e),
+            }
+        }
+        Command::Lists { board } => {
+            match build_client(app.server.as_deref(), app.token.as_deref()) {
+                Ok(client) => {
+                    commands::list::execute(
+                        &client,
+                        app::ListAction::List { board },
+                        app.output,
+                        app.yes,
+                        app.full,
+                    )
+                    .await
+                }
+                Err(e) => Err(e),
+            }
+        }
+        Command::Cards { list } => {
+            match build_client(app.server.as_deref(), app.token.as_deref()) {
+                Ok(client) => {
+                    commands::card::execute(
+                        &client,
+                        app::CardAction::List { list },
+                        app.output,
+                        app.yes,
+                        app.full,
+                    )
+                    .await
+                }
+                Err(e) => Err(e),
+            }
+        }
+        Command::Tasks { card } => {
+            match build_client(app.server.as_deref(), app.token.as_deref()) {
+                Ok(client) => {
+                    commands::task::execute(
+                        &client,
+                        app::TaskAction::List { card },
+                        app.output,
+                        app.yes,
+                        app.full,
+                    )
+                    .await
+                }
+                Err(e) => Err(e),
+            }
+        }
+        Command::Comments { card } => {
+            match build_client(app.server.as_deref(), app.token.as_deref()) {
+                Ok(client) => {
+                    commands::comment::execute(
+                        &client,
+                        app::CommentAction::List { card },
+                        app.output,
+                        app.yes,
+                        app.full,
+                    )
+                    .await
+                }
+                Err(e) => Err(e),
+            }
+        }
+        Command::Labels { board } => {
+            match build_client(app.server.as_deref(), app.token.as_deref()) {
+                Ok(client) => {
+                    commands::label::execute(
+                        &client,
+                        app::LabelAction::List { board },
+                        app.output,
+                        app.yes,
+                        app.full,
+                    )
+                    .await
                 }
                 Err(e) => Err(e),
             }

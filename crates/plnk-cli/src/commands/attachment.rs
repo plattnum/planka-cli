@@ -30,10 +30,10 @@ pub async fn execute(
             let attachment = client.upload_attachment(&card, &path).await?;
             render_item(&attachment, format, full);
         }
-        crate::app::AttachmentAction::Download { id, out } => {
-            let out_path = PathBuf::from(&out);
-            client.download_attachment(&id, &out_path).await?;
-            render_message(&format!("Downloaded to {out}"), format);
+        crate::app::AttachmentAction::Download { id, card, out } => {
+            let out_path = out.as_deref().map(std::path::Path::new);
+            let saved_to = client.download_attachment(&card, &id, out_path).await?;
+            render_message(&format!("Downloaded to {}", saved_to.display()), format);
         }
         crate::app::AttachmentAction::Delete { id } => {
             if !yes && !confirm_delete("attachment", &id) {

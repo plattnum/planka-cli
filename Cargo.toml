@@ -8,6 +8,9 @@ edition = "2024"
 rust-version = "1.85"
 license = "MIT"
 repository = "https://github.com/plattnum/planka-cli"
+homepage = "https://github.com/plattnum/planka-cli"
+keywords = ["planka", "kanban", "cli", "project-management"]
+categories = ["command-line-utilities"]
 
 [workspace.dependencies]
 # Serialization
@@ -37,7 +40,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dirs = "6"
 
 # Internal
-plnk-core = { path = "crates/plnk-core" }
+plnk-core = { path = "crates/plnk-core", version = "0.1.0" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

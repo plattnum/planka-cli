@@ -137,7 +137,12 @@ pub trait AttachmentApi {
         card_id: &str,
         file_path: &Path,
     ) -> Result<Attachment, PlankaError>;
-    async fn download_attachment(&self, id: &str, out_path: &Path) -> Result<(), PlankaError>;
+    async fn download_attachment(
+        &self,
+        card_id: &str,
+        attachment_id: &str,
+        out_path: Option<&Path>,
+    ) -> Result<std::path::PathBuf, PlankaError>;
     async fn delete_attachment(&self, id: &str) -> Result<(), PlankaError>;
 }
 

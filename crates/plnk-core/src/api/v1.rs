@@ -626,24 +626,53 @@ impl AttachmentApi for PlankaClientV1 {
         Ok(resp.item)
     }
 
-    async fn download_attachment(&self, id: &str, out_path: &Path) -> Result<(), PlankaError> {
-        // First list attachments from the card to find the download URL.
-        // Since we don't have the card ID here, we use the convention
-        // that download URLs are at /attachments/{id}/download/{filename}.
-        // We need to get the attachment metadata first via card included data.
-        // The caller should provide the download URL or we try the direct path.
-        //
-        // Workaround: try the attachment endpoint directly
-        let bytes = self
-            .http
-            .get_bytes(&format!("/attachments/{id}/download/file"))
-            .await?;
+    async fn download_attachment(
+        &self,
+        card_id: &str,
+        attachment_id: &str,
+        out_path: Option<&Path>,
+    ) -> Result<std::path::PathBuf, PlankaError> {
+        // Fetch card snapshot to find the attachment metadata
+        let resp: CardSnapshot = self.http.get(&format!("/api/cards/{card_id}")).await?;
+        let attachment = resp
+            .included
+            .attachments
+            .iter()
+            .find(|a| a.id == attachment_id)
+            .ok_or_else(|| PlankaError::NotFound {
+                resource_type: "attachment".to_string(),
+                id: attachment_id.to_string(),
+            })?;
 
-        if let Some(parent) = out_path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
+        // Build download path from attachment data.
+        // data.url is absolute (http://host/attachments/id/download/name).
+        // Extract the path portion starting from /attachments/.
+        let download_path =
+            if let Some(url) = attachment.data.as_ref().and_then(|d| d.url.as_deref()) {
+                if let Some(idx) = url.find("/attachments/") {
+                    url[idx..].to_string()
+                } else {
+                    url.to_string()
+                }
+            } else {
+                format!("/attachments/{attachment_id}/download/{}", attachment.name)
+            };
+
+        let bytes = self.http.get_bytes(&download_path).await?;
+
+        // Determine output path: --out if given, otherwise attachment's real name
+        let final_path = match out_path {
+            Some(p) => p.to_path_buf(),
+            None => std::path::PathBuf::from(&attachment.name),
+        };
+
+        if let Some(parent) = final_path.parent() {
+            if !parent.as_os_str().is_empty() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
         }
-        tokio::fs::write(out_path, bytes).await?;
-        Ok(())
+        tokio::fs::write(&final_path, bytes).await?;
+        Ok(final_path)
     }
 
     async fn delete_attachment(&self, id: &str) -> Result<(), PlankaError> {
