@@ -92,14 +92,13 @@ impl Tabular for Card {
 
 impl Tabular for Task {
     fn headers() -> Vec<&'static str> {
-        vec!["ID", "Name", "Card", "Completed"]
+        vec!["ID", "Name", "Completed"]
     }
 
     fn row(&self) -> Vec<String> {
         vec![
             self.id.clone(),
             self.name.clone(),
-            self.card_id.clone(),
             if self.is_completed {
                 "yes".to_string()
             } else {
@@ -116,7 +115,15 @@ impl Tabular for Comment {
 
     fn row(&self) -> Vec<String> {
         let text_preview = if self.text.len() > 60 {
-            format!("{}...", &self.text[..57])
+            // Find a char-safe truncation point to avoid panicking on multi-byte UTF-8
+            let end = self
+                .text
+                .char_indices()
+                .map(|(i, _)| i)
+                .take_while(|&i| i <= 57)
+                .last()
+                .unwrap_or(0);
+            format!("{}...", &self.text[..end])
         } else {
             self.text.clone()
         };
@@ -189,6 +196,20 @@ impl Tabular for BoardMembership {
     }
 }
 
+impl Tabular for ProjectManager {
+    fn headers() -> Vec<&'static str> {
+        vec!["ID", "User", "Project"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![
+            self.id.clone(),
+            self.user_id.clone(),
+            self.project_id.clone(),
+        ]
+    }
+}
+
 impl Tabular for CardMembership {
     fn headers() -> Vec<&'static str> {
         vec!["ID", "User", "Card"]
@@ -196,5 +217,15 @@ impl Tabular for CardMembership {
 
     fn row(&self) -> Vec<String> {
         vec![self.id.clone(), self.user_id.clone(), self.card_id.clone()]
+    }
+}
+
+impl Tabular for CardLabel {
+    fn headers() -> Vec<&'static str> {
+        vec!["ID", "Card", "Label"]
+    }
+
+    fn row(&self) -> Vec<String> {
+        vec![self.id.clone(), self.card_id.clone(), self.label_id.clone()]
     }
 }

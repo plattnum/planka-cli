@@ -68,6 +68,16 @@ pub enum Command {
     List(ListCommand),
     /// Manage cards
     Card(CardCommand),
+    /// Manage tasks (checklist items on cards)
+    Task(TaskCommand),
+    /// Manage comments on cards
+    Comment(CommentCommand),
+    /// Manage board labels
+    Label(LabelCommand),
+    /// Manage attachments on cards
+    Attachment(AttachmentCommand),
+    /// Manage project/board memberships
+    Membership(MembershipCommand),
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────────
@@ -384,5 +394,318 @@ pub enum CardAction {
     Delete {
         /// Card ID
         id: String,
+    },
+    /// Manage labels on a card
+    Label(CardLabelCommand),
+    /// Manage assignees on a card
+    Assignee(CardAssigneeCommand),
+}
+
+// ── Card Label ──────────────────────────────────────────────────────────
+
+#[derive(Parser)]
+pub struct CardLabelCommand {
+    #[command(subcommand)]
+    pub action: CardLabelAction,
+}
+
+#[derive(Subcommand)]
+pub enum CardLabelAction {
+    /// List labels on a card
+    List {
+        /// Card ID
+        card: String,
+    },
+    /// Add a label to a card
+    Add {
+        /// Card ID
+        card: String,
+        /// Label ID
+        label: String,
+    },
+    /// Remove a label from a card
+    Remove {
+        /// Card ID
+        card: String,
+        /// Label ID
+        label: String,
+    },
+}
+
+// ── Card Assignee ───────────────────────────────────────────────────────
+
+#[derive(Parser)]
+pub struct CardAssigneeCommand {
+    #[command(subcommand)]
+    pub action: CardAssigneeAction,
+}
+
+#[derive(Subcommand)]
+pub enum CardAssigneeAction {
+    /// List assignees on a card
+    List {
+        /// Card ID
+        card: String,
+    },
+    /// Add an assignee to a card
+    Add {
+        /// Card ID
+        card: String,
+        /// User ID
+        user: String,
+    },
+    /// Remove an assignee from a card
+    Remove {
+        /// Card ID
+        card: String,
+        /// User ID
+        user: String,
+    },
+}
+
+// ── Task ────────────────────────────────────────────────────────────────
+
+#[derive(Parser)]
+pub struct TaskCommand {
+    #[command(subcommand)]
+    pub action: TaskAction,
+}
+
+#[derive(Subcommand)]
+pub enum TaskAction {
+    /// List tasks on a card
+    List {
+        /// Parent card ID
+        #[arg(long)]
+        card: String,
+    },
+    /// Get a task by ID
+    Get {
+        /// Task ID
+        id: String,
+    },
+    /// Create a new task
+    Create {
+        /// Parent card ID
+        #[arg(long)]
+        card: String,
+        /// Task title
+        #[arg(long)]
+        title: String,
+    },
+    /// Update a task
+    Update {
+        /// Task ID
+        id: String,
+        /// New task title
+        #[arg(long)]
+        title: Option<String>,
+    },
+    /// Mark a task as completed
+    Complete {
+        /// Task ID
+        id: String,
+    },
+    /// Reopen a completed task
+    Reopen {
+        /// Task ID
+        id: String,
+    },
+    /// Delete a task
+    Delete {
+        /// Task ID
+        id: String,
+    },
+}
+
+// ── Comment ─────────────────────────────────────────────────────────────
+
+#[derive(Parser)]
+pub struct CommentCommand {
+    #[command(subcommand)]
+    pub action: CommentAction,
+}
+
+#[derive(Subcommand)]
+pub enum CommentAction {
+    /// List comments on a card
+    List {
+        /// Parent card ID
+        #[arg(long)]
+        card: String,
+    },
+    /// Get a comment by ID
+    Get {
+        /// Comment ID
+        id: String,
+    },
+    /// Create a new comment
+    Create {
+        /// Parent card ID
+        #[arg(long)]
+        card: String,
+        /// Comment text (literal, "-" for stdin, "@file" for file)
+        #[arg(long)]
+        text: String,
+    },
+    /// Update a comment
+    Update {
+        /// Comment ID
+        id: String,
+        /// New comment text (literal, "-" for stdin, "@file" for file)
+        #[arg(long)]
+        text: String,
+    },
+    /// Delete a comment
+    Delete {
+        /// Comment ID
+        id: String,
+    },
+}
+
+// ── Label ───────────────────────────────────────────────────────────────
+
+#[derive(Parser)]
+pub struct LabelCommand {
+    #[command(subcommand)]
+    pub action: LabelAction,
+}
+
+#[derive(Subcommand)]
+pub enum LabelAction {
+    /// List labels on a board
+    List {
+        /// Parent board ID
+        #[arg(long)]
+        board: String,
+    },
+    /// Get a label by ID
+    Get {
+        /// Label ID
+        id: String,
+    },
+    /// Find labels by name within a board
+    Find {
+        /// Parent board ID
+        #[arg(long)]
+        board: String,
+        /// Label name to search for
+        #[arg(long)]
+        name: String,
+    },
+    /// Create a new label
+    Create {
+        /// Parent board ID
+        #[arg(long)]
+        board: String,
+        /// Label name
+        #[arg(long)]
+        name: String,
+        /// Label color (e.g., berry-red, pumpkin-orange, rain-blue)
+        #[arg(long)]
+        color: String,
+    },
+    /// Update a label
+    Update {
+        /// Label ID
+        id: String,
+        /// New label name
+        #[arg(long)]
+        name: Option<String>,
+        /// New label color
+        #[arg(long)]
+        color: Option<String>,
+    },
+    /// Delete a label
+    Delete {
+        /// Label ID
+        id: String,
+    },
+}
+
+// ── Attachment ──────────────────────────────────────────────────────────
+
+#[derive(Parser)]
+pub struct AttachmentCommand {
+    #[command(subcommand)]
+    pub action: AttachmentAction,
+}
+
+#[derive(Subcommand)]
+pub enum AttachmentAction {
+    /// List attachments on a card
+    List {
+        /// Parent card ID
+        #[arg(long)]
+        card: String,
+    },
+    /// Upload a file to a card
+    Upload {
+        /// Parent card ID
+        #[arg(long)]
+        card: String,
+        /// File path to upload
+        file: String,
+    },
+    /// Download an attachment to a local file
+    Download {
+        /// Attachment ID
+        id: String,
+        /// Output file path
+        #[arg(long)]
+        out: String,
+    },
+    /// Delete an attachment
+    Delete {
+        /// Attachment ID
+        id: String,
+    },
+}
+
+// ── Membership ──────────────────────────────────────────────────────────
+
+#[derive(Parser)]
+pub struct MembershipCommand {
+    #[command(subcommand)]
+    pub action: MembershipAction,
+}
+
+#[derive(Subcommand)]
+pub enum MembershipAction {
+    /// List members of a project or board
+    List {
+        /// Project ID (mutually exclusive with --board)
+        #[arg(long)]
+        project: Option<String>,
+        /// Board ID (mutually exclusive with --project)
+        #[arg(long)]
+        board: Option<String>,
+    },
+    /// Add a member to a project or board
+    Add {
+        /// Project ID (mutually exclusive with --board)
+        #[arg(long)]
+        project: Option<String>,
+        /// Board ID (mutually exclusive with --project)
+        #[arg(long)]
+        board: Option<String>,
+        /// User ID to add
+        #[arg(long)]
+        user: String,
+        /// Role (e.g., editor, viewer)
+        #[arg(long)]
+        role: Option<String>,
+    },
+    /// Remove a member from a project or board
+    Remove {
+        /// Project ID (mutually exclusive with --board)
+        #[arg(long)]
+        project: Option<String>,
+        /// Board ID (mutually exclusive with --project)
+        #[arg(long)]
+        board: Option<String>,
+        /// User ID to remove
+        #[arg(long)]
+        user: String,
     },
 }

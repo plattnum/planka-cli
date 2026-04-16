@@ -1,6 +1,13 @@
+pub mod attachment;
 pub mod auth;
 pub mod board;
 pub mod card;
+pub mod card_assignee;
+pub mod card_label;
+pub mod comment;
+pub mod label;
 pub mod list;
+pub mod membership;
 pub mod project;
+pub mod task;
 pub mod user;

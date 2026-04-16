@@ -87,11 +87,57 @@ async fn main() {
             Err(e) => Err(e),
         },
         Command::Card(cmd) => match build_client(app.server.as_deref(), app.token.as_deref()) {
+            Ok(client) => match cmd.action {
+                crate::app::CardAction::Label(sub) => {
+                    commands::card_label::execute(&client, sub.action, app.output, app.full).await
+                }
+                crate::app::CardAction::Assignee(sub) => {
+                    commands::card_assignee::execute(&client, sub.action, app.output, app.full)
+                        .await
+                }
+                action => {
+                    commands::card::execute(&client, action, app.output, app.yes, app.full).await
+                }
+            },
+            Err(e) => Err(e),
+        },
+        Command::Task(cmd) => match build_client(app.server.as_deref(), app.token.as_deref()) {
             Ok(client) => {
-                commands::card::execute(&client, cmd.action, app.output, app.yes, app.full).await
+                commands::task::execute(&client, cmd.action, app.output, app.yes, app.full).await
             }
             Err(e) => Err(e),
         },
+        Command::Comment(cmd) => match build_client(app.server.as_deref(), app.token.as_deref()) {
+            Ok(client) => {
+                commands::comment::execute(&client, cmd.action, app.output, app.yes, app.full).await
+            }
+            Err(e) => Err(e),
+        },
+        Command::Label(cmd) => match build_client(app.server.as_deref(), app.token.as_deref()) {
+            Ok(client) => {
+                commands::label::execute(&client, cmd.action, app.output, app.yes, app.full).await
+            }
+            Err(e) => Err(e),
+        },
+        Command::Attachment(cmd) => {
+            match build_client(app.server.as_deref(), app.token.as_deref()) {
+                Ok(client) => {
+                    commands::attachment::execute(
+                        &client, cmd.action, app.output, app.yes, app.full,
+                    )
+                    .await
+                }
+                Err(e) => Err(e),
+            }
+        }
+        Command::Membership(cmd) => {
+            match build_client(app.server.as_deref(), app.token.as_deref()) {
+                Ok(client) => {
+                    commands::membership::execute(&client, cmd.action, app.output, app.full).await
+                }
+                Err(e) => Err(e),
+            }
+        }
     };
 
     match result {

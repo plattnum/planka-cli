@@ -138,6 +138,10 @@ pub async fn execute(
             client.delete_card(&id).await?;
             render_message("Card deleted.", format);
         }
+        // Label and Assignee subcommands are dispatched in main.rs
+        crate::app::CardAction::Label(_) | crate::app::CardAction::Assignee(_) => {
+            unreachable!("card label/assignee dispatched in main.rs")
+        }
     }
     Ok(())
 }

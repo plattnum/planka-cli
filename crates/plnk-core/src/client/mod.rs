@@ -148,6 +148,25 @@ impl HttpClient {
         Ok(())
     }
 
+    /// GET raw bytes (for file downloads).
+    pub async fn get_bytes(&self, path: &str) -> Result<Vec<u8>, PlankaError> {
+        let url = self.url(path)?;
+        debug!("GET (bytes) {url}");
+
+        let resp = self.inner.get(url.clone()).send().await?;
+        let status = resp.status();
+        debug!("{status} {url}");
+
+        if !status.is_success() {
+            return Err(Self::map_error(
+                status,
+                &resp.text().await.unwrap_or_default(),
+            ));
+        }
+
+        Ok(resp.bytes().await?.to_vec())
+    }
+
     /// POST a multipart form (for file uploads).
     pub async fn post_multipart<T: DeserializeOwned>(
         &self,

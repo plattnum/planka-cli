@@ -13,6 +13,8 @@ pub struct BoardMembership {
     pub role: Option<String>,
     #[serde(default)]
     pub can_comment: Option<bool>,
+    #[serde(default)]
+    pub project_id: Option<ResourceId>,
     pub created_at: String,
     #[serde(default)]
     pub updated_at: Option<String>,
@@ -24,6 +26,18 @@ pub struct BoardMembership {
 pub struct CardMembership {
     pub id: ResourceId,
     pub card_id: ResourceId,
+    pub user_id: ResourceId,
+    pub created_at: String,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+}
+
+/// Project manager — links a user to a project.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectManager {
+    pub id: ResourceId,
+    pub project_id: ResourceId,
     pub user_id: ResourceId,
     pub created_at: String,
     #[serde(default)]
@@ -43,5 +57,12 @@ pub struct CreateBoardMembership {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateCardMembership {
+    pub user_id: ResourceId,
+}
+
+/// Parameters for adding a project manager.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateProjectManager {
     pub user_id: ResourceId,
 }

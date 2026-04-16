@@ -158,19 +158,58 @@ fn user_deserialize_from_me_endpoint() {
 fn task_roundtrip() {
     let task = Task {
         id: "5678".to_string(),
-        card_id: "1234".to_string(),
+        task_list_id: "9999".to_string(),
         name: "Write tests".to_string(),
         is_completed: false,
         position: 65536.0,
+        linked_card_id: None,
+        assignee_user_id: None,
         created_at: "2026-04-14T12:00:00Z".to_string(),
         updated_at: None,
     };
 
     let json = serde_json::to_value(&task).unwrap();
-    assert_eq!(json["cardId"], "1234");
+    assert_eq!(json["taskListId"], "9999");
     assert_eq!(json["isCompleted"], false);
     let deserialized: Task = serde_json::from_value(json).unwrap();
     assert_eq!(deserialized, task);
+}
+
+#[test]
+fn task_deserialize_from_planka_api() {
+    let api_json = serde_json::json!({
+        "id": "1754390959405139543",
+        "createdAt": "2026-04-16T09:21:39.864Z",
+        "updatedAt": null,
+        "position": 65536,
+        "name": "test task",
+        "isCompleted": false,
+        "taskListId": "1754390875418396246",
+        "linkedCardId": null,
+        "assigneeUserId": null
+    });
+
+    let task: Task = serde_json::from_value(api_json).unwrap();
+    assert_eq!(task.id, "1754390959405139543");
+    assert_eq!(task.task_list_id, "1754390875418396246");
+    assert!(!task.is_completed);
+}
+
+#[test]
+fn task_list_roundtrip() {
+    let tl = TaskList {
+        id: "9999".to_string(),
+        card_id: "1234".to_string(),
+        name: "Checklist".to_string(),
+        position: 65536.0,
+        created_at: "2026-04-14T12:00:00Z".to_string(),
+        updated_at: None,
+    };
+
+    let json = serde_json::to_value(&tl).unwrap();
+    assert_eq!(json["cardId"], "1234");
+    let deserialized: TaskList = serde_json::from_value(json).unwrap();
+    assert_eq!(deserialized, tl);
 }
 
 #[test]
@@ -210,6 +249,7 @@ fn board_membership_roundtrip() {
         user_id: "88".to_string(),
         role: Some("editor".to_string()),
         can_comment: None,
+        project_id: Some("123".to_string()),
         created_at: "2026-04-14T12:00:00Z".to_string(),
         updated_at: None,
     };
@@ -217,8 +257,133 @@ fn board_membership_roundtrip() {
     let json = serde_json::to_value(&membership).unwrap();
     assert_eq!(json["boardId"], "456");
     assert_eq!(json["userId"], "88");
+    assert_eq!(json["projectId"], "123");
     let deserialized: BoardMembership = serde_json::from_value(json).unwrap();
     assert_eq!(deserialized, membership);
+}
+
+#[test]
+fn project_manager_roundtrip() {
+    let pm = ProjectManager {
+        id: "901".to_string(),
+        project_id: "123".to_string(),
+        user_id: "88".to_string(),
+        created_at: "2026-04-14T12:00:00Z".to_string(),
+        updated_at: None,
+    };
+
+    let json = serde_json::to_value(&pm).unwrap();
+    assert_eq!(json["projectId"], "123");
+    let deserialized: ProjectManager = serde_json::from_value(json).unwrap();
+    assert_eq!(deserialized, pm);
+}
+
+#[test]
+fn attachment_deserialize_from_planka_api() {
+    let api_json = serde_json::json!({
+        "id": "1754402698012132966",
+        "createdAt": "2026-04-16T09:44:59.216Z",
+        "updatedAt": null,
+        "type": "file",
+        "data": {
+            "size": 235,
+            "image": null,
+            "encoding": "utf8",
+            "mimeType": null,
+            "url": "http://example.com/attachments/123/download/test.txt",
+            "thumbnailUrls": null
+        },
+        "name": "test.txt",
+        "cardId": "1753741395203458584",
+        "creatorUserId": "1750688362236216321"
+    });
+
+    let att: Attachment = serde_json::from_value(api_json).unwrap();
+    assert_eq!(att.id, "1754402698012132966");
+    assert_eq!(att.name, "test.txt");
+    assert_eq!(att.card_id, "1753741395203458584");
+    let data = att.data.unwrap();
+    assert_eq!(data.size, Some(235));
+    assert!(data.url.is_some());
+}
+
+#[test]
+fn comment_roundtrip() {
+    let comment = Comment {
+        id: "777".to_string(),
+        card_id: "1234".to_string(),
+        user_id: "88".to_string(),
+        text: "Looks good!".to_string(),
+        created_at: "2026-04-14T12:00:00Z".to_string(),
+        updated_at: None,
+    };
+
+    let json = serde_json::to_value(&comment).unwrap();
+    assert_eq!(json["cardId"], "1234");
+    assert_eq!(json["text"], "Looks good!");
+    let deserialized: Comment = serde_json::from_value(json).unwrap();
+    assert_eq!(deserialized, comment);
+}
+
+#[test]
+fn comment_tabular_truncation_ascii() {
+    let comment = Comment {
+        id: "1".to_string(),
+        card_id: "2".to_string(),
+        user_id: "3".to_string(),
+        text: "a".repeat(80),
+        created_at: "2026-01-01T00:00:00Z".to_string(),
+        updated_at: None,
+    };
+    let row = comment.row();
+    assert!(row[2].ends_with("..."));
+    assert!(row[2].len() <= 60);
+}
+
+#[test]
+fn comment_tabular_truncation_multibyte_utf8() {
+    // 21 CJK chars = 63 bytes (each is 3 bytes in UTF-8), triggers truncation
+    let comment = Comment {
+        id: "1".to_string(),
+        card_id: "2".to_string(),
+        user_id: "3".to_string(),
+        text: "あ".repeat(21),
+        created_at: "2026-01-01T00:00:00Z".to_string(),
+        updated_at: None,
+    };
+    // This must not panic
+    let row = comment.row();
+    assert!(row[2].ends_with("..."));
+}
+
+#[test]
+fn comment_tabular_short_text_no_truncation() {
+    let comment = Comment {
+        id: "1".to_string(),
+        card_id: "2".to_string(),
+        user_id: "3".to_string(),
+        text: "short".to_string(),
+        created_at: "2026-01-01T00:00:00Z".to_string(),
+        updated_at: None,
+    };
+    let row = comment.row();
+    assert_eq!(row[2], "short");
+}
+
+#[test]
+fn card_label_roundtrip() {
+    let cl = CardLabel {
+        id: "555".to_string(),
+        card_id: "1234".to_string(),
+        label_id: "111".to_string(),
+        created_at: "2026-04-14T12:00:00Z".to_string(),
+    };
+
+    let json = serde_json::to_value(&cl).unwrap();
+    assert_eq!(json["cardId"], "1234");
+    assert_eq!(json["labelId"], "111");
+    let deserialized: CardLabel = serde_json::from_value(json).unwrap();
+    assert_eq!(deserialized, cl);
 }
 
 #[test]

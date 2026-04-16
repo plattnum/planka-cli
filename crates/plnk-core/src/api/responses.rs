@@ -49,6 +49,10 @@ pub(crate) struct BoardSnapshotIncluded {
     pub lists: Vec<crate::models::List>,
     #[serde(default)]
     pub cards: Vec<crate::models::Card>,
+    #[serde(default)]
+    pub labels: Vec<crate::models::Label>,
+    #[serde(default)]
+    pub board_memberships: Vec<crate::models::BoardMembership>,
 }
 
 /// Project snapshot response — GET /api/projects/{id} returns nested included data.
@@ -64,6 +68,8 @@ pub(crate) struct ProjectSnapshot {
 pub(crate) struct ProjectSnapshotIncluded {
     #[serde(default)]
     pub boards: Vec<crate::models::Board>,
+    #[serde(default)]
+    pub project_managers: Vec<crate::models::ProjectManager>,
 }
 
 /// Cards list response — GET /api/lists/{id}/cards returns items + included.
@@ -71,4 +77,35 @@ pub(crate) struct ProjectSnapshotIncluded {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CardsListResponse {
     pub items: Vec<crate::models::Card>,
+}
+
+/// Card snapshot response — GET /api/cards/{id} returns nested included data.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CardSnapshot {
+    #[allow(dead_code)] // Structurally required for deserialization
+    pub item: crate::models::Card,
+    pub included: CardSnapshotIncluded,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CardSnapshotIncluded {
+    #[serde(default)]
+    pub task_lists: Vec<crate::models::TaskList>,
+    #[serde(default)]
+    pub tasks: Vec<crate::models::Task>,
+    #[serde(default)]
+    pub card_labels: Vec<crate::models::CardLabel>,
+    #[serde(default)]
+    pub card_memberships: Vec<crate::models::CardMembership>,
+    #[serde(default)]
+    pub attachments: Vec<crate::models::Attachment>,
+}
+
+/// Comments list response — GET /api/cards/{id}/comments.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CommentsListResponse {
+    pub items: Vec<crate::models::Comment>,
 }
