@@ -56,9 +56,15 @@ pub struct UpdateCard {
 }
 
 /// Parameters for moving a card.
+///
+/// For cross-board moves, `board_id` must be set — Planka's
+/// `PATCH /cards/{id}` resolves the target board from this field.
+/// For same-board moves, `board_id` can be `None`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MoveCard {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub board_id: Option<ResourceId>,
     pub list_id: ResourceId,
     pub position: f64,
 }

@@ -414,13 +414,16 @@ pub enum CardAction {
         #[arg(long)]
         description: Option<String>,
     },
-    /// Move a card to a different list
+    /// Move a card to a different list (optionally on a different board)
     Move {
         /// Card ID
         id: String,
         /// Target list ID
         #[arg(long)]
         to_list: String,
+        /// Target board ID — required when moving across boards
+        #[arg(long)]
+        to_board: Option<String>,
         /// Position: "top", "bottom", or numeric
         #[arg(long)]
         position: Option<String>,

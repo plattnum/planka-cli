@@ -109,6 +109,7 @@ pub async fn execute(
         crate::app::CardAction::Move {
             id,
             to_list,
+            to_board,
             position,
         } => {
             let pos = match position {
@@ -116,6 +117,7 @@ pub async fn execute(
                 None => 65536.0,
             };
             let params = MoveCard {
+                board_id: to_board,
                 list_id: to_list,
                 position: pos,
             };
