@@ -17,7 +17,7 @@ pub async fn execute(
     match action {
         crate::app::AttachmentAction::List { card } => {
             let attachments = client.list_attachments(&card).await?;
-            render_collection(&attachments, format, full);
+            render_collection(&attachments, format, full)?;
         }
         crate::app::AttachmentAction::Upload { card, file } => {
             let path = PathBuf::from(&file);
@@ -28,20 +28,20 @@ pub async fn execute(
                 });
             }
             let attachment = client.upload_attachment(&card, &path).await?;
-            render_item(&attachment, format, full);
+            render_item(&attachment, format, full)?;
         }
         crate::app::AttachmentAction::Download { id, card, out } => {
             let out_path = out.as_deref().map(std::path::Path::new);
             let saved_to = client.download_attachment(&card, &id, out_path).await?;
-            render_message(&format!("Downloaded to {}", saved_to.display()), format);
+            render_message(&format!("Downloaded to {}", saved_to.display()), format)?;
         }
         crate::app::AttachmentAction::Delete { id } => {
             if !yes && !confirm_delete("attachment", &id) {
-                render_message("Aborted.", format);
+                render_message("Aborted.", format)?;
                 return Ok(());
             }
             client.delete_attachment(&id).await?;
-            render_message("Attachment deleted.", format);
+            render_message("Attachment deleted.", format)?;
         }
     }
     Ok(())

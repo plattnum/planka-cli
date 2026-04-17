@@ -13,15 +13,15 @@ pub async fn execute(
     match action {
         crate::app::CardAssigneeAction::List { card } => {
             let assignees = client.list_assignees(&card).await?;
-            render_collection(&assignees, format, full);
+            render_collection(&assignees, format, full)?;
         }
         crate::app::CardAssigneeAction::Add { card, user } => {
             let assignee = client.add_assignee(&card, &user).await?;
-            render_item(&assignee, format, full);
+            render_item(&assignee, format, full)?;
         }
         crate::app::CardAssigneeAction::Remove { card, user } => {
             client.remove_assignee(&card, &user).await?;
-            render_message("Assignee removed.", format);
+            render_message("Assignee removed.", format)?;
         }
     }
     Ok(())

@@ -14,10 +14,10 @@ pub async fn execute(
         crate::app::MembershipAction::List { project, board } => {
             if let Some(board_id) = board {
                 let members = client.list_board_members(&board_id).await?;
-                render_collection(&members, format, full);
+                render_collection(&members, format, full)?;
             } else if let Some(project_id) = project {
                 let managers = client.list_project_managers(&project_id).await?;
-                render_collection(&managers, format, full);
+                render_collection(&managers, format, full)?;
             } else {
                 return Err(PlankaError::MissingRequiredOption {
                     field: "--project or --board".to_string(),
@@ -34,10 +34,10 @@ pub async fn execute(
                 let member = client
                     .add_board_member(&board_id, &user, role.as_deref())
                     .await?;
-                render_item(&member, format, full);
+                render_item(&member, format, full)?;
             } else if let Some(project_id) = project {
                 let manager = client.add_project_manager(&project_id, &user).await?;
-                render_item(&manager, format, full);
+                render_item(&manager, format, full)?;
             } else {
                 return Err(PlankaError::MissingRequiredOption {
                     field: "--project or --board".to_string(),
@@ -55,7 +55,7 @@ pub async fn execute(
                 let member = members.iter().find(|m| m.user_id == user);
                 if let Some(m) = member {
                     client.remove_board_member(&m.id).await?;
-                    render_message("Board member removed.", format);
+                    render_message("Board member removed.", format)?;
                 } else {
                     return Err(PlankaError::NotFound {
                         resource_type: "board membership".to_string(),
@@ -68,7 +68,7 @@ pub async fn execute(
                 let manager = managers.iter().find(|m| m.user_id == user);
                 if let Some(m) = manager {
                     client.remove_project_manager(&m.id).await?;
-                    render_message("Project manager removed.", format);
+                    render_message("Project manager removed.", format)?;
                 } else {
                     return Err(PlankaError::NotFound {
                         resource_type: "project manager".to_string(),

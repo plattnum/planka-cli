@@ -103,7 +103,7 @@ async fn do_login(
     let user = validate_token(&server, &token).await?;
 
     if format == OutputFormat::Json {
-        render_item(&user, format, false);
+        render_item(&user, format, false)?;
     } else {
         eprintln!(
             "Logged in as {} ({})",
@@ -137,7 +137,7 @@ fn do_token_set(
         token: token.to_string(),
     })?;
 
-    render_message("Token saved.", format);
+    render_message("Token saved.", format)?;
     Ok(())
 }
 
@@ -148,13 +148,13 @@ async fn do_whoami(
 ) -> Result<(), PlankaError> {
     let creds = resolve_credentials(flag_server, flag_token)?;
     let user = validate_token(&creds.server, &creds.token).await?;
-    render_item(&user, format, false);
+    render_item(&user, format, false)?;
     Ok(())
 }
 
 fn do_logout(format: OutputFormat) -> Result<(), PlankaError> {
     delete_config()?;
-    render_message("Logged out. Stored credentials removed.", format);
+    render_message("Logged out. Stored credentials removed.", format)?;
     Ok(())
 }
 

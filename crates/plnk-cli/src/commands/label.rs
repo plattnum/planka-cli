@@ -16,15 +16,15 @@ pub async fn execute(
     match action {
         crate::app::LabelAction::List { board } => {
             let labels = client.list_labels(&board).await?;
-            render_collection(&labels, format, full);
+            render_collection(&labels, format, full)?;
         }
         crate::app::LabelAction::Find { board, name } => {
             let labels = client.find_labels(&board, &name).await?;
-            render_collection(&labels, format, full);
+            render_collection(&labels, format, full)?;
         }
         crate::app::LabelAction::Create { board, name, color } => {
             let label = client.create_label(&board, &name, &color).await?;
-            render_item(&label, format, full);
+            render_item(&label, format, full)?;
         }
         crate::app::LabelAction::Update { id, name, color } => {
             if name.is_none() && color.is_none() {
@@ -35,15 +35,15 @@ pub async fn execute(
             }
             let params = UpdateLabel { name, color };
             let label = client.update_label(&id, params).await?;
-            render_item(&label, format, full);
+            render_item(&label, format, full)?;
         }
         crate::app::LabelAction::Delete { id } => {
             if !yes && !confirm_delete("label", &id) {
-                render_message("Aborted.", format);
+                render_message("Aborted.", format)?;
                 return Ok(());
             }
             client.delete_label(&id).await?;
-            render_message("Label deleted.", format);
+            render_message("Label deleted.", format)?;
         }
     }
     Ok(())

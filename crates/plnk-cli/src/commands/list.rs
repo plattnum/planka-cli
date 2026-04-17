@@ -16,15 +16,15 @@ pub async fn execute(
     match action {
         crate::app::ListAction::List { board } => {
             let lists = client.list_lists(&board).await?;
-            render_collection(&lists, format, full);
+            render_collection(&lists, format, full)?;
         }
         crate::app::ListAction::Get { id } => {
             let list = client.get_list(&id).await?;
-            render_item(&list, format, full);
+            render_item(&list, format, full)?;
         }
         crate::app::ListAction::Find { board, name } => {
             let lists = client.find_lists(&board, &name).await?;
-            render_collection(&lists, format, full);
+            render_collection(&lists, format, full)?;
         }
         crate::app::ListAction::Create { board, name } => {
             let params = CreateList {
@@ -34,7 +34,7 @@ pub async fn execute(
                 position: 65536.0,
             };
             let list = client.create_list(&board, params).await?;
-            render_item(&list, format, full);
+            render_item(&list, format, full)?;
         }
         crate::app::ListAction::Update { id, name, position } => {
             if name.is_none() && position.is_none() {
@@ -46,7 +46,7 @@ pub async fn execute(
             let list = client
                 .update_list(&id, UpdateList { name, position })
                 .await?;
-            render_item(&list, format, full);
+            render_item(&list, format, full)?;
         }
         crate::app::ListAction::Move { id, to_position } => {
             let list = client
@@ -58,15 +58,15 @@ pub async fn execute(
                     },
                 )
                 .await?;
-            render_item(&list, format, full);
+            render_item(&list, format, full)?;
         }
         crate::app::ListAction::Delete { id } => {
             if !yes && !confirm_delete("list", &id) {
-                render_message("Aborted.", format);
+                render_message("Aborted.", format)?;
                 return Ok(());
             }
             client.delete_list(&id).await?;
-            render_message("List deleted.", format);
+            render_message("List deleted.", format)?;
         }
     }
     Ok(())

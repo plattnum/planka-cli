@@ -9,7 +9,11 @@ use serde::Serialize;
 use crate::app::OutputFormat;
 
 /// Render a collection of items to stdout.
-pub fn render_collection<T: Serialize + Tabular>(items: &[T], format: OutputFormat, full: bool) {
+pub fn render_collection<T: Serialize + Tabular>(
+    items: &[T],
+    format: OutputFormat,
+    full: bool,
+) -> Result<(), PlankaError> {
     match format {
         OutputFormat::Json if full => json::print_collection_full(items),
         OutputFormat::Json => json::print_collection_trimmed(items),
@@ -19,7 +23,11 @@ pub fn render_collection<T: Serialize + Tabular>(items: &[T], format: OutputForm
 }
 
 /// Render a single item to stdout.
-pub fn render_item<T: Serialize + Tabular>(item: &T, format: OutputFormat, full: bool) {
+pub fn render_item<T: Serialize + Tabular>(
+    item: &T,
+    format: OutputFormat,
+    full: bool,
+) -> Result<(), PlankaError> {
     match format {
         OutputFormat::Json if full => json::print_item_full(item),
         OutputFormat::Json => json::print_item_trimmed(item),
@@ -50,21 +58,20 @@ pub fn render_error(error: &plnk_core::error::PlankaError, format: OutputFormat)
 }
 
 /// Render a simple success message to stdout.
-pub fn render_message(message: &str, format: OutputFormat) {
+pub fn render_message(message: &str, format: OutputFormat) -> Result<(), PlankaError> {
     match format {
         OutputFormat::Json => {
-            println!(
-                "{}",
-                serde_json::json!({
-                    "success": true,
-                    "data": { "message": message }
-                })
-            );
+            let json = serde_json::to_string(&serde_json::json!({
+                "success": true,
+                "data": { "message": message }
+            }))?;
+            println!("{json}");
         }
         OutputFormat::Table | OutputFormat::Markdown => {
             println!("{message}");
         }
     }
+    Ok(())
 }
 
 /// Render a snapshot (the full Planka response verbatim) to stdout.
@@ -79,7 +86,7 @@ pub fn render_snapshot(value: &serde_json::Value, format: OutputFormat) -> Resul
                 "success": true,
                 "data": value,
             });
-            let json = serde_json::to_string_pretty(&envelope).expect("JSON serialization failed");
+            let json = serde_json::to_string_pretty(&envelope)?;
             println!("{json}");
             Ok(())
         }

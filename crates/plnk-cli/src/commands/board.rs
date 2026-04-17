@@ -16,11 +16,11 @@ pub async fn execute(
     match action {
         crate::app::BoardAction::List { project } => {
             let boards = client.list_boards(&project).await?;
-            render_collection(&boards, format, full);
+            render_collection(&boards, format, full)?;
         }
         crate::app::BoardAction::Get { id } => {
             let board = client.get_board(&id).await?;
-            render_item(&board, format, full);
+            render_item(&board, format, full)?;
         }
         crate::app::BoardAction::Snapshot { id } => {
             let snapshot = client.get_board_snapshot(&id).await?;
@@ -28,7 +28,7 @@ pub async fn execute(
         }
         crate::app::BoardAction::Find { project, name } => {
             let boards = client.find_boards(&project, &name).await?;
-            render_collection(&boards, format, full);
+            render_collection(&boards, format, full)?;
         }
         crate::app::BoardAction::Create { project, name } => {
             let params = CreateBoard {
@@ -38,7 +38,7 @@ pub async fn execute(
                 position: 65536.0,
             };
             let board = client.create_board(&project, params).await?;
-            render_item(&board, format, full);
+            render_item(&board, format, full)?;
         }
         crate::app::BoardAction::Update { id, name } => {
             if name.is_none() {
@@ -48,15 +48,15 @@ pub async fn execute(
                 });
             }
             let board = client.update_board(&id, UpdateBoard { name }).await?;
-            render_item(&board, format, full);
+            render_item(&board, format, full)?;
         }
         crate::app::BoardAction::Delete { id } => {
             if !yes && !confirm_delete("board", &id) {
-                render_message("Aborted.", format);
+                render_message("Aborted.", format)?;
                 return Ok(());
             }
             client.delete_board(&id).await?;
-            render_message("Board deleted.", format);
+            render_message("Board deleted.", format)?;
         }
     }
     Ok(())

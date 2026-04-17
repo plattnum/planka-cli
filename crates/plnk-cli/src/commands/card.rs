@@ -32,11 +32,11 @@ pub async fn execute(
     match action {
         crate::app::CardAction::List { list } => {
             let cards = client.list_cards(&list).await?;
-            render_collection(&cards, format, full);
+            render_collection(&cards, format, full)?;
         }
         crate::app::CardAction::Get { id } => {
             let card = client.get_card(&id).await?;
-            render_item(&card, format, full);
+            render_item(&card, format, full)?;
         }
         crate::app::CardAction::Snapshot { id } => {
             let snapshot = client.get_card_snapshot(&id).await?;
@@ -60,7 +60,7 @@ pub async fn execute(
                 });
             };
             let cards = client.find_cards(scope, &title).await?;
-            render_collection(&cards, format, full);
+            render_collection(&cards, format, full)?;
         }
         crate::app::CardAction::Create {
             list,
@@ -84,7 +84,7 @@ pub async fn execute(
                 position: pos,
             };
             let card = client.create_card(&list, params).await?;
-            render_item(&card, format, full);
+            render_item(&card, format, full)?;
         }
         crate::app::CardAction::Update {
             id,
@@ -108,7 +108,7 @@ pub async fn execute(
                 is_closed: None,
             };
             let card = client.update_card(&id, params).await?;
-            render_item(&card, format, full);
+            render_item(&card, format, full)?;
         }
         crate::app::CardAction::Move {
             id,
@@ -126,23 +126,23 @@ pub async fn execute(
                 position: pos,
             };
             let card = client.move_card(&id, params).await?;
-            render_item(&card, format, full);
+            render_item(&card, format, full)?;
         }
         crate::app::CardAction::Archive { id } => {
             let card = client.archive_card(&id).await?;
-            render_item(&card, format, full);
+            render_item(&card, format, full)?;
         }
         crate::app::CardAction::Unarchive { id } => {
             let card = client.unarchive_card(&id).await?;
-            render_item(&card, format, full);
+            render_item(&card, format, full)?;
         }
         crate::app::CardAction::Delete { id } => {
             if !yes && !confirm_delete("card", &id) {
-                render_message("Aborted.", format);
+                render_message("Aborted.", format)?;
                 return Ok(());
             }
             client.delete_card(&id).await?;
-            render_message("Card deleted.", format);
+            render_message("Card deleted.", format)?;
         }
         // Label and Assignee subcommands are dispatched in main.rs
         crate::app::CardAction::Label(_) | crate::app::CardAction::Assignee(_) => {

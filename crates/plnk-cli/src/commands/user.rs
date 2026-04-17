@@ -13,11 +13,11 @@ pub async fn execute(
     match action {
         crate::app::UserAction::List => {
             let users = client.list_users().await?;
-            render_collection(&users, format, full);
+            render_collection(&users, format, full)?;
         }
         crate::app::UserAction::Get { id } => {
             let user = client.get_user(&id).await?;
-            render_item(&user, format, full);
+            render_item(&user, format, full)?;
         }
     }
     Ok(())

@@ -16,11 +16,11 @@ pub async fn execute(
     match action {
         crate::app::TaskAction::List { card } => {
             let tasks = client.list_tasks(&card).await?;
-            render_collection(&tasks, format, full);
+            render_collection(&tasks, format, full)?;
         }
         crate::app::TaskAction::Create { card, title } => {
             let task = client.create_task(&card, &title).await?;
-            render_item(&task, format, full);
+            render_item(&task, format, full)?;
         }
         crate::app::TaskAction::Update { id, title } => {
             if title.is_none() {
@@ -34,23 +34,23 @@ pub async fn execute(
                 is_completed: None,
             };
             let task = client.update_task(&id, params).await?;
-            render_item(&task, format, full);
+            render_item(&task, format, full)?;
         }
         crate::app::TaskAction::Complete { id } => {
             let task = client.complete_task(&id).await?;
-            render_item(&task, format, full);
+            render_item(&task, format, full)?;
         }
         crate::app::TaskAction::Reopen { id } => {
             let task = client.reopen_task(&id).await?;
-            render_item(&task, format, full);
+            render_item(&task, format, full)?;
         }
         crate::app::TaskAction::Delete { id } => {
             if !yes && !confirm_delete("task", &id) {
-                render_message("Aborted.", format);
+                render_message("Aborted.", format)?;
                 return Ok(());
             }
             client.delete_task(&id).await?;
-            render_message("Task deleted.", format);
+            render_message("Task deleted.", format)?;
         }
     }
     Ok(())
