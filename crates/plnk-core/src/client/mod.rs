@@ -61,6 +61,8 @@ impl HttpClient {
 
         if !status.is_success() {
             return Err(Self::map_error(
+                "GET",
+                path,
                 status,
                 &resp.text().await.unwrap_or_default(),
             ));
@@ -90,6 +92,8 @@ impl HttpClient {
 
         if !status.is_success() {
             return Err(Self::map_error(
+                "POST",
+                path,
                 status,
                 &resp.text().await.unwrap_or_default(),
             ));
@@ -119,6 +123,8 @@ impl HttpClient {
 
         if !status.is_success() {
             return Err(Self::map_error(
+                "PATCH",
+                path,
                 status,
                 &resp.text().await.unwrap_or_default(),
             ));
@@ -140,6 +146,8 @@ impl HttpClient {
 
         if !status.is_success() {
             return Err(Self::map_error(
+                "DELETE",
+                path,
                 status,
                 &resp.text().await.unwrap_or_default(),
             ));
@@ -159,6 +167,8 @@ impl HttpClient {
 
         if !status.is_success() {
             return Err(Self::map_error(
+                "GET",
+                path,
                 status,
                 &resp.text().await.unwrap_or_default(),
             ));
@@ -182,6 +192,8 @@ impl HttpClient {
 
         if !status.is_success() {
             return Err(Self::map_error(
+                "POST",
+                path,
                 status,
                 &resp.text().await.unwrap_or_default(),
             ));
@@ -193,7 +205,7 @@ impl HttpClient {
     }
 
     /// Map HTTP status codes to typed `PlankaError` variants.
-    fn map_error(status: StatusCode, body: &str) -> PlankaError {
+    fn map_error(method: &str, path: &str, status: StatusCode, body: &str) -> PlankaError {
         let message = if body.is_empty() {
             status
                 .canonical_reason()
@@ -209,9 +221,10 @@ impl HttpClient {
 
         match status {
             StatusCode::UNAUTHORIZED => PlankaError::AuthenticationFailed { message },
-            StatusCode::NOT_FOUND => PlankaError::NotFound {
-                resource_type: "resource".to_string(),
-                id: String::new(),
+            StatusCode::NOT_FOUND => PlankaError::Remote404 {
+                method: method.to_string(),
+                path: path.to_string(),
+                server_message: message,
             },
             _ => PlankaError::ApiError {
                 status: status.as_u16(),

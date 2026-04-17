@@ -1,4 +1,32 @@
+use std::fmt::Write as _;
+
 use crate::models::{ErrorDetail, ErrorEnvelope};
+
+/// HTTP methods for which a 404 is ambiguous between "doesn't exist" and
+/// "you don't have permission". Planka returns 404 for permission denials
+/// on mutation endpoints, so surface the hint to the user.
+fn is_write_method(method: &str) -> bool {
+    matches!(
+        method.to_ascii_uppercase().as_str(),
+        "POST" | "PATCH" | "PUT" | "DELETE"
+    )
+}
+
+/// Display formatter for `Remote404`. Includes the server's own message
+/// when present and appends a permission hint for write methods.
+fn format_remote_404(method: &str, path: &str, server_message: &str) -> String {
+    let mut out = format!("HTTP 404 on {method} {path}");
+    if !server_message.is_empty() {
+        let _ = write!(out, "\n  Server message: {server_message}");
+    }
+    if is_write_method(method) {
+        out.push_str(
+            "\n  Note: Planka returns 404 for permission denials on writes. \
+             Verify your account has access to this resource.",
+        );
+    }
+    out
+}
 
 /// Unified error type for the plnk-core library.
 ///
@@ -10,6 +38,17 @@ pub enum PlankaError {
 
     #[error("Resource not found: {resource_type} {id}")]
     NotFound { resource_type: String, id: String },
+
+    /// HTTP 404 from the Planka server.
+    ///
+    /// Distinguished from `NotFound` because Planka also uses 404 to signal
+    /// permission denials — the caller may not actually lack the resource.
+    #[error("{}", format_remote_404(.method, .path, .server_message))]
+    Remote404 {
+        method: String,
+        path: String,
+        server_message: String,
+    },
 
     #[error("Missing required option: {field}")]
     MissingRequiredOption { field: String },
@@ -59,7 +98,7 @@ impl PlankaError {
 
             Self::AuthenticationFailed { .. } => 3,
 
-            Self::NotFound { .. } => 4,
+            Self::NotFound { .. } | Self::Remote404 { .. } => 4,
 
             Self::ApiError { .. } | Self::Http(_) => 5,
 
@@ -77,7 +116,7 @@ impl PlankaError {
             Self::MissingRequiredOption { .. } => "MissingRequiredOption",
             Self::InvalidOptionValue { .. } | Self::Url(_) => "InvalidOptionValue",
             Self::MutuallyExclusiveOptions { .. } => "MutuallyExclusiveOptions",
-            Self::NotFound { .. } => "ResourceNotFound",
+            Self::NotFound { .. } | Self::Remote404 { .. } => "ResourceNotFound",
             Self::AuthenticationFailed { .. } => "AuthenticationFailed",
             Self::ApiError { .. } | Self::Http(_) => "ApiError",
             Self::FileReadError { .. } | Self::Io(_) => "FileReadError",
@@ -154,6 +193,54 @@ mod tests {
         };
         assert_eq!(err.exit_code(), 4);
         assert_eq!(err.error_type(), "ResourceNotFound");
+
+        let err = PlankaError::Remote404 {
+            method: "GET".to_string(),
+            path: "/api/cards/1".to_string(),
+            server_message: String::new(),
+        };
+        assert_eq!(err.exit_code(), 4);
+        assert_eq!(err.error_type(), "ResourceNotFound");
+    }
+
+    #[test]
+    fn remote_404_display_includes_method_path_and_message() {
+        let err = PlankaError::Remote404 {
+            method: "GET".to_string(),
+            path: "/api/cards/1".to_string(),
+            server_message: "No such card".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("GET /api/cards/1"),
+            "method + path missing: {msg}"
+        );
+        assert!(
+            msg.contains("No such card"),
+            "server message missing: {msg}"
+        );
+        // GET is a read — no permission hint
+        assert!(
+            !msg.contains("permission"),
+            "permission hint leaked onto GET: {msg}"
+        );
+    }
+
+    #[test]
+    fn remote_404_display_warns_about_permissions_on_writes() {
+        for method in ["POST", "PATCH", "PUT", "DELETE"] {
+            let err = PlankaError::Remote404 {
+                method: method.to_string(),
+                path: "/api/projects/1/boards".to_string(),
+                server_message: String::new(),
+            };
+            let msg = err.to_string();
+            assert!(
+                msg.contains("permission"),
+                "missing permission hint on {method}: {msg}"
+            );
+            assert!(msg.contains(method), "method missing: {msg}");
+        }
     }
 
     #[test]
