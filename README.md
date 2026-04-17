@@ -135,8 +135,19 @@ pbpaste | plnk card update <cardId> --description -
 # Find cards across a board
 plnk card find --board <boardId> --title "auth"
 
-# Move a card
+# Find a project by name (the only unscoped find)
+plnk project find --name "platform"
+
+# Full snapshot (item + everything included) in one call — JSON only
+plnk project snapshot <projectId> --output json
+plnk board snapshot <boardId> --output json
+plnk card snapshot <cardId> --output json
+
+# Move a card (same board)
 plnk card move <cardId> --to-list <listId> --position top
+
+# Move a card across boards
+plnk card move <cardId> --to-board <boardId> --to-list <listId>
 
 # Add a checklist item
 plnk task create --card <cardId> --title "Write tests"
@@ -159,7 +170,7 @@ project
   membership
 ```
 
-All scoped queries follow this hierarchy. You can't list cards without specifying a list (or board/project for `find`). You can't list tasks without a card. This is by design.
+All scoped queries follow this hierarchy. You can't list cards without specifying a list (or board/project for `find`). You can't list tasks without a card. This is by design. Sole exception: `project find` is unscoped because projects are the root.
 
 ## Output formats
 

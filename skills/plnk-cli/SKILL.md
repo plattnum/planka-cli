@@ -114,17 +114,31 @@ plnk card move <cardId> --to-list <listId> --position top
 plnk card archive <cardId>
 ```
 
-### Find cards by title
+### Find by name/title
 
-Scoped search with three-tier matching (exact > case-insensitive > substring):
+Scoped search with three-tier matching (exact > case-insensitive > substring). Always returns a collection; multiple results are normal.
 
 ```bash
+plnk project find --name "Platform"                            # unscoped — projects are root
+plnk board find --project <projectId> --name "Sprint"
+plnk list find --board <boardId> --name "Backlog"
 plnk card find --list <listId> --title "auth"
 plnk card find --board <boardId> --title "auth"
 plnk card find --project <projectId> --title "auth"
+plnk label find --board <boardId> --name "urgent"
 ```
 
-Always returns a collection. Multiple results are normal.
+### Snapshot (bulk fetch in one call)
+
+Return the full `GET /api/<resource>/{id}` response verbatim — `item` plus every related resource Planka includes. Useful when a programmatic consumer needs all nested state in one round trip (e.g. a TUI rendering a full board). Nothing is dropped, including resources the CLI doesn't formally model (custom fields, notification services, stopwatch, etc.).
+
+```bash
+plnk project snapshot <projectId> --output json
+plnk board snapshot <boardId> --output json
+plnk card snapshot <cardId> --output json
+```
+
+JSON only. `--output table` / `--output markdown` fail with exit code 2.
 
 ### Tasks (checklists)
 

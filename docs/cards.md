@@ -84,6 +84,12 @@ plnk card move 1234 --to-list 790 --position top
 plnk card move 1234 --to-list 790 --position bottom
 ```
 
+To move across boards, add `--to-board`:
+
+```bash
+plnk card move 1234 --to-board 456 --to-list 790
+```
+
 ### Archive / unarchive a card
 
 ```bash
