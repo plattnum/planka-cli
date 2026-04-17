@@ -11,13 +11,14 @@ plnk comment list --card <cardId>
 plnk comments --card <cardId>               # alias
 ```
 
-### Get a comment by ID
+### Read comments
+
+Comments have no standalone `get` command — Planka has no direct GET endpoint for them, and the old PATCH-with-empty-body workaround silently bumped `updatedAt` on every read. Fetch comments through their parent card instead:
 
 ```bash
-plnk comment get <commentId>
+plnk comment list --card <cardId>           # all comments on a card (with full text)
+plnk card snapshot <cardId> --output json   # whole card (comments come via the list endpoint, not `included`)
 ```
-
-Note: Uses PATCH workaround (same caveat as tasks -- bumps `updatedAt`).
 
 ### Create a comment
 

@@ -333,13 +333,6 @@ impl TaskApi for PlankaClientV1 {
         Ok(resp.included.tasks)
     }
 
-    async fn get_task(&self, id: &str) -> Result<Task, PlankaError> {
-        // No direct GET endpoint — use PATCH with empty body as workaround
-        let empty = serde_json::json!({});
-        let resp: ItemResponse<Task> = self.http.patch(&format!("/api/tasks/{id}"), &empty).await?;
-        Ok(resp.item)
-    }
-
     async fn create_task(&self, card_id: &str, name: &str) -> Result<Task, PlankaError> {
         // Tasks live inside task lists. Find or create a default task list.
         let resp: CardSnapshot = self.http.get(&format!("/api/cards/{card_id}")).await?;
@@ -416,16 +409,6 @@ impl CommentApi for PlankaClientV1 {
         Ok(resp.items)
     }
 
-    async fn get_comment(&self, id: &str) -> Result<Comment, PlankaError> {
-        // No direct GET endpoint — use PATCH with empty body
-        let empty = serde_json::json!({});
-        let resp: ItemResponse<Comment> = self
-            .http
-            .patch(&format!("/api/comments/{id}"), &empty)
-            .await?;
-        Ok(resp.item)
-    }
-
     async fn create_comment(
         &self,
         card_id: &str,
@@ -463,16 +446,6 @@ impl LabelApi for PlankaClientV1 {
         // Labels come from board snapshot's included data
         let resp: BoardSnapshot = self.http.get(&format!("/api/boards/{board_id}")).await?;
         Ok(resp.included.labels)
-    }
-
-    async fn get_label(&self, id: &str) -> Result<Label, PlankaError> {
-        // No direct GET endpoint — use PATCH with empty body
-        let empty = serde_json::json!({});
-        let resp: ItemResponse<Label> = self
-            .http
-            .patch(&format!("/api/labels/{id}"), &empty)
-            .await?;
-        Ok(resp.item)
     }
 
     async fn find_labels(&self, board_id: &str, name: &str) -> Result<Vec<Label>, PlankaError> {

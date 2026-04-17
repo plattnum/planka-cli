@@ -548,11 +548,6 @@ pub enum TaskAction {
         #[arg(long)]
         card: String,
     },
-    /// Get a task by ID
-    Get {
-        /// Task ID
-        id: String,
-    },
     /// Create a new task
     Create {
         /// Parent card ID
@@ -603,11 +598,6 @@ pub enum CommentAction {
         #[arg(long)]
         card: String,
     },
-    /// Get a comment by ID
-    Get {
-        /// Comment ID
-        id: String,
-    },
     /// Create a new comment
     Create {
         /// Parent card ID
@@ -647,11 +637,6 @@ pub enum LabelAction {
         /// Parent board ID
         #[arg(long)]
         board: String,
-    },
-    /// Get a label by ID
-    Get {
-        /// Label ID
-        id: String,
     },
     /// Find labels by name within a board
     Find {

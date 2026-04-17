@@ -11,10 +11,13 @@ plnk label list --board <boardId>
 plnk labels --board <boardId>               # alias
 ```
 
-### Get a label by ID
+### Read labels
+
+Labels have no standalone `get` command — Planka has no direct GET endpoint for them, and the old PATCH-with-empty-body workaround silently bumped `updatedAt` on every read. Fetch labels through their parent board instead:
 
 ```bash
-plnk label get <labelId>
+plnk label list --board <boardId>           # all labels on a board
+plnk board snapshot <boardId> --output json # whole board incl. labels under `included.labels` and cardLabels under `included.cardLabels`
 ```
 
 ### Find labels by name

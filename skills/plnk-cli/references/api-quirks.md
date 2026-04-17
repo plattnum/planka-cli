@@ -4,11 +4,19 @@ Behaviors of the Planka REST API that affect how the CLI works. These are not bu
 
 ## No direct GET for tasks, comments, or labels
 
-Planka has no `GET /api/tasks/{id}`, `GET /api/comments/{id}`, or `GET /api/labels/{id}` endpoints. The CLI works around this by sending `PATCH` with an empty JSON body `{}`, which returns the item but silently bumps the `updatedAt` timestamp.
+Planka has no `GET /api/tasks/{id}`, `GET /api/comments/{id}`, or `GET /api/labels/{id}` endpoints. An earlier version of the CLI worked around this by sending `PATCH` with an empty JSON body `{}` — which returned the item but silently bumped the `updatedAt` timestamp, breaking any downstream change-detection.
 
-**Impact:** Any workflow that watches `updatedAt` for change detection will see phantom updates when someone runs `plnk task get`, `plnk comment get`, or `plnk label get`.
+**Resolution:** The `plnk task get`, `plnk comment get`, and `plnk label get` commands were removed. These resources live inside parents (tasks and comments inside a card, labels inside a board) and Planka itself never exposes them by independent identity. Read them through their parent:
 
-**Recommendation:** For read-only use, prefer `task list --card`, `comment list --card`, or `label list --board` which use proper GET endpoints and don't mutate timestamps.
+```bash
+plnk task list --card <cardId>              # tasks on a card
+plnk comment list --card <cardId>           # comments on a card
+plnk label list --board <boardId>           # labels on a board
+plnk card snapshot <cardId> --output json   # whole card (tasks under included.tasks)
+plnk board snapshot <boardId> --output json # whole board (labels under included.labels)
+```
+
+The parent listing paths use proper GET endpoints and don't mutate `updatedAt`.
 
 ## Board snapshot pattern
 

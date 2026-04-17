@@ -129,7 +129,6 @@ plnk card assignee remove <cardId> <userId>
 
 ```bash
 plnk task list --card <cardId>
-plnk task get <taskId>
 plnk task create --card <cardId> --title <title>
 plnk task update <taskId> [--title <title>]
 plnk task complete <taskId>
@@ -141,14 +140,13 @@ Alias: `plnk tasks --card <cardId>`
 
 - `list` fetches tasks from the card snapshot's included data.
 - `create` automatically finds or creates a task list on the card.
-- `get` uses PATCH with empty body (Planka has no direct GET for tasks). This bumps `updatedAt`.
+- There is no `task get` — Planka exposes no direct GET endpoint and the prior PATCH-with-empty-body workaround silently bumped `updatedAt`. Read via `task list --card` or `card snapshot <cardId>`.
 - `complete` sets `isCompleted: true`. `reopen` sets `isCompleted: false`.
 
 ## Comment
 
 ```bash
 plnk comment list --card <cardId>
-plnk comment get <commentId>
 plnk comment create --card <cardId> --text <text>
 plnk comment update <commentId> --text <text>
 plnk comment delete <commentId> [--yes]
@@ -157,14 +155,12 @@ plnk comment delete <commentId> [--yes]
 Alias: `plnk comments --card <cardId>`
 
 - `--text` accepts literal text, `-` for stdin, `@file.md` for file.
-- `get` uses PATCH with empty body (same `updatedAt` caveat as tasks).
-- `list` uses `GET /api/cards/{cardId}/comments`.
+- `list` uses `GET /api/cards/{cardId}/comments` and returns full comment text — no separate `get` exists (Planka has no direct GET endpoint and the PATCH workaround silently bumped `updatedAt`).
 
 ## Label
 
 ```bash
 plnk label list --board <boardId>
-plnk label get <labelId>
 plnk label find --board <boardId> --name <name>
 plnk label create --board <boardId> --name <name> --color <color>
 plnk label update <labelId> [--name <name>] [--color <color>]
@@ -174,7 +170,7 @@ plnk label delete <labelId> [--yes]
 Alias: `plnk labels --board <boardId>`
 
 - Labels are board-scoped. To apply a label to a card, use `plnk card label add`.
-- `list` fetches labels from the board snapshot's included data.
+- `list` fetches labels from the board snapshot's included data. There is no standalone `label get` — read via `label list --board` or `board snapshot <boardId>`.
 - `get` uses PATCH with empty body.
 
 ### Planka color tokens

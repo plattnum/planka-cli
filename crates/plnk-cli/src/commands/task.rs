@@ -18,10 +18,6 @@ pub async fn execute(
             let tasks = client.list_tasks(&card).await?;
             render_collection(&tasks, format, full);
         }
-        crate::app::TaskAction::Get { id } => {
-            let task = client.get_task(&id).await?;
-            render_item(&task, format, full);
-        }
         crate::app::TaskAction::Create { card, title } => {
             let task = client.create_task(&card, &title).await?;
             render_item(&task, format, full);

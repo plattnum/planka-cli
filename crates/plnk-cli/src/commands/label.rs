@@ -18,10 +18,6 @@ pub async fn execute(
             let labels = client.list_labels(&board).await?;
             render_collection(&labels, format, full);
         }
-        crate::app::LabelAction::Get { id } => {
-            let label = client.get_label(&id).await?;
-            render_item(&label, format, full);
-        }
         crate::app::LabelAction::Find { board, name } => {
             let labels = client.find_labels(&board, &name).await?;
             render_collection(&labels, format, full);

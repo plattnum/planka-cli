@@ -11,13 +11,14 @@ plnk task list --card <cardId>
 plnk tasks --card <cardId>                  # alias
 ```
 
-### Get a task by ID
+### Read a task
+
+Tasks have no standalone `get` command — Planka has no direct GET endpoint for them, and the old PATCH-with-empty-body workaround silently bumped `updatedAt` on every read. Fetch tasks through their parent card instead:
 
 ```bash
-plnk task get <taskId>
+plnk task list --card <cardId>              # all tasks on a card
+plnk card snapshot <cardId> --output json   # whole card incl. tasks under `included.tasks`
 ```
-
-Note: Planka has no direct GET endpoint for tasks. This uses a PATCH workaround that bumps `updatedAt`. For read-only use, prefer `task list --card`.
 
 ### Create a task
 

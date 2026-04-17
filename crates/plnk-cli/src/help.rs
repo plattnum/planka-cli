@@ -358,7 +358,6 @@ fn get_examples(resource: &str, action: &str) -> Vec<String> {
 
         // Task
         ("task", "list") => vec!["plnk task list --card 1234".into()],
-        ("task", "get") => vec!["plnk task get 5678".into()],
         ("task", "create") => vec!["plnk task create --card 1234 --title 'Write tests'".into()],
         ("task", "complete") => vec!["plnk task complete 5678".into()],
         ("task", "reopen") => vec!["plnk task reopen 5678".into()],
@@ -366,7 +365,6 @@ fn get_examples(resource: &str, action: &str) -> Vec<String> {
 
         // Comment
         ("comment", "list") => vec!["plnk comment list --card 1234".into()],
-        ("comment", "get") => vec!["plnk comment get 9012".into()],
         ("comment", "create") => vec![
             "plnk comment create --card 1234 --text 'Starting work'".into(),
             "plnk comment create --card 1234 --text @note.txt".into(),
@@ -376,7 +374,6 @@ fn get_examples(resource: &str, action: &str) -> Vec<String> {
 
         // Label
         ("label", "list") => vec!["plnk label list --board 456".into()],
-        ("label", "get") => vec!["plnk label get 111".into()],
         ("label", "find") => vec!["plnk label find --board 456 --name 'urgent'".into()],
         ("label", "create") => vec!["plnk label create --board 456 --name 'urgent' --color berry-red".into()],
         ("label", "update") => vec!["plnk label update 111 --name 'blocked' --color sunset-orange".into()],

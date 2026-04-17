@@ -19,10 +19,6 @@ pub async fn execute(
             let comments = client.list_comments(&card).await?;
             render_collection(&comments, format, full);
         }
-        crate::app::CommentAction::Get { id } => {
-            let comment = client.get_comment(&id).await?;
-            render_item(&comment, format, full);
-        }
         crate::app::CommentAction::Create { card, text } => {
             let resolved = resolve_text(&text)?;
             let params = CreateComment { text: resolved };

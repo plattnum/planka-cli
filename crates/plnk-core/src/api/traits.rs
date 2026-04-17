@@ -86,7 +86,6 @@ pub trait CardApi {
 #[async_trait]
 pub trait TaskApi {
     async fn list_tasks(&self, card_id: &str) -> Result<Vec<Task>, PlankaError>;
-    async fn get_task(&self, id: &str) -> Result<Task, PlankaError>;
     async fn create_task(&self, card_id: &str, name: &str) -> Result<Task, PlankaError>;
     async fn update_task(&self, id: &str, params: UpdateTask) -> Result<Task, PlankaError>;
     async fn complete_task(&self, id: &str) -> Result<Task, PlankaError>;
@@ -97,7 +96,6 @@ pub trait TaskApi {
 #[async_trait]
 pub trait CommentApi {
     async fn list_comments(&self, card_id: &str) -> Result<Vec<Comment>, PlankaError>;
-    async fn get_comment(&self, id: &str) -> Result<Comment, PlankaError>;
     async fn create_comment(
         &self,
         card_id: &str,
@@ -111,7 +109,6 @@ pub trait CommentApi {
 #[async_trait]
 pub trait LabelApi {
     async fn list_labels(&self, board_id: &str) -> Result<Vec<Label>, PlankaError>;
-    async fn get_label(&self, id: &str) -> Result<Label, PlankaError>;
     async fn find_labels(&self, board_id: &str, name: &str) -> Result<Vec<Label>, PlankaError>;
     async fn create_label(
         &self,
