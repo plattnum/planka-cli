@@ -326,48 +326,9 @@ fn comment_roundtrip() {
 }
 
 #[test]
-fn comment_tabular_truncation_ascii() {
-    let comment = Comment {
-        id: "1".to_string(),
-        card_id: "2".to_string(),
-        user_id: "3".to_string(),
-        text: "a".repeat(80),
-        created_at: "2026-01-01T00:00:00Z".to_string(),
-        updated_at: None,
-    };
-    let row = comment.row();
-    assert!(row[2].ends_with("..."));
-    assert!(row[2].len() <= 60);
-}
-
-#[test]
-fn comment_tabular_truncation_multibyte_utf8() {
-    // 21 CJK chars = 63 bytes (each is 3 bytes in UTF-8), triggers truncation
-    let comment = Comment {
-        id: "1".to_string(),
-        card_id: "2".to_string(),
-        user_id: "3".to_string(),
-        text: "あ".repeat(21),
-        created_at: "2026-01-01T00:00:00Z".to_string(),
-        updated_at: None,
-    };
-    // This must not panic
-    let row = comment.row();
-    assert!(row[2].ends_with("..."));
-}
-
-#[test]
-fn comment_tabular_short_text_no_truncation() {
-    let comment = Comment {
-        id: "1".to_string(),
-        card_id: "2".to_string(),
-        user_id: "3".to_string(),
-        text: "short".to_string(),
-        created_at: "2026-01-01T00:00:00Z".to_string(),
-        updated_at: None,
-    };
-    let row = comment.row();
-    assert_eq!(row[2], "short");
+fn comment_trimmed_columns_use_wire_field_names() {
+    let fields: Vec<&str> = Comment::trimmed_columns().iter().map(|(f, _)| *f).collect();
+    assert_eq!(fields, vec!["id", "userId", "text", "createdAt"]);
 }
 
 #[test]
@@ -406,48 +367,193 @@ fn label_roundtrip() {
 }
 
 #[test]
-fn tabular_card_rows() {
-    let card = Card {
-        id: "1234".to_string(),
-        list_id: "789".to_string(),
-        board_id: "456".to_string(),
-        name: "Fix auth".to_string(),
-        description: None,
-        position: 65536.0,
-        due_date: None,
-        is_due_completed: None,
-        is_closed: false,
-        is_subscribed: false,
-        creator_user_id: None,
-        created_at: "2026-04-14T12:00:00Z".to_string(),
-        updated_at: None,
-    };
-
-    let headers = Card::headers();
-    assert_eq!(headers, vec!["ID", "Name", "List", "Position", "Closed"]);
-
-    let row = card.row();
-    assert_eq!(row[0], "1234");
-    assert_eq!(row[1], "Fix auth");
-    assert_eq!(row[4], "no");
+fn card_trimmed_columns_match_wire_format() {
+    let columns = Card::trimmed_columns();
+    let fields: Vec<&str> = columns.iter().map(|(f, _)| *f).collect();
+    assert_eq!(fields, vec!["id", "name", "listId", "position", "isClosed"]);
+    let labels: Vec<&str> = columns.iter().map(|(_, l)| *l).collect();
+    assert_eq!(labels, vec!["ID", "Name", "List", "Position", "Closed"]);
 }
 
 #[test]
-fn tabular_project_rows() {
-    let project = Project {
-        id: "123".to_string(),
-        name: "Platform".to_string(),
-        description: None,
-        created_at: "2026-04-14T12:00:00Z".to_string(),
-        updated_at: None,
-    };
+fn project_trimmed_columns_match_wire_format() {
+    let fields: Vec<&str> = Project::trimmed_columns().iter().map(|(f, _)| *f).collect();
+    assert_eq!(fields, vec!["id", "name"]);
+}
 
-    let headers = Project::headers();
-    assert_eq!(headers, vec!["ID", "Name"]);
+/// Every Tabular field name must appear in the struct's camelCase serde
+/// representation — otherwise trimmed output would produce phantom keys
+/// or silently project to nothing.
+#[test]
+fn tabular_fields_exist_in_serde_representation() {
+    fn check<T: serde::Serialize + Tabular + ?Sized>(item: &T, type_name: &str) {
+        let value = serde_json::to_value(item).unwrap();
+        let object = value.as_object().expect("serializes to object");
+        for (field, _label) in T::trimmed_columns() {
+            assert!(
+                object.contains_key(*field),
+                "Tabular field {field:?} missing from serialized {type_name}"
+            );
+        }
+    }
 
-    let row = project.row();
-    assert_eq!(row[0], "123");
-    assert_eq!(row[1], "Platform");
+    check(
+        &Project {
+            id: "1".into(),
+            name: "p".into(),
+            description: None,
+            created_at: "t".into(),
+            updated_at: None,
+        },
+        "Project",
+    );
+    check(
+        &Board {
+            id: "1".into(),
+            project_id: "2".into(),
+            name: "b".into(),
+            position: 1.0,
+            created_at: "t".into(),
+            updated_at: None,
+        },
+        "Board",
+    );
+    check(
+        &List {
+            id: "1".into(),
+            board_id: "2".into(),
+            name: "l".into(),
+            position: 1.0,
+            color: None,
+            created_at: "t".into(),
+            updated_at: None,
+        },
+        "List",
+    );
+    check(
+        &Card {
+            id: "1".into(),
+            list_id: "2".into(),
+            board_id: "3".into(),
+            name: "c".into(),
+            description: None,
+            position: 1.0,
+            due_date: None,
+            is_due_completed: None,
+            is_closed: false,
+            is_subscribed: false,
+            creator_user_id: None,
+            created_at: "t".into(),
+            updated_at: None,
+        },
+        "Card",
+    );
+    check(
+        &Task {
+            id: "1".into(),
+            task_list_id: "2".into(),
+            name: "t".into(),
+            is_completed: false,
+            position: 1.0,
+            linked_card_id: None,
+            assignee_user_id: None,
+            created_at: "t".into(),
+            updated_at: None,
+        },
+        "Task",
+    );
+    check(
+        &Comment {
+            id: "1".into(),
+            card_id: "2".into(),
+            user_id: "3".into(),
+            text: "hi".into(),
+            created_at: "t".into(),
+            updated_at: None,
+        },
+        "Comment",
+    );
+    check(
+        &Label {
+            id: "1".into(),
+            board_id: "2".into(),
+            name: None,
+            color: "red".into(),
+            position: 1.0,
+            created_at: "t".into(),
+            updated_at: None,
+        },
+        "Label",
+    );
+    check(
+        &User {
+            id: "1".into(),
+            name: "u".into(),
+            username: None,
+            email: None,
+            role: "editor".into(),
+            is_deactivated: false,
+            organization: None,
+            phone: None,
+            created_at: "t".into(),
+            updated_at: None,
+        },
+        "User",
+    );
+    check(
+        &Attachment {
+            id: "1".into(),
+            card_id: "2".into(),
+            name: "a".into(),
+            data: None,
+            creator_user_id: None,
+            created_at: "t".into(),
+            updated_at: None,
+        },
+        "Attachment",
+    );
+    check(
+        &BoardMembership {
+            id: "1".into(),
+            board_id: "2".into(),
+            user_id: "3".into(),
+            role: None,
+            can_comment: None,
+            project_id: None,
+            created_at: "t".into(),
+            updated_at: None,
+        },
+        "BoardMembership",
+    );
+    check(
+        &ProjectManager {
+            id: "1".into(),
+            project_id: "2".into(),
+            user_id: "3".into(),
+            created_at: "t".into(),
+            updated_at: None,
+        },
+        "ProjectManager",
+    );
+    check(
+        &CardMembership {
+            id: "1".into(),
+            card_id: "2".into(),
+            user_id: "3".into(),
+            created_at: "t".into(),
+            updated_at: None,
+        },
+        "CardMembership",
+    );
+    check(
+        &CardLabel {
+            id: "1".into(),
+            card_id: "2".into(),
+            label_id: "3".into(),
+            created_at: "t".into(),
+        },
+        "CardLabel",
+    );
 }
 
 #[test]

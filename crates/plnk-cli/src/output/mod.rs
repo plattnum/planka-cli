@@ -65,3 +65,18 @@ pub fn render_message(message: &str, format: OutputFormat) {
         }
     }
 }
+
+/// Format a JSON value for display in tables and markdown.
+///
+/// Nulls become empty strings, booleans become "yes"/"no", numbers and
+/// strings render verbatim, arrays/objects fall back to compact JSON.
+/// This helper is display-only — it never participates in JSON output.
+pub(crate) fn value_to_display(value: Option<&serde_json::Value>) -> String {
+    match value {
+        None | Some(serde_json::Value::Null) => String::new(),
+        Some(serde_json::Value::Bool(b)) => if *b { "yes" } else { "no" }.to_string(),
+        Some(serde_json::Value::Number(n)) => n.to_string(),
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(other) => serde_json::to_string(other).unwrap_or_default(),
+    }
+}
