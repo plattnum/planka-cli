@@ -5,7 +5,7 @@ use plnk_core::models::{CreateCard, FindScope, MoveCard, UpdateCard};
 use crate::app::OutputFormat;
 use crate::commands::project::confirm_delete;
 use crate::input::resolve_text;
-use crate::output::{render_collection, render_item, render_message};
+use crate::output::{render_collection, render_item, render_message, render_snapshot};
 
 /// Parse position flag: "top", "bottom", or numeric value.
 fn parse_position(pos: &str) -> Result<f64, PlankaError> {
@@ -37,6 +37,10 @@ pub async fn execute(
         crate::app::CardAction::Get { id } => {
             let card = client.get_card(&id).await?;
             render_item(&card, format, full);
+        }
+        crate::app::CardAction::Snapshot { id } => {
+            let snapshot = client.get_card_snapshot(&id).await?;
+            render_snapshot(&snapshot, format)?;
         }
         crate::app::CardAction::Find {
             list,

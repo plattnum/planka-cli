@@ -4,7 +4,7 @@ use plnk_core::models::{CreateBoard, UpdateBoard};
 
 use crate::app::OutputFormat;
 use crate::commands::project::confirm_delete;
-use crate::output::{render_collection, render_item, render_message};
+use crate::output::{render_collection, render_item, render_message, render_snapshot};
 
 pub async fn execute(
     client: &impl BoardApi,
@@ -21,6 +21,10 @@ pub async fn execute(
         crate::app::BoardAction::Get { id } => {
             let board = client.get_board(&id).await?;
             render_item(&board, format, full);
+        }
+        crate::app::BoardAction::Snapshot { id } => {
+            let snapshot = client.get_board_snapshot(&id).await?;
+            render_snapshot(&snapshot, format)?;
         }
         crate::app::BoardAction::Find { project, name } => {
             let boards = client.find_boards(&project, &name).await?;

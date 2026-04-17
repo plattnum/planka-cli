@@ -73,6 +73,10 @@ impl ProjectApi for PlankaClientV1 {
         Ok(matched.into_iter().cloned().collect())
     }
 
+    async fn get_project_snapshot(&self, id: &str) -> Result<serde_json::Value, PlankaError> {
+        self.http.get(&format!("/api/projects/{id}")).await
+    }
+
     async fn create_project(&self, params: CreateProject) -> Result<Project, PlankaError> {
         let resp: ItemResponse<Project> = self.http.post("/api/projects", &params).await?;
         Ok(resp.item)
@@ -124,6 +128,10 @@ impl BoardApi for PlankaClientV1 {
         let boards = self.list_boards(project_id).await?;
         let matched = match_by_name(&boards, name);
         Ok(matched.into_iter().cloned().collect())
+    }
+
+    async fn get_board_snapshot(&self, id: &str) -> Result<serde_json::Value, PlankaError> {
+        self.http.get(&format!("/api/boards/{id}")).await
     }
 
     async fn create_board(
@@ -218,6 +226,10 @@ impl CardApi for PlankaClientV1 {
     async fn get_card(&self, id: &str) -> Result<Card, PlankaError> {
         let resp: ItemResponse<Card> = self.http.get(&format!("/api/cards/{id}")).await?;
         Ok(resp.item)
+    }
+
+    async fn get_card_snapshot(&self, id: &str) -> Result<serde_json::Value, PlankaError> {
+        self.http.get(&format!("/api/cards/{id}")).await
     }
 
     async fn find_cards(&self, scope: FindScope, title: &str) -> Result<Vec<Card>, PlankaError> {

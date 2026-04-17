@@ -30,6 +30,14 @@ plnk board find --project 123 --name "pri"             # substring match
 
 Always returns a collection, even for a single result.
 
+### Get a board snapshot
+
+```bash
+plnk board snapshot <boardId> --output json
+```
+
+Returns the full `GET /api/boards/{id}` response verbatim, including `item` (the board) and `included` (lists, cards, labels, boardMemberships, cardMemberships, cardLabels, tasks, taskLists, attachments, users, projects, customFieldGroups, customFields, customFieldValues). Nothing is dropped. JSON only.
+
 ### Create a board
 
 ```bash

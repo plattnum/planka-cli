@@ -32,6 +32,7 @@ Read-only. No create/update/delete.
 ```bash
 plnk project list
 plnk project get <projectId>
+plnk project snapshot <projectId>            # JSON only — full wire response
 plnk project find --name <name>
 plnk project create --name <name>
 plnk project update <projectId> --name <name>
@@ -41,12 +42,14 @@ plnk project delete <projectId> [--yes]
 - `update` requires at least one mutable field.
 - `delete` prompts for confirmation unless `--yes`.
 - `find` is unscoped for projects only — they are the root resource. All other `find` commands require a parent scope.
+- `snapshot` returns the full `GET /api/projects/{id}` response verbatim (item + all of included). Nothing is dropped, including fields and sub-resources we don't formally model. JSON only; table/markdown fail with exit code 2.
 
 ## Board
 
 ```bash
 plnk board list --project <projectId>
 plnk board get <boardId>
+plnk board snapshot <boardId>                # JSON only — full wire response
 plnk board find --project <projectId> --name <name>
 plnk board create --project <projectId> --name <name>
 plnk board update <boardId> --name <name>
@@ -80,12 +83,13 @@ Alias: `plnk lists --board <boardId>`
 ```bash
 plnk card list --list <listId>
 plnk card get <cardId>
+plnk card snapshot <cardId>                  # JSON only — full wire response
 plnk card find --list <listId> --title <title>
 plnk card find --board <boardId> --title <title>
 plnk card find --project <projectId> --title <title>
 plnk card create --list <listId> --title <title> [--description <text>] [--position top|bottom|<int>]
 plnk card update <cardId> [--title <title>] [--description <text>]
-plnk card move <cardId> --to-list <listId> [--position top|bottom|<int>]
+plnk card move <cardId> --to-list <listId> [--to-board <boardId>] [--position top|bottom|<int>]
 plnk card archive <cardId>
 plnk card unarchive <cardId>
 plnk card delete <cardId> [--yes]

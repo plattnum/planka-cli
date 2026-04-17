@@ -2,6 +2,7 @@ mod json;
 mod markdown;
 mod table;
 
+use plnk_core::error::PlankaError;
 use plnk_core::models::Tabular;
 use serde::Serialize;
 
@@ -63,6 +64,31 @@ pub fn render_message(message: &str, format: OutputFormat) {
         OutputFormat::Table | OutputFormat::Markdown => {
             println!("{message}");
         }
+    }
+}
+
+/// Render a snapshot (the full Planka response verbatim) to stdout.
+///
+/// Snapshots are heterogeneous nested data (`item` + `included` with many
+/// sub-resource types), so only JSON output makes sense. The raw response
+/// is placed under the standard `data` envelope unchanged.
+pub fn render_snapshot(value: &serde_json::Value, format: OutputFormat) -> Result<(), PlankaError> {
+    match format {
+        OutputFormat::Json => {
+            let envelope = serde_json::json!({
+                "success": true,
+                "data": value,
+            });
+            let json = serde_json::to_string_pretty(&envelope).expect("JSON serialization failed");
+            println!("{json}");
+            Ok(())
+        }
+        OutputFormat::Table | OutputFormat::Markdown => Err(PlankaError::InvalidOptionValue {
+            field: "--output".to_string(),
+            message: "snapshot only supports --output json (response is nested \
+                      heterogeneous data). Use --output json."
+                .to_string(),
+        }),
     }
 }
 

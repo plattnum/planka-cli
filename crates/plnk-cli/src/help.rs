@@ -298,6 +298,7 @@ fn get_examples(resource: &str, action: &str) -> Vec<String> {
         ("project", "get") => vec!["plnk project get 123".into()],
         ("project", "create") => vec!["plnk project create --name 'Platform'".into()],
         ("project", "find") => vec!["plnk project find --name 'Platform'".into()],
+        ("project", "snapshot") => vec!["plnk project snapshot 123 --output json".into()],
         ("project", "update") => vec!["plnk project update 123 --name 'Platform Core'".into()],
         ("project", "delete") => vec!["plnk project delete 123".into()],
 
@@ -309,6 +310,7 @@ fn get_examples(resource: &str, action: &str) -> Vec<String> {
         ("board", "list") => vec!["plnk board list --project 123".into()],
         ("board", "get") => vec!["plnk board get 456".into()],
         ("board", "find") => vec!["plnk board find --project 123 --name 'Sprint'".into()],
+        ("board", "snapshot") => vec!["plnk board snapshot 456 --output json".into()],
         ("board", "create") => vec!["plnk board create --project 123 --name 'Sprint'".into()],
         ("board", "update") => vec!["plnk board update 456 --name 'Sprint 2'".into()],
         ("board", "delete") => vec!["plnk board delete 456".into()],
@@ -324,6 +326,7 @@ fn get_examples(resource: &str, action: &str) -> Vec<String> {
         // Card
         ("card", "list") => vec!["plnk card list --list 789".into()],
         ("card", "get") => vec!["plnk card get 1234".into()],
+        ("card", "snapshot") => vec!["plnk card snapshot 1234 --output json".into()],
         ("card", "find") => vec![
             "plnk card find --list 789 --title 'Fix auth'".into(),
             "plnk card find --board 456 --title 'Fix auth'".into(),

@@ -3,7 +3,7 @@ use plnk_core::error::PlankaError;
 use plnk_core::models::{CreateProject, UpdateProject};
 
 use crate::app::OutputFormat;
-use crate::output::{render_collection, render_item, render_message};
+use crate::output::{render_collection, render_item, render_message, render_snapshot};
 
 pub async fn execute(
     client: &impl ProjectApi,
@@ -20,6 +20,10 @@ pub async fn execute(
         crate::app::ProjectAction::Get { id } => {
             let project = client.get_project(&id).await?;
             render_item(&project, format, full);
+        }
+        crate::app::ProjectAction::Snapshot { id } => {
+            let snapshot = client.get_project_snapshot(&id).await?;
+            render_snapshot(&snapshot, format)?;
         }
         crate::app::ProjectAction::Find { name } => {
             let projects = client.find_projects(&name).await?;

@@ -26,6 +26,11 @@ pub trait UserApi {
 pub trait ProjectApi {
     async fn list_projects(&self) -> Result<Vec<Project>, PlankaError>;
     async fn get_project(&self, id: &str) -> Result<Project, PlankaError>;
+    /// Return the full `GET /api/projects/{id}` response verbatim, including
+    /// the `item` and every key under `included`. Kept as raw JSON so fields
+    /// we don't formally model (custom fields, notification services, etc.)
+    /// are preserved without schema loss.
+    async fn get_project_snapshot(&self, id: &str) -> Result<serde_json::Value, PlankaError>;
     /// Find projects by name. Unscoped — projects are the root resource
     /// and have no parent to scope against. Uses three-tier name matching.
     async fn find_projects(&self, name: &str) -> Result<Vec<Project>, PlankaError>;
@@ -39,6 +44,9 @@ pub trait ProjectApi {
 pub trait BoardApi {
     async fn list_boards(&self, project_id: &str) -> Result<Vec<Board>, PlankaError>;
     async fn get_board(&self, id: &str) -> Result<Board, PlankaError>;
+    /// Return the full `GET /api/boards/{id}` response verbatim. See
+    /// `ProjectApi::get_project_snapshot` for rationale.
+    async fn get_board_snapshot(&self, id: &str) -> Result<serde_json::Value, PlankaError>;
     async fn find_boards(&self, project_id: &str, name: &str) -> Result<Vec<Board>, PlankaError>;
     async fn create_board(
         &self,
@@ -63,6 +71,9 @@ pub trait ListApi {
 pub trait CardApi {
     async fn list_cards(&self, list_id: &str) -> Result<Vec<Card>, PlankaError>;
     async fn get_card(&self, id: &str) -> Result<Card, PlankaError>;
+    /// Return the full `GET /api/cards/{id}` response verbatim. See
+    /// `ProjectApi::get_project_snapshot` for rationale.
+    async fn get_card_snapshot(&self, id: &str) -> Result<serde_json::Value, PlankaError>;
     async fn find_cards(&self, scope: FindScope, title: &str) -> Result<Vec<Card>, PlankaError>;
     async fn create_card(&self, list_id: &str, params: CreateCard) -> Result<Card, PlankaError>;
     async fn update_card(&self, id: &str, params: UpdateCard) -> Result<Card, PlankaError>;

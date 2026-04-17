@@ -36,6 +36,14 @@ plnk card find --project <projectId> --title "auth"
 
 Always returns a collection. Multiple results are expected, not an error.
 
+### Get a card snapshot
+
+```bash
+plnk card snapshot <cardId> --output json
+```
+
+Returns the full `GET /api/cards/{id}` response verbatim, including `item` (the card — with fields the normal `get` discards like `commentsTotal`, `coverAttachmentId`, `listChangedAt`, `prevListId`, `stopwatch`, `type`) and `included` (tasks, taskLists, comments, attachments, cardMemberships, cardLabels, users, customFieldGroups, customFields, customFieldValues). Nothing is dropped. JSON only.
+
 ### Create a card
 
 ```bash

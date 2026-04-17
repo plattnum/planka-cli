@@ -212,6 +212,11 @@ pub enum ProjectAction {
         /// Project ID
         id: String,
     },
+    /// Get the full snapshot (item + included) for a project — JSON only
+    Snapshot {
+        /// Project ID
+        id: String,
+    },
     /// Find projects by name (unscoped — projects are the root resource)
     Find {
         /// Project name to search for
@@ -257,6 +262,11 @@ pub enum BoardAction {
     },
     /// Get a board by ID
     Get {
+        /// Board ID
+        id: String,
+    },
+    /// Get the full snapshot (item + included) for a board — JSON only
+    Snapshot {
         /// Board ID
         id: String,
     },
@@ -376,6 +386,11 @@ pub enum CardAction {
     },
     /// Get a card by ID
     Get {
+        /// Card ID
+        id: String,
+    },
+    /// Get the full snapshot (item + included) for a card — JSON only
+    Snapshot {
         /// Card ID
         id: String,
     },

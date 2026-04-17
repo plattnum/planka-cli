@@ -27,6 +27,16 @@ plnk project find --name platform --output json
 
 Uses three-tier matching (exact case-sensitive → case-insensitive → substring); stops at the first tier with results. Unlike every other `find` command, `project find` takes no parent scope because projects are the root resource.
 
+### Get a project snapshot
+
+```bash
+plnk project snapshot <projectId> --output json
+```
+
+Returns the full `GET /api/projects/{id}` response verbatim, including `item` (the project) and `included` (boards, boardMemberships, projectManagers, users, customFields, notificationServices, backgroundImages, baseCustomFieldGroups). Nothing is dropped — fields we don't model (custom fields, notification services, etc.) still pass through.
+
+JSON only. `--output table` and `--output markdown` fail with exit code 2 because the nested heterogeneous shape has no natural tabular rendering.
+
 ### Create a project
 
 ```bash
