@@ -37,7 +37,7 @@ project
   membership
 ```
 
-To list cards, a list ID is required. To list tasks, a card ID is required. To find cards, scope to a list, board, or project. There are no global flat queries.
+To list cards, a list ID is required. To list tasks, a card ID is required. To find cards, scope to a list, board, or project. There are no global flat queries — except `project find`, which is unscoped because projects are the root resource.
 
 ## Authentication
 
@@ -111,6 +111,7 @@ Plural aliases exist for listing: `plnk boards --project X`, `plnk cards --list 
 plnk card create --list <listId> --title "Fix auth"
 plnk card update <cardId> --description @spec.md
 plnk card move <cardId> --to-list <listId> --position top
+plnk card move <cardId> --to-board <boardId> --to-list <listId>   # across boards
 plnk card archive <cardId>
 ```
 
@@ -222,8 +223,9 @@ plnk card create --help --output json
 
 - **IDs are opaque strings.** Pass them through as-is. Never parse or cast to integers.
 - **`get` requires an ID.** Never pass a name to `get`. Use `find` for name-based search.
-- **`find` requires a scope.** Always provide `--list`, `--board`, or `--project`.
+- **`find` requires a scope** — `--list`, `--board`, or `--project` — except `project find`, which has no parent and takes `--name` only.
 - **`find` returns collections.** Multiple results are expected, not errors.
+- **No standalone `get` for task/comment/label.** These live inside a parent; read via `task list --card`, `comment list --card`, `label list --board`, or `card snapshot` / `board snapshot`.
 - **stdout = data, stderr = logs.** Verbose logging (`-v`) never corrupts pipeable output.
 
 ## Additional Resources
