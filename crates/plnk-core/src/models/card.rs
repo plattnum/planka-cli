@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::ResourceId;
+use super::common::null_as_default;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -11,6 +12,11 @@ pub struct Card {
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
+    /// Planka sets `position` to `null` when a card is archived (moved to
+    /// a list of `type: archive`), since archived cards no longer carry
+    /// an ordering within their list. Default to `0.0` on null so archived
+    /// cards can still be deserialized and acted on (moved, deleted, etc.).
+    #[serde(default, deserialize_with = "null_as_default")]
     pub position: f64,
     #[serde(default)]
     pub due_date: Option<String>,
