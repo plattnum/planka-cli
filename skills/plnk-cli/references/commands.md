@@ -32,6 +32,7 @@ Read-only. No create/update/delete.
 ```bash
 plnk project list
 plnk project get <projectId>
+plnk project find --name <name>
 plnk project create --name <name>
 plnk project update <projectId> --name <name>
 plnk project delete <projectId> [--yes]
@@ -39,6 +40,7 @@ plnk project delete <projectId> [--yes]
 
 - `update` requires at least one mutable field.
 - `delete` prompts for confirmation unless `--yes`.
+- `find` is unscoped for projects only — they are the root resource. All other `find` commands require a parent scope.
 
 ## Board
 

@@ -26,6 +26,9 @@ pub trait UserApi {
 pub trait ProjectApi {
     async fn list_projects(&self) -> Result<Vec<Project>, PlankaError>;
     async fn get_project(&self, id: &str) -> Result<Project, PlankaError>;
+    /// Find projects by name. Unscoped — projects are the root resource
+    /// and have no parent to scope against. Uses three-tier name matching.
+    async fn find_projects(&self, name: &str) -> Result<Vec<Project>, PlankaError>;
     async fn create_project(&self, params: CreateProject) -> Result<Project, PlankaError>;
     async fn update_project(&self, id: &str, params: UpdateProject)
     -> Result<Project, PlankaError>;

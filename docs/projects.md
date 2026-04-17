@@ -18,6 +18,15 @@ plnk project get <projectId>
 plnk project get 123 --output json
 ```
 
+### Find projects by name
+
+```bash
+plnk project find --name "Platform"
+plnk project find --name platform --output json
+```
+
+Uses three-tier matching (exact case-sensitive → case-insensitive → substring); stops at the first tier with results. Unlike every other `find` command, `project find` takes no parent scope because projects are the root resource.
+
 ### Create a project
 
 ```bash
@@ -54,9 +63,7 @@ plnk project list --output json
   "data": [
     {
       "id": "123",
-      "name": "Platform",
-      "createdAt": "2026-04-14T12:00:00Z",
-      "updatedAt": null
+      "name": "Platform"
     }
   ],
   "meta": {
@@ -67,7 +74,7 @@ plnk project list --output json
 
 ## Full field output
 
-By default, table and JSON output shows trimmed fields (id, name). Use `--full` to include all fields:
+By default, JSON output is a strict projection of the full wire format to a curated set of fields (for projects: `id`, `name`). Field names and types match `--full` exactly — trimmed is a subset, never a translation. Use `--full` to include every field Planka returns:
 
 ```bash
 plnk project list --full

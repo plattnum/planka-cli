@@ -21,6 +21,10 @@ pub async fn execute(
             let project = client.get_project(&id).await?;
             render_item(&project, format, full);
         }
+        crate::app::ProjectAction::Find { name } => {
+            let projects = client.find_projects(&name).await?;
+            render_collection(&projects, format, full);
+        }
         crate::app::ProjectAction::Create { name } => {
             let project = client
                 .create_project(CreateProject {

@@ -40,6 +40,12 @@ pub fn match_by_name<'a, T: Named>(items: &'a [T], query: &str) -> Vec<&'a T> {
 
 // Implement Named for domain models that support find operations.
 
+impl Named for crate::models::Project {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 impl Named for crate::models::Board {
     fn name(&self) -> &str {
         &self.name

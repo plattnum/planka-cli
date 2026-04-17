@@ -67,6 +67,12 @@ impl ProjectApi for PlankaClientV1 {
         Ok(resp.item)
     }
 
+    async fn find_projects(&self, name: &str) -> Result<Vec<Project>, PlankaError> {
+        let projects = self.list_projects().await?;
+        let matched = match_by_name(&projects, name);
+        Ok(matched.into_iter().cloned().collect())
+    }
+
     async fn create_project(&self, params: CreateProject) -> Result<Project, PlankaError> {
         let resp: ItemResponse<Project> = self.http.post("/api/projects", &params).await?;
         Ok(resp.item)

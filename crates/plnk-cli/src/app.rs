@@ -212,6 +212,12 @@ pub enum ProjectAction {
         /// Project ID
         id: String,
     },
+    /// Find projects by name (unscoped — projects are the root resource)
+    Find {
+        /// Project name to search for
+        #[arg(long)]
+        name: String,
+    },
     /// Create a new project
     Create {
         /// Project name

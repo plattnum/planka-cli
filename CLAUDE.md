@@ -57,10 +57,11 @@ cargo run -- --help               # run the CLI
 - **Hierarchy:** `project -> board -> list -> card -> task/comment`
 - **IDs are opaque strings:** `type ResourceId = String;` — no parsing, no i64, no u32
 - **`get` = ID only, `find` = scoped search** — never mix. `get` with a non-ID must fail validation, not search.
-- **All searches must be scoped** — no global flat queries. `find` requires `--list`, `--board`, or `--project`.
+- **All searches must be scoped** — no global flat queries. `find` requires `--list`, `--board`, or `--project`. Sole exception: `project find` is unscoped because projects are the root resource and have no parent.
 - **Three-tier matching:** exact case-sensitive -> case-insensitive -> substring. Stop at first tier with results.
 - **Traits define API capabilities** — `ProjectApi`, `BoardApi`, `CardApi`, etc. CLI depends on traits, not implementations. Today's impl is `PlankaClientV1`.
 - **Domain models own the truth** — API response structs (private) map to domain models (public). API wire format changes stay isolated.
+- **JSON output = strict projection of serde** — trimmed JSON contains a subset of the full serde representation with identical keys, types, and nulls. Never translate field names or coerce types for output. `Tabular::trimmed_columns` returns `(serde_field, display_label)` pairs; labels exist for tables/markdown only and must never leak into JSON.
 - **Errors are data** — `PlankaError` enum with typed variants, exit codes, and JSON-renderable error types. No `unwrap()` in library code. No `panic!` outside tests.
 - **Stdout = data, stderr = logs/errors.** Always.
 - **No `anyhow`** — we need typed errors for exit codes and structured JSON output.

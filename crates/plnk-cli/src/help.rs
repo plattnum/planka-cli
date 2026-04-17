@@ -297,6 +297,7 @@ fn get_examples(resource: &str, action: &str) -> Vec<String> {
         ("project", "list") => vec!["plnk project list".into()],
         ("project", "get") => vec!["plnk project get 123".into()],
         ("project", "create") => vec!["plnk project create --name 'Platform'".into()],
+        ("project", "find") => vec!["plnk project find --name 'Platform'".into()],
         ("project", "update") => vec!["plnk project update 123 --name 'Platform Core'".into()],
         ("project", "delete") => vec!["plnk project delete 123".into()],
 
