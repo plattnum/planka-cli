@@ -604,11 +604,33 @@ impl AttachmentApi for PlankaClientV1 {
                     source: e,
                 })?;
 
-        let part = reqwest::multipart::Part::bytes(file_bytes).file_name(file_name.clone());
+        // Two quirks of Planka's Sails/skipper multipart body parser to match:
+        //
+        // 1. Text fields MUST precede the file field. skipper consumes text fields
+        //    only up to the first file part, then treats the rest of the form as
+        //    file data. If `type` and `name` arrive after `file`, they are silently
+        //    dropped and the request fails with a 400 "missing/invalid parameters".
+        //    (curl happens to send text-before-file by default, which is why curl
+        //    uploads work while a naive reqwest upload does not.)
+        //
+        // 2. The file part must carry an explicit Content-Type. reqwest's
+        //    Part::bytes() does NOT set one by default; we derive it from the
+        //    file extension, falling back to application/octet-stream.
+        let mime = mime_guess::from_path(file_path)
+            .first_or_octet_stream()
+            .essence_str()
+            .to_string();
+        let part = reqwest::multipart::Part::bytes(file_bytes)
+            .file_name(file_name.clone())
+            .mime_str(&mime)
+            .map_err(|e| PlankaError::ApiError {
+                status: 0,
+                message: format!("Invalid MIME type '{mime}': {e}"),
+            })?;
         let form = reqwest::multipart::Form::new()
-            .part("file", part)
             .text("type", "file")
-            .text("name", file_name);
+            .text("name", file_name)
+            .part("file", part);
 
         let resp: ItemResponse<Attachment> = self
             .http
