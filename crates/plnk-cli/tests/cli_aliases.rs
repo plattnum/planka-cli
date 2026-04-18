@@ -1,5 +1,5 @@
 use assert_cmd::Command;
-use predicates::prelude::*;
+use serde_json::Value;
 
 const TEST_SERVER: &str = "http://storm-front:3002";
 const TEST_TOKEN: &str = "tNub244N_MBnBqhLH7PE2fjwQD9w2w69t6f3uCrPM";
@@ -16,6 +16,69 @@ fn plnk_authed() -> Command {
     cmd.env("PLANKA_SERVER", TEST_SERVER);
     cmd.env("PLANKA_TOKEN", TEST_TOKEN);
     cmd
+}
+
+fn run_json(args: &[&str]) -> Value {
+    let output = plnk_authed()
+        .args(args)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    serde_json::from_slice(&output).unwrap()
+}
+
+fn first_id(data: &Value) -> String {
+    data["data"]
+        .as_array()
+        .and_then(|items| items.first())
+        .and_then(|item| item.get("id"))
+        .and_then(Value::as_str)
+        .unwrap()
+        .to_string()
+}
+
+fn current_board_id() -> String {
+    let boards = run_json(&[
+        "board",
+        "list",
+        "--project",
+        TEST_PROJECT,
+        "--output",
+        "json",
+    ]);
+    first_id(&boards)
+}
+
+fn current_list_id() -> String {
+    let board_id = current_board_id();
+    let lists = run_json(&["list", "list", "--board", &board_id, "--output", "json"]);
+    first_id(&lists)
+}
+
+fn current_card_id() -> String {
+    let boards = run_json(&[
+        "board",
+        "list",
+        "--project",
+        TEST_PROJECT,
+        "--output",
+        "json",
+    ]);
+    for board in boards["data"].as_array().unwrap() {
+        let board_id = board["id"].as_str().unwrap();
+        let snapshot = run_json(&["board", "snapshot", board_id, "--output", "json"]);
+        if let Some(card_id) = snapshot["data"]["included"]["cards"]
+            .as_array()
+            .and_then(|cards| cards.first())
+            .and_then(|card| card.get("id"))
+            .and_then(Value::as_str)
+        {
+            return card_id.to_string();
+        }
+    }
+    panic!("expected at least one card in project {TEST_PROJECT}");
 }
 
 // ─── Alias parity: boards ───────────────────────────────────────────
@@ -53,64 +116,61 @@ fn boards_alias_json_matches_canonical() {
 // ─── Alias parity: lists ────────────────────────────────────────────
 
 #[test]
-fn lists_alias_works() {
-    // m-4 board has known lists
-    let board_id = "1753741391671854585";
-    plnk_authed()
-        .args(["lists", "--board", board_id, "--output", "json"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("\"success\": true"));
+fn lists_alias_json_matches_canonical() {
+    let board_id = current_board_id();
+
+    let canonical = run_json(&["list", "list", "--board", &board_id, "--output", "json"]);
+    let alias = run_json(&["lists", "--board", &board_id, "--output", "json"]);
+
+    assert_eq!(canonical, alias);
 }
 
 // ─── Alias parity: cards ────────────────────────────────────────────
 
 #[test]
-fn cards_alias_works() {
-    // In Progress list on m-4 board
-    let list_id = "1753741392158393855";
-    plnk_authed()
-        .args(["cards", "--list", list_id, "--output", "json"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("\"success\": true"));
+fn cards_alias_json_matches_canonical() {
+    let list_id = current_list_id();
+
+    let canonical = run_json(&["card", "list", "--list", &list_id, "--output", "json"]);
+    let alias = run_json(&["cards", "--list", &list_id, "--output", "json"]);
+
+    assert_eq!(canonical, alias);
 }
 
 // ─── Alias parity: tasks ────────────────────────────────────────────
 
 #[test]
-fn tasks_alias_works() {
-    // PLNK-018 card
-    let card_id = "1753741396461749796";
-    plnk_authed()
-        .args(["tasks", "--card", card_id, "--output", "json"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("\"success\": true"));
+fn tasks_alias_json_matches_canonical() {
+    let card_id = current_card_id();
+
+    let canonical = run_json(&["task", "list", "--card", &card_id, "--output", "json"]);
+    let alias = run_json(&["tasks", "--card", &card_id, "--output", "json"]);
+
+    assert_eq!(canonical, alias);
 }
 
 // ─── Alias parity: comments ─────────────────────────────────────────
 
 #[test]
-fn comments_alias_works() {
-    let card_id = "1753741396461749796";
-    plnk_authed()
-        .args(["comments", "--card", card_id, "--output", "json"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("\"success\": true"));
+fn comments_alias_json_matches_canonical() {
+    let card_id = current_card_id();
+
+    let canonical = run_json(&["comment", "list", "--card", &card_id, "--output", "json"]);
+    let alias = run_json(&["comments", "--card", &card_id, "--output", "json"]);
+
+    assert_eq!(canonical, alias);
 }
 
 // ─── Alias parity: labels ───────────────────────────────────────────
 
 #[test]
-fn labels_alias_works() {
-    let board_id = "1753741391671854585";
-    plnk_authed()
-        .args(["labels", "--board", board_id, "--output", "json"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("\"success\": true"));
+fn labels_alias_json_matches_canonical() {
+    let board_id = current_board_id();
+
+    let canonical = run_json(&["label", "list", "--board", &board_id, "--output", "json"]);
+    let alias = run_json(&["labels", "--board", &board_id, "--output", "json"]);
+
+    assert_eq!(canonical, alias);
 }
 
 // ─── Aliases hidden from help ───────────────────────────────────────
