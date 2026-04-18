@@ -39,6 +39,9 @@ pub enum PlankaError {
     #[error("Resource not found: {resource_type} {id}")]
     NotFound { resource_type: String, id: String },
 
+    #[error("{message}")]
+    NotFoundMessage { message: String },
+
     /// HTTP 404 from the Planka server.
     ///
     /// Distinguished from `NotFound` because Planka also uses 404 to signal
@@ -98,7 +101,7 @@ impl PlankaError {
 
             Self::AuthenticationFailed { .. } => 3,
 
-            Self::NotFound { .. } | Self::Remote404 { .. } => 4,
+            Self::NotFound { .. } | Self::NotFoundMessage { .. } | Self::Remote404 { .. } => 4,
 
             Self::ApiError { .. } | Self::Http(_) => 5,
 
@@ -116,7 +119,9 @@ impl PlankaError {
             Self::MissingRequiredOption { .. } => "MissingRequiredOption",
             Self::InvalidOptionValue { .. } | Self::Url(_) => "InvalidOptionValue",
             Self::MutuallyExclusiveOptions { .. } => "MutuallyExclusiveOptions",
-            Self::NotFound { .. } | Self::Remote404 { .. } => "ResourceNotFound",
+            Self::NotFound { .. } | Self::NotFoundMessage { .. } | Self::Remote404 { .. } => {
+                "ResourceNotFound"
+            }
             Self::AuthenticationFailed { .. } => "AuthenticationFailed",
             Self::ApiError { .. } | Self::Http(_) => "ApiError",
             Self::FileReadError { .. } | Self::Io(_) => "FileReadError",
@@ -190,6 +195,12 @@ mod tests {
         let err = PlankaError::NotFound {
             resource_type: "card".to_string(),
             id: "1234".to_string(),
+        };
+        assert_eq!(err.exit_code(), 4);
+        assert_eq!(err.error_type(), "ResourceNotFound");
+
+        let err = PlankaError::NotFoundMessage {
+            message: "No label matching 'urgent' was found on this board.".to_string(),
         };
         assert_eq!(err.exit_code(), 4);
         assert_eq!(err.error_type(), "ResourceNotFound");

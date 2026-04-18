@@ -106,6 +106,7 @@ Shortcuts for listing resources. Hidden from `--help`, identical output to canon
 plnk boards --project <id>         # plnk board list --project <id>
 plnk lists --board <id>            # plnk list list --board <id>
 plnk cards --list <id>             # plnk card list --list <id>
+plnk cards --board <id>            # plnk card list --board <id>
 plnk tasks --card <id>             # plnk task list --card <id>
 plnk comments --card <id>          # plnk comment list --card <id>
 plnk labels --board <id>           # plnk label list --board <id>
@@ -122,6 +123,8 @@ plnk project list
 plnk board list --project <projectId>
 plnk list list --board <boardId>
 plnk card list --list <listId>
+plnk card list --board <boardId>
+plnk card list --board <boardId> --label <labelId|name>
 
 # Create a card
 plnk card create --list <listId> --title "Fix auth bug"
@@ -134,6 +137,13 @@ pbpaste | plnk card update <cardId> --description -
 
 # Find cards across a board
 plnk card find --board <boardId> --title "auth"
+
+# Find cards on a board by label only
+plnk card find --board <boardId> --label "urgent"
+
+# Label names are board-scoped; if a name is ambiguous, use the label ID instead
+plnk label list --board <boardId>
+plnk card list --board <boardId> --label <labelId>
 
 # Find a project by name (the only unscoped find)
 plnk project find --name "platform"

@@ -324,12 +324,18 @@ fn get_examples(resource: &str, action: &str) -> Vec<String> {
         ("list", "delete") => vec!["plnk list delete 789".into()],
 
         // Card
-        ("card", "list") => vec!["plnk card list --list 789".into()],
+        ("card", "list") => vec![
+            "plnk card list --list 789".into(),
+            "plnk card list --board 456 --label urgent".into(),
+            "plnk card list --board 456 --label 111".into(),
+        ],
         ("card", "get") => vec!["plnk card get 1234".into()],
         ("card", "snapshot") => vec!["plnk card snapshot 1234 --output json".into()],
         ("card", "find") => vec![
             "plnk card find --list 789 --title 'Fix auth'".into(),
             "plnk card find --board 456 --title 'Fix auth'".into(),
+            "plnk card find --board 456 --label urgent".into(),
+            "plnk card find --board 456 --label 111 --title 'Fix auth'".into(),
             "plnk card find --project 123 --title 'Fix auth'".into(),
         ],
         ("card", "create") => vec![

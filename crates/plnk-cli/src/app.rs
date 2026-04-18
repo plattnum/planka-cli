@@ -95,12 +95,18 @@ pub enum Command {
         #[arg(long)]
         board: String,
     },
-    /// Alias for `card list --list <id>`
+    /// Alias for `card list --list <id>` / `card list --board <id>`
     #[command(hide = true)]
     Cards {
         /// Parent list ID
-        #[arg(long)]
-        list: String,
+        #[arg(long, group = "scope")]
+        list: Option<String>,
+        /// Parent board ID
+        #[arg(long, group = "scope")]
+        board: Option<String>,
+        /// Board-scoped label ID or name (repeat for AND semantics; use an ID to avoid ambiguity)
+        #[arg(long = "label")]
+        label: Vec<String>,
     },
     /// Alias for `task list --card <id>`
     #[command(hide = true)]
@@ -378,11 +384,17 @@ pub struct CardCommand {
 
 #[derive(Subcommand)]
 pub enum CardAction {
-    /// List cards in a list
+    /// List cards in a list or across a board
     List {
         /// Parent list ID
-        #[arg(long)]
-        list: String,
+        #[arg(long, group = "scope")]
+        list: Option<String>,
+        /// Parent board ID
+        #[arg(long, group = "scope")]
+        board: Option<String>,
+        /// Board-scoped label ID or name (repeat for AND semantics; use an ID to avoid ambiguity)
+        #[arg(long = "label")]
+        label: Vec<String>,
     },
     /// Get a card by ID
     Get {
@@ -394,7 +406,7 @@ pub enum CardAction {
         /// Card ID
         id: String,
     },
-    /// Find cards by title within a scope
+    /// Find cards by title and/or label within a scope
     Find {
         /// Search within a list
         #[arg(long, group = "scope")]
@@ -407,7 +419,10 @@ pub enum CardAction {
         project: Option<String>,
         /// Card title to search for
         #[arg(long)]
-        title: String,
+        title: Option<String>,
+        /// Board-scoped label ID or name (repeat for AND semantics; use an ID to avoid ambiguity)
+        #[arg(long = "label")]
+        label: Vec<String>,
     },
     /// Create a new card
     Create {

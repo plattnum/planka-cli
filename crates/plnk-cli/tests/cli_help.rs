@@ -62,6 +62,58 @@ fn machine_help_board_list() {
 }
 
 #[test]
+fn machine_help_card_list_includes_label_option_and_examples() {
+    let output = plnk()
+        .args(["card", "list", "--help", "--output", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    let opts = &json["options"];
+    assert_eq!(opts["--label"]["type"], "string");
+    assert_eq!(opts["--label"]["required"], false);
+    assert!(
+        opts["--label"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("use an ID to avoid ambiguity")
+    );
+    assert!(
+        json["examples"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|example| example.as_str().unwrap().contains("--label"))
+    );
+}
+
+#[test]
+fn machine_help_card_find_includes_label_option_and_examples() {
+    let output = plnk()
+        .args(["card", "find", "--help", "--output", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    let opts = &json["options"];
+    assert_eq!(opts["--label"]["type"], "string");
+    assert_eq!(opts["--label"]["required"], false);
+    assert!(
+        json["examples"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|example| example.as_str().unwrap().contains("--label"))
+    );
+}
+
+#[test]
 fn machine_help_task_complete() {
     let output = plnk()
         .args(["task", "complete", "--help", "--output", "json"])

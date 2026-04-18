@@ -52,6 +52,8 @@ pub(crate) struct BoardSnapshotIncluded {
     #[serde(default)]
     pub labels: Vec<crate::models::Label>,
     #[serde(default)]
+    pub card_labels: Vec<crate::models::CardLabel>,
+    #[serde(default)]
     pub board_memberships: Vec<crate::models::BoardMembership>,
 }
 

@@ -4,11 +4,21 @@ Cards belong to a list. They are the primary work items in Planka. Cards have ta
 
 ## Commands
 
-### List cards in a list
+### List cards in a list or across a board
 
 ```bash
 plnk card list --list <listId>
+plnk card list --board <boardId>
 plnk cards --list <listId>                  # alias
+plnk cards --board <boardId>                # alias
+```
+
+Filter by one or more board-scoped labels with repeated `--label` flags. Repeated labels use AND semantics.
+
+```bash
+plnk card list --list <listId> --label <labelId>
+plnk card list --board <boardId> --label "Urgent"
+plnk card list --board <boardId> --label "Urgent" --label "Backend"
 ```
 
 ### Get a card by ID
@@ -19,20 +29,31 @@ plnk card get 1234 --output json
 plnk card get 1234 --full                   # include all fields
 ```
 
-### Find cards by title
+### Find cards by title and/or label
 
-Must be scoped to a list, board, or project. Uses three-tier matching: exact > case-insensitive > substring.
+Must be scoped to a list, board, or project. Title matching uses three-tier matching: exact > case-insensitive > substring.
 
 ```bash
 # Search within a list (fastest, fewest API calls)
 plnk card find --list <listId> --title "Fix auth"
+plnk card find --list <listId> --label "Urgent"
 
 # Search within a board (searches all lists)
 plnk card find --board <boardId> --title "Fix auth"
+plnk card find --board <boardId> --label "Urgent"
+plnk card find --board <boardId> --label "Urgent" --label "Backend" --title "Fix auth"
 
 # Search within a project (searches all boards and lists)
 plnk card find --project <projectId> --title "auth"
 ```
+
+Notes:
+- `--title` or `--label` is required.
+- `--label` is only supported with `--list` or `--board` scopes.
+- Label names are resolved within the owning board using exact > case-insensitive > substring matching.
+- If a label query matches more than one board label, the CLI tells you it matched multiple labels and prints the candidates.
+- If no board label matches, the CLI tells you no label matched in the current board scope.
+- If a name is ambiguous, use the label ID instead (`plnk label list --board <boardId>`).
 
 Always returns a collection. Multiple results are expected, not an error.
 

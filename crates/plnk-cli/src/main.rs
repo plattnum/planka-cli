@@ -177,12 +177,12 @@ async fn main() {
                 Err(e) => Err(e),
             }
         }
-        Command::Cards { list } => {
+        Command::Cards { list, board, label } => {
             match build_client(app.server.as_deref(), app.token.as_deref()) {
                 Ok(client) => {
                     commands::card::execute(
                         &client,
-                        app::CardAction::List { list },
+                        app::CardAction::List { list, board, label },
                         app.output,
                         app.yes,
                         app.full,

@@ -70,6 +70,14 @@ pub trait ListApi {
 #[async_trait]
 pub trait CardApi {
     async fn list_cards(&self, list_id: &str) -> Result<Vec<Card>, PlankaError>;
+    /// Enumerate cards from a board snapshot, optionally narrowed to a single
+    /// list and/or a set of labels that are AND-combined.
+    async fn list_cards_in_board(
+        &self,
+        board_id: &str,
+        list_id: Option<&str>,
+        label_ids: &[String],
+    ) -> Result<Vec<Card>, PlankaError>;
     async fn get_card(&self, id: &str) -> Result<Card, PlankaError>;
     /// Return the full `GET /api/cards/{id}` response verbatim. See
     /// `ProjectApi::get_project_snapshot` for rationale.

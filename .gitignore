@@ -17,3 +17,6 @@ Cargo.lock
 # OS
 .DS_Store
 Thumbs.db
+
+# Local scratch / generated inspection output
+/temp/

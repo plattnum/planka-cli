@@ -3,6 +3,7 @@
 //! `PlankaClientV1` wraps `HttpClient` and implements all resource API traits.
 //! This is the only concrete implementation — the CLI depends on traits, not this type.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use async_trait::async_trait;
@@ -36,6 +37,52 @@ impl PlankaClientV1 {
     pub fn new(http: HttpClient) -> Self {
         Self { http }
     }
+}
+
+fn filter_cards_from_board_snapshot(
+    cards: &[Card],
+    card_labels: &[CardLabel],
+    list_id: Option<&str>,
+    label_ids: &[String],
+) -> Vec<Card> {
+    let allowed_card_ids = if label_ids.is_empty() {
+        None
+    } else {
+        let mut allowed: Option<HashSet<&str>> = None;
+
+        for label_id in label_ids {
+            let matching: HashSet<&str> = card_labels
+                .iter()
+                .filter(|card_label| card_label.label_id == *label_id)
+                .map(|card_label| card_label.card_id.as_str())
+                .collect();
+
+            allowed = Some(match allowed {
+                Some(existing) => existing.intersection(&matching).copied().collect(),
+                None => matching,
+            });
+        }
+
+        allowed
+    };
+
+    cards
+        .iter()
+        .filter(|card| {
+            if let Some(target_list_id) = list_id
+                && card.list_id != target_list_id
+            {
+                return false;
+            }
+
+            if let Some(allowed) = &allowed_card_ids {
+                allowed.contains(card.id.as_str())
+            } else {
+                true
+            }
+        })
+        .cloned()
+        .collect()
 }
 
 // ── UserApi ──────────────────────────────────────────────────────────────
@@ -223,6 +270,21 @@ impl CardApi for PlankaClientV1 {
         Ok(resp.items)
     }
 
+    async fn list_cards_in_board(
+        &self,
+        board_id: &str,
+        list_id: Option<&str>,
+        label_ids: &[String],
+    ) -> Result<Vec<Card>, PlankaError> {
+        let resp: BoardSnapshot = self.http.get(&format!("/api/boards/{board_id}")).await?;
+        Ok(filter_cards_from_board_snapshot(
+            &resp.included.cards,
+            &resp.included.card_labels,
+            list_id,
+            label_ids,
+        ))
+    }
+
     async fn get_card(&self, id: &str) -> Result<Card, PlankaError> {
         let resp: ItemResponse<Card> = self.http.get(&format!("/api/cards/{id}")).await?;
         Ok(resp.item)
@@ -240,17 +302,14 @@ impl CardApi for PlankaClientV1 {
             }
             FindScope::Board(board_id) => {
                 debug!("Finding cards in board {board_id}");
-                let resp: BoardSnapshot = self.http.get(&format!("/api/boards/{board_id}")).await?;
-                resp.included.cards
+                self.list_cards_in_board(&board_id, None, &[]).await?
             }
             FindScope::Project(project_id) => {
                 debug!("Finding cards across project {project_id}");
                 let boards = self.list_boards(&project_id).await?;
                 let mut all_cards = Vec::new();
                 for board in &boards {
-                    let resp: BoardSnapshot =
-                        self.http.get(&format!("/api/boards/{}", board.id)).await?;
-                    all_cards.extend(resp.included.cards);
+                    all_cards.extend(self.list_cards_in_board(&board.id, None, &[]).await?);
                 }
                 all_cards
             }
@@ -764,5 +823,121 @@ impl MembershipApi for PlankaClientV1 {
         self.http
             .delete(&format!("/api/project-managers/{id}"))
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::filter_cards_from_board_snapshot;
+    use crate::models::{Card, CardLabel};
+
+    fn card(id: &str, list_id: &str, name: &str) -> Card {
+        Card {
+            id: id.to_string(),
+            list_id: list_id.to_string(),
+            board_id: "board-1".to_string(),
+            name: name.to_string(),
+            description: None,
+            position: 65_536.0,
+            due_date: None,
+            is_due_completed: None,
+            is_closed: false,
+            is_subscribed: false,
+            creator_user_id: None,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: None,
+        }
+    }
+
+    fn card_label(card_id: &str, label_id: &str) -> CardLabel {
+        CardLabel {
+            id: format!("{card_id}-{label_id}"),
+            card_id: card_id.to_string(),
+            label_id: label_id.to_string(),
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn snapshot_filter_by_single_label() {
+        let cards = vec![
+            card("card-1", "list-a", "One"),
+            card("card-2", "list-a", "Two"),
+            card("card-3", "list-b", "Three"),
+        ];
+        let card_labels = vec![
+            card_label("card-1", "label-red"),
+            card_label("card-2", "label-blue"),
+            card_label("card-3", "label-red"),
+        ];
+
+        let filtered =
+            filter_cards_from_board_snapshot(&cards, &card_labels, None, &["label-red".into()]);
+
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|card| card.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["card-1", "card-3"]
+        );
+    }
+
+    #[test]
+    fn snapshot_filter_by_multiple_labels_uses_and_semantics() {
+        let cards = vec![
+            card("card-1", "list-a", "One"),
+            card("card-2", "list-a", "Two"),
+            card("card-3", "list-b", "Three"),
+        ];
+        let card_labels = vec![
+            card_label("card-1", "label-red"),
+            card_label("card-1", "label-blue"),
+            card_label("card-2", "label-red"),
+            card_label("card-3", "label-blue"),
+        ];
+
+        let filtered = filter_cards_from_board_snapshot(
+            &cards,
+            &card_labels,
+            None,
+            &["label-red".into(), "label-blue".into()],
+        );
+
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|card| card.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["card-1"]
+        );
+    }
+
+    #[test]
+    fn snapshot_filter_applies_list_scope_after_label_filter() {
+        let cards = vec![
+            card("card-1", "list-a", "One"),
+            card("card-2", "list-a", "Two"),
+            card("card-3", "list-b", "Three"),
+        ];
+        let card_labels = vec![
+            card_label("card-1", "label-red"),
+            card_label("card-3", "label-red"),
+        ];
+
+        let filtered = filter_cards_from_board_snapshot(
+            &cards,
+            &card_labels,
+            Some("list-a"),
+            &["label-red".into()],
+        );
+
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|card| card.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["card-1"]
+        );
     }
 }
