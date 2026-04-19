@@ -123,8 +123,11 @@ impl HttpClient {
             retry_attempts > 0 && self.transport.retries_allowed_for_method(method);
 
         if !retryable_method {
-            let _guard = self.transport.acquire().await?;
-            return request.send().await.map_err(PlankaError::from);
+            let send_result = {
+                let _guard = self.transport.acquire().await?;
+                request.send().await
+            };
+            return send_result.map_err(PlankaError::from);
         }
 
         let template = request.try_clone().ok_or_else(|| PlankaError::ApiError {
@@ -139,8 +142,11 @@ impl HttpClient {
                 message: format!("Unable to clone {method} request for retries: {path}"),
             })?;
 
-            let _guard = self.transport.acquire().await?;
-            match current_request.send().await {
+            let send_result = {
+                let _guard = self.transport.acquire().await?;
+                current_request.send().await
+            };
+            match send_result {
                 Ok(response) => {
                     let status = response.status();
                     if retry_number < retry_attempts

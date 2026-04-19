@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use plnk_core::client::HttpClient;
 use plnk_core::error::PlankaError;
@@ -207,7 +207,68 @@ async fn get_429_honors_retry_after() {
 
     assert_eq!(result.id, "after-wait");
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
-    assert!(start.elapsed() >= std::time::Duration::from_millis(950));
+    assert!(start.elapsed() >= Duration::from_millis(950));
+}
+
+#[tokio::test]
+async fn retry_backoff_releases_concurrency_permit_between_attempts() {
+    let server = MockServer::start().await;
+    let retry_attempts = Arc::new(AtomicUsize::new(0));
+
+    Mock::given(method("GET"))
+        .and(path("/api/retry-after-blocking"))
+        .respond_with(FlakyResponder {
+            attempts: Arc::clone(&retry_attempts),
+            first: ResponseTemplate::new(429).insert_header("Retry-After", "1"),
+            rest: ResponseTemplate::new(200).set_body_json(TestItem {
+                id: "retry-finished".to_string(),
+                name: "done".to_string(),
+            }),
+        })
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/fast"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(TestItem {
+            id: "fast".to_string(),
+            name: "fast".to_string(),
+        }))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client_for_with_policy(
+        &server,
+        TransportPolicy {
+            max_in_flight: 1,
+            retry_jitter: false,
+            retry_base_delay_ms: 10,
+            retry_max_delay_ms: 10,
+            ..TransportPolicy::default()
+        },
+    );
+
+    let retry_client = client.clone();
+    let slow = tokio::spawn(async move {
+        let _: TestItem = retry_client.get("/api/retry-after-blocking").await.unwrap();
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let start = Instant::now();
+    let fast: TestItem = client.get("/api/fast").await.unwrap();
+    let elapsed = start.elapsed();
+
+    slow.await.unwrap();
+
+    assert_eq!(fast.id, "fast");
+    assert_eq!(retry_attempts.load(Ordering::SeqCst), 2);
+    assert!(
+        elapsed < Duration::from_millis(500),
+        "fast request waited too long for a permit during retry backoff: {elapsed:?}"
+    );
 }
 
 // ─── POST ────────────────────────────────────────────────────────────
