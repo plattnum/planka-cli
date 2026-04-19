@@ -86,6 +86,13 @@ impl TransportPolicy {
             });
         }
 
+        if self.retry_base_delay_ms == 0 {
+            return Err(PlankaError::InvalidOptionValue {
+                field: "transport.retry_base_delay_ms".to_string(),
+                message: "must be at least 1".to_string(),
+            });
+        }
+
         if self.retry_max_delay_ms < self.retry_base_delay_ms {
             return Err(PlankaError::InvalidOptionValue {
                 field: "transport.retry_max_delay_ms".to_string(),
@@ -408,6 +415,18 @@ mod tests {
         assert_eq!(err.error_type(), "InvalidOptionValue");
         assert!(err.to_string().contains("burst_size"));
         assert!(err.to_string().contains("rate_limit_per_second"));
+    }
+
+    #[test]
+    fn policy_rejects_zero_retry_base_delay() {
+        let policy = TransportPolicy {
+            retry_base_delay_ms: 0,
+            ..TransportPolicy::default()
+        };
+
+        let err = policy.validate().unwrap_err();
+        assert_eq!(err.error_type(), "InvalidOptionValue");
+        assert!(err.to_string().contains("retry_base_delay_ms"));
     }
 
     #[test]

@@ -161,7 +161,7 @@ Current CLI/env/config validation:
 - `rate_limit`: `1..=1000`
 - `burst`: `1..=1000` and requires `rate_limit` to also be set
 - `retry_attempts`: `0..=10`
-- `retry_base_delay_ms`: `1..=60000`
+- `retry_base_delay_ms`: `1..=60000` (library invariant too, not just CLI validation)
 - `retry_max_delay_ms`: `1..=60000`
 - `--no-retry` forces `retry_attempts = 0`
 
