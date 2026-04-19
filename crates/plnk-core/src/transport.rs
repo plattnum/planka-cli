@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
 use reqwest::StatusCode;
@@ -10,6 +11,24 @@ use tracing::{debug, trace};
 use crate::error::PlankaError;
 
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(30);
+static RETRY_JITTER_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn jitter_offset(spread: u64) -> u64 {
+    if spread == 0 {
+        return 0;
+    }
+
+    let counter = RETRY_JITTER_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mixed = splitmix64(counter);
+    mixed % (spread.saturating_add(1))
+}
+
+fn splitmix64(mut value: u64) -> u64 {
+    value = value.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    value ^ (value >> 31)
+}
 
 /// Shared HTTP transport policy for the entire SDK/CLI stack.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,13 +146,8 @@ impl TransportPolicy {
         if self.retry_jitter {
             let lower_bound = capped_ms / 2;
             let spread = capped_ms.saturating_sub(lower_bound);
-            let nanos = u64::from(
-                SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .subsec_nanos(),
-            );
-            Duration::from_millis(lower_bound + (nanos % (spread.saturating_add(1))))
+            let offset = jitter_offset(spread);
+            Duration::from_millis(lower_bound + offset)
         } else {
             Duration::from_millis(capped_ms)
         }
@@ -495,6 +509,26 @@ mod tests {
         let delay = runtime.retry_delay_for_attempt(1);
         assert!(delay >= Duration::from_millis(400));
         assert!(delay <= Duration::from_millis(800));
+    }
+
+    #[test]
+    fn jitter_uses_decorrelated_counter_seed() {
+        let runtime = TransportRuntime::new(TransportPolicy {
+            retry_base_delay_ms: 800,
+            retry_max_delay_ms: 800,
+            retry_jitter: true,
+            ..TransportPolicy::default()
+        })
+        .unwrap();
+
+        let delays = (0..8)
+            .map(|_| runtime.retry_delay_for_attempt(1))
+            .collect::<std::collections::HashSet<_>>();
+
+        assert!(
+            delays.len() > 1,
+            "jitter produced no variation across attempts"
+        );
     }
 
     #[test]
