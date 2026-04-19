@@ -1,0 +1,32 @@
+[package]
+name = "plnk-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Experimental TUI for Planka with websocket spike"
+
+[[bin]]
+name = "plnk-tui"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
+thiserror = { workspace = true }
+url = { workspace = true }
+rpassword = { workspace = true }
+ratatui = "0.30"
+crossterm = "0.29"
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
+
+[lints]
+workspace = true

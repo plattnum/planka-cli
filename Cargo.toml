@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/plnk-core", "crates/plnk-cli"]
+members = ["crates/plnk-core", "crates/plnk-cli", "crates/plnk-tui"]
 resolver = "3"
 
 [workspace.package]
