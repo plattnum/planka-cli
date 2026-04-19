@@ -5,7 +5,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
 use clap::Parser;
-use crossterm::event::{self, Event as CEvent, KeyCode, KeyEventKind};
+use crossterm::event::{self, Event as CEvent, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -506,6 +506,12 @@ enum TreeKind {
     Card,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PaneFocus {
+    Explorer,
+    Details,
+}
+
 #[derive(Debug, Clone)]
 struct TreeRow {
     key: TreeKey,
@@ -535,6 +541,8 @@ struct AppState {
     loading_boards: HashSet<String>,
     board_errors: HashMap<String, String>,
     selected: Option<TreeKey>,
+    focus: PaneFocus,
+    detail_scroll: usize,
     show_debug_log: bool,
 }
 
@@ -593,6 +601,8 @@ impl AppState {
             loading_boards,
             board_errors,
             selected,
+            focus: PaneFocus::Explorer,
+            detail_scroll: 0,
             show_debug_log: false,
         }
     }
@@ -766,6 +776,47 @@ impl AppState {
             .unwrap_or(0)
     }
 
+    fn set_selected(&mut self, selected: TreeKey) {
+        let changed = self.selected.as_ref() != Some(&selected);
+        self.selected = Some(selected);
+        if changed {
+            self.detail_scroll = 0;
+        }
+    }
+
+    fn toggle_focus(&mut self) {
+        self.focus = match self.focus {
+            PaneFocus::Explorer => PaneFocus::Details,
+            PaneFocus::Details => PaneFocus::Explorer,
+        };
+    }
+
+    fn focus_explorer(&mut self) {
+        self.focus = PaneFocus::Explorer;
+    }
+
+    fn focus_details(&mut self) {
+        self.focus = PaneFocus::Details;
+    }
+
+    fn scroll_details_by(&mut self, delta: i32) {
+        let max_scroll = build_detail_lines(self).len().saturating_sub(1);
+        let step = usize::try_from(delta.unsigned_abs()).unwrap_or(usize::MAX);
+        if delta.is_negative() {
+            self.detail_scroll = self.detail_scroll.saturating_sub(step);
+        } else {
+            self.detail_scroll = self.detail_scroll.saturating_add(step).min(max_scroll);
+        }
+    }
+
+    fn scroll_details_to_top(&mut self) {
+        self.detail_scroll = 0;
+    }
+
+    fn scroll_details_to_bottom(&mut self) {
+        self.detail_scroll = build_detail_lines(self).len().saturating_sub(1);
+    }
+
     fn select_relative(&mut self, delta: isize) {
         let rows = self.visible_rows();
         if rows.is_empty() {
@@ -780,7 +831,7 @@ impl AppState {
             current.saturating_add(delta.unsigned_abs()).min(last)
         };
 
-        self.selected = Some(rows[next].key.clone());
+        self.set_selected(rows[next].key.clone());
     }
 
     fn expand_or_descend(&mut self) -> Option<String> {
@@ -797,7 +848,7 @@ impl AppState {
                 if row.has_children && !row.expanded {
                     self.expanded_projects.insert(project_id.clone());
                 } else if let Some(next_row) = rows.get(index + 1) {
-                    self.selected = Some(next_row.key.clone());
+                    self.set_selected(next_row.key.clone());
                 }
             }
             TreeKey::Board(board_id) => {
@@ -817,14 +868,14 @@ impl AppState {
                 } else if row.has_children && !row.expanded {
                     self.expanded_boards.insert(board_id.clone());
                 } else if let Some(next_row) = rows.get(index + 1) {
-                    self.selected = Some(next_row.key.clone());
+                    self.set_selected(next_row.key.clone());
                 }
             }
             TreeKey::List(list_id) => {
                 if row.has_children && !row.expanded {
                     self.expanded_lists.insert(list_id.clone());
                 } else if let Some(next_row) = rows.get(index + 1) {
-                    self.selected = Some(next_row.key.clone());
+                    self.set_selected(next_row.key.clone());
                 }
             }
             TreeKey::Card(_) => {}
@@ -850,19 +901,19 @@ impl AppState {
                 if row.expanded {
                     self.expanded_boards.remove(board_id);
                 } else if let Some(parent) = &row.parent {
-                    self.selected = Some(parent.clone());
+                    self.set_selected(parent.clone());
                 }
             }
             TreeKey::List(list_id) => {
                 if row.expanded {
                     self.expanded_lists.remove(list_id);
                 } else if let Some(parent) = &row.parent {
-                    self.selected = Some(parent.clone());
+                    self.set_selected(parent.clone());
                 }
             }
             TreeKey::Card(_) => {
                 if let Some(parent) = &row.parent {
-                    self.selected = Some(parent.clone());
+                    self.set_selected(parent.clone());
                 }
             }
         }
@@ -885,15 +936,39 @@ impl AppState {
         };
 
         match record.name.as_str() {
+            "boardUpdate" => self.apply_board_update(payload),
             "cardUpdate" | "cardCreate" => self.apply_card_upsert(payload),
             "cardDelete" => self.apply_card_delete(payload),
             "listUpdate" | "listCreate" => self.apply_list_upsert(payload),
             "listDelete" => self.apply_list_delete(payload),
+            "labelCreate" | "labelUpdate" => self.apply_label_upsert(payload),
+            "labelDelete" => self.apply_label_delete(payload),
+            "cardLabelCreate" => self.apply_card_label_create(payload),
+            "cardLabelDelete" => self.apply_card_label_delete(payload),
+            "cardMembershipCreate" => self.apply_card_membership_create(payload),
+            "cardMembershipDelete" => self.apply_card_membership_delete(payload),
             _ => return,
         }
 
         self.refresh_subscribed_board_cache();
         self.ensure_selected_visible();
+    }
+
+    fn apply_board_update(&mut self, payload: &Value) {
+        let item = event_item(payload);
+        let Some(board_id) = json_string(item, "id") else {
+            return;
+        };
+        let Some(board) = self.subscribed_board_mut() else {
+            return;
+        };
+        if board.id != board_id {
+            return;
+        }
+
+        if let Some(name) = json_string(item, "name") {
+            board.name = name.to_string();
+        }
     }
 
     fn apply_card_upsert(&mut self, payload: &Value) {
@@ -1073,6 +1148,171 @@ impl AppState {
         self.expanded_lists.remove(list_id);
     }
 
+    fn apply_label_upsert(&mut self, payload: &Value) {
+        let item = event_item(payload);
+        let Some(label_id) = json_string(item, "id") else {
+            return;
+        };
+        let Some(board) = self.subscribed_board_mut() else {
+            return;
+        };
+
+        let label_name = json_string(item, "name")
+            .map(ToOwned::to_owned)
+            .or_else(|| {
+                board
+                    .labels
+                    .iter()
+                    .find(|label| label.id == label_id)
+                    .map(|label| label.name.clone())
+            })
+            .unwrap_or_else(|| "Untitled label".to_string());
+        let label_color = match json_string_field(item, "color") {
+            JsonField::Value(value) => Some(value),
+            JsonField::Null => None,
+            JsonField::Missing => board
+                .labels
+                .iter()
+                .find(|label| label.id == label_id)
+                .and_then(|label| label.color.clone()),
+        };
+
+        if let Some(label) = board.labels.iter_mut().find(|label| label.id == label_id) {
+            label.name.clone_from(&label_name);
+            label.color.clone_from(&label_color);
+        } else {
+            board.labels.push(LabelSummary {
+                id: label_id.to_string(),
+                name: label_name.clone(),
+                color: label_color.clone(),
+            });
+        }
+        board
+            .labels
+            .sort_by(|left, right| left.name.cmp(&right.name));
+
+        for list in &mut board.active_lists {
+            for card in &mut list.cards {
+                if let Some(label) = card.labels.iter_mut().find(|label| label.id == label_id) {
+                    label.name.clone_from(&label_name);
+                    label.color.clone_from(&label_color);
+                    card.labels
+                        .sort_by(|left, right| left.name.cmp(&right.name));
+                }
+            }
+        }
+    }
+
+    fn apply_label_delete(&mut self, payload: &Value) {
+        let item = event_item(payload);
+        let Some(label_id) = json_string(item, "id") else {
+            return;
+        };
+        let Some(board) = self.subscribed_board_mut() else {
+            return;
+        };
+        board.labels.retain(|label| label.id != label_id);
+        for list in &mut board.active_lists {
+            for card in &mut list.cards {
+                card.labels.retain(|label| label.id != label_id);
+            }
+        }
+    }
+
+    fn apply_card_label_create(&mut self, payload: &Value) {
+        let item = event_item(payload);
+        let Some(card_id) = json_string(item, "cardId") else {
+            return;
+        };
+        let Some(label_id) = json_string(item, "labelId") else {
+            return;
+        };
+        let Some(board) = self.subscribed_board_mut() else {
+            return;
+        };
+        let Some(label) = board
+            .labels
+            .iter()
+            .find(|label| label.id == label_id)
+            .cloned()
+        else {
+            return;
+        };
+        let Some(card) = find_card_mut(board, card_id) else {
+            return;
+        };
+        if card.labels.iter().any(|existing| existing.id == label.id) {
+            return;
+        }
+        card.labels.push(label);
+        card.labels
+            .sort_by(|left, right| left.name.cmp(&right.name));
+    }
+
+    fn apply_card_label_delete(&mut self, payload: &Value) {
+        let item = event_item(payload);
+        let Some(card_id) = json_string(item, "cardId") else {
+            return;
+        };
+        let Some(label_id) = json_string(item, "labelId") else {
+            return;
+        };
+        let Some(board) = self.subscribed_board_mut() else {
+            return;
+        };
+        let Some(card) = find_card_mut(board, card_id) else {
+            return;
+        };
+        card.labels.retain(|label| label.id != label_id);
+    }
+
+    fn apply_card_membership_create(&mut self, payload: &Value) {
+        let item = event_item(payload);
+        let Some(card_id) = json_string(item, "cardId") else {
+            return;
+        };
+        let Some(user_id) = json_string(item, "userId") else {
+            return;
+        };
+        let Some(board) = self.subscribed_board_mut() else {
+            return;
+        };
+        let Some(user) = board
+            .members
+            .iter()
+            .find(|member| member.id == user_id)
+            .cloned()
+        else {
+            return;
+        };
+        let Some(card) = find_card_mut(board, card_id) else {
+            return;
+        };
+        if card.assignees.iter().any(|existing| existing.id == user.id) {
+            return;
+        }
+        card.assignees.push(user);
+        card.assignees
+            .sort_by(|left, right| left.name.cmp(&right.name));
+    }
+
+    fn apply_card_membership_delete(&mut self, payload: &Value) {
+        let item = event_item(payload);
+        let Some(card_id) = json_string(item, "cardId") else {
+            return;
+        };
+        let Some(user_id) = json_string(item, "userId") else {
+            return;
+        };
+        let Some(board) = self.subscribed_board_mut() else {
+            return;
+        };
+        let Some(card) = find_card_mut(board, card_id) else {
+            return;
+        };
+        card.assignees.retain(|user| user.id != user_id);
+    }
+
     fn subscribed_board(&self) -> Option<&BoardSummary> {
         self.projects
             .iter()
@@ -1104,7 +1344,7 @@ impl AppState {
             .is_some_and(|selected| rows.iter().any(|row| &row.key == selected));
 
         if !selected_visible {
-            self.selected = Some(rows[0].key.clone());
+            self.set_selected(rows[0].key.clone());
         }
     }
 }
@@ -1731,6 +1971,16 @@ fn json_f64_field(value: &Value, key: &str) -> JsonField<f64> {
     }
 }
 
+fn find_card_mut<'a>(board: &'a mut BoardSummary, card_id: &str) -> Option<&'a mut CardSummary> {
+    for list in &mut board.active_lists {
+        if let Some(card) = list.cards.iter_mut().find(|card| card.id == card_id) {
+            return Some(card);
+        }
+    }
+
+    None
+}
+
 fn remove_card_from_board(board: &mut BoardSummary, card_id: &str) -> Option<CardSummary> {
     for list in &mut board.active_lists {
         if let Some(index) = list.cards.iter().position(|card| card.id == card_id) {
@@ -1833,15 +2083,54 @@ fn run_app(
             match event::read()? {
                 CEvent::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                    KeyCode::Down | KeyCode::Char('j') => app.select_relative(1),
-                    KeyCode::Up | KeyCode::Char('k') => app.select_relative(-1),
-                    KeyCode::Left | KeyCode::Char('h') => app.collapse_or_ascend(),
-                    KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter => {
-                        if let Some(board_id) = app.expand_or_descend() {
-                            spawn_board_loader(runtime, server, token, board_id, tx);
-                        }
+                    KeyCode::Tab | KeyCode::BackTab => app.toggle_focus(),
+                    KeyCode::Char('g') if app.focus == PaneFocus::Details => {
+                        app.scroll_details_to_top();
                     }
-                    KeyCode::Char('d' | 'D') => app.toggle_debug_log(),
+                    KeyCode::Char('G') if app.focus == PaneFocus::Details => {
+                        app.scroll_details_to_bottom();
+                    }
+                    KeyCode::PageDown if app.focus == PaneFocus::Details => {
+                        app.scroll_details_by(10);
+                    }
+                    KeyCode::PageUp if app.focus == PaneFocus::Details => {
+                        app.scroll_details_by(-10);
+                    }
+                    KeyCode::Char('d')
+                        if app.focus == PaneFocus::Details
+                            && key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        app.scroll_details_by(10);
+                    }
+                    KeyCode::Char('u')
+                        if app.focus == PaneFocus::Details
+                            && key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        app.scroll_details_by(-10);
+                    }
+                    KeyCode::Char('d' | 'D') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.toggle_debug_log();
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => match app.focus {
+                        PaneFocus::Explorer => app.select_relative(1),
+                        PaneFocus::Details => app.scroll_details_by(1),
+                    },
+                    KeyCode::Up | KeyCode::Char('k') => match app.focus {
+                        PaneFocus::Explorer => app.select_relative(-1),
+                        PaneFocus::Details => app.scroll_details_by(-1),
+                    },
+                    KeyCode::Left | KeyCode::Char('h') => match app.focus {
+                        PaneFocus::Explorer => app.collapse_or_ascend(),
+                        PaneFocus::Details => app.focus_explorer(),
+                    },
+                    KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter => match app.focus {
+                        PaneFocus::Explorer => {
+                            if let Some(board_id) = app.expand_or_descend() {
+                                spawn_board_loader(runtime, server, token, board_id, tx);
+                            }
+                        }
+                        PaneFocus::Details => app.focus_details(),
+                    },
                     _ => {}
                 },
                 _ => {}
@@ -1886,7 +2175,7 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
     ];
     frame.render_widget(
         Paragraph::new(header_lines)
-            .block(panel_block("session"))
+            .block(panel_block("session", false))
             .wrap(Wrap { trim: true }),
         chunks[0],
     );
@@ -1911,7 +2200,7 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
     }
 
     let tree = List::new(tree_items)
-        .block(panel_block("explorer"))
+        .block(panel_block("explorer", app.focus == PaneFocus::Explorer))
         .highlight_style(
             Style::default()
                 .bg(Color::Rgb(32, 46, 70))
@@ -1928,7 +2217,8 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
     let detail_lines = build_detail_lines(app);
     frame.render_widget(
         Paragraph::new(detail_lines)
-            .block(panel_block("details"))
+            .block(panel_block("details", app.focus == PaneFocus::Details))
+            .scroll((u16::try_from(app.detail_scroll).unwrap_or(u16::MAX), 0))
             .wrap(Wrap { trim: true }),
         right[0],
     );
@@ -1952,16 +2242,16 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
     ];
     frame.render_widget(
         Paragraph::new(live_lines)
-            .block(panel_block("live sync"))
+            .block(panel_block("live sync", false))
             .wrap(Wrap { trim: true }),
         right[1],
     );
 
     frame.render_widget(
         Paragraph::new(
-            "j/k move • h/l collapse/expand • → on unloaded board hydrates snapshot • D debug log • q quits",
+            "Tab switch pane • arrows = hjkl aliases • details: j/k or ↑/↓ scroll • PgUp/PgDn or Ctrl-u/Ctrl-d page • q quits",
         )
-        .block(panel_block("keys")),
+        .block(panel_block("keys", false)),
         chunks[2],
     );
 
@@ -2164,9 +2454,9 @@ fn build_list_detail(app: &AppState, list_id: &str) -> Vec<Line<'static>> {
                     Line::from(format!("list id: {}", list.id)),
                     Line::from(format!("board: {} [{}]", board.name, board.id)),
                     Line::from(format!("project: {} [{}]", project.name, project.id)),
-                    Line::from(format!("cards: {}", list.card_count)),
+                    Line::from(format!("card count: {}", list.card_count)),
                     Line::from(""),
-                    Line::from("cards:"),
+                    Line::from("cards in list:"),
                 ];
                 lines.extend(list.cards.iter().take(14).map(|card| {
                     let label_meta = if card.labels.is_empty() {
@@ -2288,17 +2578,25 @@ fn detail_title(kind: &str) -> Line<'static> {
     )])
 }
 
-fn panel_block(title: &str) -> Block<'static> {
+fn panel_block(title: &str, focused: bool) -> Block<'static> {
+    let border_style = if focused {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
     Block::default()
         .title(Span::styled(
             format!(" {title} "),
             Style::default()
-                .fg(Color::White)
+                .fg(if focused { Color::Cyan } else { Color::White })
                 .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(Color::DarkGray))
+        .border_style(border_style)
 }
 
 fn draw_debug_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &AppState) {
@@ -2314,7 +2612,7 @@ fn draw_debug_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &AppState
 
     frame.render_widget(Clear, popup);
     frame.render_widget(
-        List::new(debug_items).block(panel_block("websocket debug log • press D to close")),
+        List::new(debug_items).block(panel_block("websocket debug log • press D to close", false)),
         popup,
     );
 }
