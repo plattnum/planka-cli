@@ -1,9 +1,11 @@
+//! E2E tests: top-level command aliases produce identical output to the
+//! canonical resource/action form. Uses wiremock so tests run without a
+//! live Planka server.
+
 use assert_cmd::Command;
 use serde_json::Value;
-
-const TEST_SERVER: &str = "http://storm-front:3002";
-const TEST_TOKEN: &str = "tNub244N_MBnBqhLH7PE2fjwQD9w2w69t6f3uCrPM";
-const TEST_PROJECT: &str = "1753611015817266606";
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn plnk() -> Command {
     let mut cmd = Command::cargo_bin("plnk").unwrap();
@@ -11,15 +13,15 @@ fn plnk() -> Command {
     cmd
 }
 
-fn plnk_authed() -> Command {
+fn plnk_with_server(server_uri: &str) -> Command {
     let mut cmd = plnk();
-    cmd.env("PLANKA_SERVER", TEST_SERVER);
-    cmd.env("PLANKA_TOKEN", TEST_TOKEN);
+    cmd.env("PLANKA_SERVER", server_uri);
+    cmd.env("PLANKA_TOKEN", "test-api-key");
     cmd
 }
 
-fn run_json(args: &[&str]) -> Value {
-    let output = plnk_authed()
+fn run_json(server_uri: &str, args: &[&str]) -> Value {
+    let output = plnk_with_server(server_uri)
         .args(args)
         .assert()
         .success()
@@ -29,146 +31,232 @@ fn run_json(args: &[&str]) -> Value {
     serde_json::from_slice(&output).unwrap()
 }
 
-fn first_id(data: &Value) -> String {
-    data["data"]
-        .as_array()
-        .and_then(|items| items.first())
-        .and_then(|item| item.get("id"))
-        .and_then(Value::as_str)
-        .unwrap()
-        .to_string()
-}
-
-fn current_board_id() -> String {
-    let boards = run_json(&[
-        "board",
-        "list",
-        "--project",
-        TEST_PROJECT,
-        "--output",
-        "json",
-    ]);
-    first_id(&boards)
-}
-
-fn current_list_id() -> String {
-    let board_id = current_board_id();
-    let lists = run_json(&["list", "list", "--board", &board_id, "--output", "json"]);
-    first_id(&lists)
-}
-
-fn current_card_id() -> String {
-    let boards = run_json(&[
-        "board",
-        "list",
-        "--project",
-        TEST_PROJECT,
-        "--output",
-        "json",
-    ]);
-    for board in boards["data"].as_array().unwrap() {
-        let board_id = board["id"].as_str().unwrap();
-        let snapshot = run_json(&["board", "snapshot", board_id, "--output", "json"]);
-        if let Some(card_id) = snapshot["data"]["included"]["cards"]
-            .as_array()
-            .and_then(|cards| cards.first())
-            .and_then(|card| card.get("id"))
-            .and_then(Value::as_str)
-        {
-            return card_id.to_string();
-        }
-    }
-    panic!("expected at least one card in project {TEST_PROJECT}");
-}
-
 // ─── Alias parity: boards ───────────────────────────────────────────
 
-#[test]
-fn boards_alias_json_matches_canonical() {
-    let canonical = plnk_authed()
-        .args([
-            "board",
-            "list",
-            "--project",
-            TEST_PROJECT,
-            "--output",
-            "json",
-        ])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
+#[tokio::test]
+async fn boards_alias_json_matches_canonical() {
+    let server = MockServer::start().await;
 
-    let alias = plnk_authed()
-        .args(["boards", "--project", TEST_PROJECT, "--output", "json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
+    Mock::given(method("GET"))
+        .and(path("/api/projects/proj-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "item": {"id":"proj-1","name":"Test","createdAt":"2026-01-01T00:00:00Z","updatedAt":null},
+            "included": {
+                "boards": [{"id":"board-1","projectId":"proj-1","name":"Sprint","position":65536.0,"createdAt":"2026-01-01T00:00:00Z","updatedAt":null}],
+                "projectManagers": []
+            }
+        })))
+        .mount(&server)
+        .await;
 
-    let canonical_json: serde_json::Value = serde_json::from_slice(&canonical).unwrap();
-    let alias_json: serde_json::Value = serde_json::from_slice(&alias).unwrap();
-    assert_eq!(canonical_json, alias_json);
+    let canonical = run_json(
+        &server.uri(),
+        &["board", "list", "--project", "proj-1", "--output", "json"],
+    );
+    let alias = run_json(
+        &server.uri(),
+        &["boards", "--project", "proj-1", "--output", "json"],
+    );
+
+    assert_eq!(canonical, alias);
 }
 
 // ─── Alias parity: lists ────────────────────────────────────────────
 
-#[test]
-fn lists_alias_json_matches_canonical() {
-    let board_id = current_board_id();
+#[tokio::test]
+async fn lists_alias_json_matches_canonical() {
+    let server = MockServer::start().await;
 
-    let canonical = run_json(&["list", "list", "--board", &board_id, "--output", "json"]);
-    let alias = run_json(&["lists", "--board", &board_id, "--output", "json"]);
+    Mock::given(method("GET"))
+        .and(path("/api/boards/board-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "item": {"id":"board-1","projectId":"proj-1","name":"Sprint","position":65536.0,"createdAt":"2026-01-01T00:00:00Z","updatedAt":null},
+            "included": {
+                "lists": [{"id":"list-1","boardId":"board-1","name":"Todo","position":65536.0,"type":"active","createdAt":"2026-01-01T00:00:00Z","updatedAt":null}],
+                "cards": [],
+                "tasks": [],
+                "labels": [],
+                "cardLabels": [],
+                "cardMemberships": [],
+                "boardMemberships": [],
+                "users": []
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let canonical = run_json(
+        &server.uri(),
+        &["list", "list", "--board", "board-1", "--output", "json"],
+    );
+    let alias = run_json(
+        &server.uri(),
+        &["lists", "--board", "board-1", "--output", "json"],
+    );
 
     assert_eq!(canonical, alias);
 }
 
 // ─── Alias parity: cards ────────────────────────────────────────────
 
-#[test]
-fn cards_alias_json_matches_canonical() {
-    let list_id = current_list_id();
+#[tokio::test]
+async fn cards_alias_json_matches_canonical() {
+    let server = MockServer::start().await;
 
-    let canonical = run_json(&["card", "list", "--list", &list_id, "--output", "json"]);
-    let alias = run_json(&["cards", "--list", &list_id, "--output", "json"]);
+    Mock::given(method("GET"))
+        .and(path("/api/lists/list-1/cards"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [{"id":"card-1","listId":"list-1","boardId":"board-1","name":"Fix bug","description":null,"position":65536.0,"isSubscribed":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":null}],
+            "included": {
+                "cardLabels": [],
+                "cardMemberships": []
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let canonical = run_json(
+        &server.uri(),
+        &["card", "list", "--list", "list-1", "--output", "json"],
+    );
+    let alias = run_json(
+        &server.uri(),
+        &["cards", "--list", "list-1", "--output", "json"],
+    );
+
+    assert_eq!(canonical, alias);
+}
+
+// ─── Alias parity: cards (--board scope) ────────────────────────────
+
+#[tokio::test]
+async fn cards_alias_board_scope_json_matches_canonical() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/boards/board-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "item": {"id":"board-1","projectId":"proj-1","name":"Sprint","position":65536.0,"createdAt":"2026-01-01T00:00:00Z","updatedAt":null},
+            "included": {
+                "lists": [{"id":"list-1","boardId":"board-1","name":"Todo","position":65536.0,"type":"active","createdAt":"2026-01-01T00:00:00Z","updatedAt":null}],
+                "cards": [
+                    {"id":"card-1","listId":"list-1","boardId":"board-1","name":"Fix bug","description":null,"position":65536.0,"isSubscribed":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":null},
+                    {"id":"card-2","listId":"list-1","boardId":"board-1","name":"Add feature","description":null,"position":131_072.0,"isSubscribed":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":null}
+                ],
+                "tasks": [],
+                "labels": [],
+                "cardLabels": [],
+                "cardMemberships": [],
+                "boardMemberships": [],
+                "users": []
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let canonical = run_json(
+        &server.uri(),
+        &["card", "list", "--board", "board-1", "--output", "json"],
+    );
+    let alias = run_json(
+        &server.uri(),
+        &["cards", "--board", "board-1", "--output", "json"],
+    );
 
     assert_eq!(canonical, alias);
 }
 
 // ─── Alias parity: tasks ────────────────────────────────────────────
 
-#[test]
-fn tasks_alias_json_matches_canonical() {
-    let card_id = current_card_id();
+#[tokio::test]
+async fn tasks_alias_json_matches_canonical() {
+    let server = MockServer::start().await;
 
-    let canonical = run_json(&["task", "list", "--card", &card_id, "--output", "json"]);
-    let alias = run_json(&["tasks", "--card", &card_id, "--output", "json"]);
+    Mock::given(method("GET"))
+        .and(path("/api/cards/card-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "item": {"id":"card-1","listId":"list-1","boardId":"board-1","name":"Fix bug","description":null,"position":65536.0,"isSubscribed":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":null},
+            "included": {
+                "tasks": [{"id":"task-1","taskListId":"tl-1","name":"Write tests","isCompleted":false,"position":65536.0,"createdAt":"2026-01-01T00:00:00Z","updatedAt":null}],
+                "taskLists": [{"id":"tl-1","cardId":"card-1","name":"Tasks","position":65536.0,"createdAt":"2026-01-01T00:00:00Z","updatedAt":null}],
+                "cardLabels": [],
+                "cardMemberships": [],
+                "attachments": []
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let canonical = run_json(
+        &server.uri(),
+        &["task", "list", "--card", "card-1", "--output", "json"],
+    );
+    let alias = run_json(
+        &server.uri(),
+        &["tasks", "--card", "card-1", "--output", "json"],
+    );
 
     assert_eq!(canonical, alias);
 }
 
 // ─── Alias parity: comments ─────────────────────────────────────────
 
-#[test]
-fn comments_alias_json_matches_canonical() {
-    let card_id = current_card_id();
+#[tokio::test]
+async fn comments_alias_json_matches_canonical() {
+    let server = MockServer::start().await;
 
-    let canonical = run_json(&["comment", "list", "--card", &card_id, "--output", "json"]);
-    let alias = run_json(&["comments", "--card", &card_id, "--output", "json"]);
+    Mock::given(method("GET"))
+        .and(path("/api/cards/card-1/comments"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [{"id":"comment-1","cardId":"card-1","userId":"user-1","text":"Starting work","createdAt":"2026-01-01T00:00:00Z","updatedAt":null}]
+        })))
+        .mount(&server)
+        .await;
+
+    let canonical = run_json(
+        &server.uri(),
+        &["comment", "list", "--card", "card-1", "--output", "json"],
+    );
+    let alias = run_json(
+        &server.uri(),
+        &["comments", "--card", "card-1", "--output", "json"],
+    );
 
     assert_eq!(canonical, alias);
 }
 
 // ─── Alias parity: labels ───────────────────────────────────────────
 
-#[test]
-fn labels_alias_json_matches_canonical() {
-    let board_id = current_board_id();
+#[tokio::test]
+async fn labels_alias_json_matches_canonical() {
+    let server = MockServer::start().await;
 
-    let canonical = run_json(&["label", "list", "--board", &board_id, "--output", "json"]);
-    let alias = run_json(&["labels", "--board", &board_id, "--output", "json"]);
+    Mock::given(method("GET"))
+        .and(path("/api/boards/board-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "item": {"id":"board-1","projectId":"proj-1","name":"Sprint","position":65536.0,"createdAt":"2026-01-01T00:00:00Z","updatedAt":null},
+            "included": {
+                "lists": [],
+                "cards": [],
+                "tasks": [],
+                "labels": [{"id":"label-1","boardId":"board-1","name":"bug","color":"berry-red","position":65536.0,"createdAt":"2026-01-01T00:00:00Z","updatedAt":null}],
+                "cardLabels": [],
+                "cardMemberships": [],
+                "boardMemberships": [],
+                "users": []
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let canonical = run_json(
+        &server.uri(),
+        &["label", "list", "--board", "board-1", "--output", "json"],
+    );
+    let alias = run_json(
+        &server.uri(),
+        &["labels", "--board", "board-1", "--output", "json"],
+    );
 
     assert_eq!(canonical, alias);
 }
@@ -206,5 +294,12 @@ fn aliases_hidden_from_help() {
 
 #[test]
 fn boards_alias_missing_project_exits_2() {
-    plnk_authed().args(["boards"]).assert().failure().code(2);
+    // Validation happens before network, so no server needed.
+    plnk()
+        .env("PLANKA_SERVER", "http://127.0.0.1:1")
+        .env("PLANKA_TOKEN", "test-api-key")
+        .args(["boards"])
+        .assert()
+        .failure()
+        .code(2);
 }
