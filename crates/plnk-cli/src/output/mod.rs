@@ -22,6 +22,21 @@ pub fn render_collection<T: Serialize + Tabular>(
     }
 }
 
+/// Render a collection with an explicit JSON `meta` payload.
+pub fn render_collection_with_meta<T: Serialize + Tabular, M: Serialize>(
+    items: &[T],
+    format: OutputFormat,
+    full: bool,
+    meta: &M,
+) -> Result<(), PlankaError> {
+    match format {
+        OutputFormat::Json if full => json::print_collection_full_with_meta(items, meta),
+        OutputFormat::Json => json::print_collection_trimmed_with_meta(items, meta),
+        OutputFormat::Table => table::print_collection(items),
+        OutputFormat::Markdown => markdown::print_collection(items),
+    }
+}
+
 /// Render a single item to stdout.
 pub fn render_item<T: Serialize + Tabular>(
     item: &T,

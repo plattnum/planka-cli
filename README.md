@@ -145,6 +145,11 @@ pbpaste | plnk card update <cardId> --description -
 # Find cards across a board
 plnk card find --board <boardId> --title "auth"
 
+# Fetch multiple exact cards in one ordered collection
+plnk card get-many --id <cardIdA> --id <cardIdB> --output json
+plnk card get-many --id <cardIdA> --id <cardIdB> --concurrency 1
+plnk card get-many --id <cardIdA> --id <missingId> --allow-missing --output json
+
 # Find cards on a board by label only
 plnk card find --board <boardId> --label "urgent"
 

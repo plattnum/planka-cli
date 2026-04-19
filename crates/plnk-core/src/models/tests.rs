@@ -385,6 +385,7 @@ fn project_trimmed_columns_match_wire_format() {
 /// representation — otherwise trimmed output would produce phantom keys
 /// or silently project to nothing.
 #[test]
+#[allow(clippy::too_many_lines)]
 fn tabular_fields_exist_in_serde_representation() {
     fn check<T: serde::Serialize + Tabular + ?Sized>(item: &T, type_name: &str) {
         let value = serde_json::to_value(item).unwrap();

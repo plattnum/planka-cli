@@ -429,6 +429,18 @@ pub enum CardAction {
         /// Card ID
         id: String,
     },
+    /// Get multiple cards by exact ID
+    GetMany {
+        /// Exact card ID (repeat for multiple cards)
+        #[arg(long = "id", required = true)]
+        id: Vec<String>,
+        /// Max concurrent card fetches
+        #[arg(long, default_value_t = 4, value_parser = clap::value_parser!(u8).range(1..=16))]
+        concurrency: u8,
+        /// Treat missing card IDs as non-fatal and report them in JSON metadata
+        #[arg(long)]
+        allow_missing: bool,
+    },
     /// Get the full snapshot (item + included) for a card — JSON only
     Snapshot {
         /// Card ID

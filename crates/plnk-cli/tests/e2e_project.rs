@@ -213,6 +213,7 @@ async fn project_delete_json() {
 // ─── Full lifecycle: list → create → get → update → delete ─────────
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn project_crud_lifecycle() {
     let server = MockServer::start().await;
 

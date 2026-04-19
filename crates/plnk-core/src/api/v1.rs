@@ -7,15 +7,17 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use async_trait::async_trait;
+use tokio::task::JoinSet;
 use tracing::debug;
 
 use crate::client::HttpClient;
 use crate::error::PlankaError;
 use crate::models::{
-    Attachment, Board, BoardMembership, Card, CardLabel, CardMembership, Comment, CreateBoard,
-    CreateCard, CreateCardMembership, CreateComment, CreateList, CreateProject, CreateTaskList,
-    FindScope, Label, List, MoveCard, Project, ProjectManager, Task, UpdateBoard, UpdateCard,
-    UpdateComment, UpdateLabel, UpdateList, UpdateProject, UpdateTask, User,
+    Attachment, Board, BoardMembership, Card, CardBatchFailure, CardBatchGetResult, CardLabel,
+    CardMembership, Comment, CreateBoard, CreateCard, CreateCardMembership, CreateComment,
+    CreateList, CreateProject, CreateTaskList, FindScope, Label, List, MoveCard, Project,
+    ProjectManager, Task, UpdateBoard, UpdateCard, UpdateComment, UpdateLabel, UpdateList,
+    UpdateProject, UpdateTask, User,
 };
 
 use super::responses::{
@@ -29,6 +31,7 @@ use super::traits::{
 };
 
 /// Concrete Planka API client for the current server version.
+#[derive(Clone)]
 pub struct PlankaClientV1 {
     http: HttpClient,
 }
@@ -288,6 +291,96 @@ impl CardApi for PlankaClientV1 {
     async fn get_card(&self, id: &str) -> Result<Card, PlankaError> {
         let resp: ItemResponse<Card> = self.http.get(&format!("/api/cards/{id}")).await?;
         Ok(resp.item)
+    }
+
+    async fn get_many_cards(
+        &self,
+        ids: Vec<String>,
+        concurrency: usize,
+    ) -> Result<CardBatchGetResult, PlankaError> {
+        if concurrency == 0 {
+            return Err(PlankaError::InvalidOptionValue {
+                field: "concurrency".to_string(),
+                message: "must be at least 1".to_string(),
+            });
+        }
+
+        let requested_count = ids.len();
+        if requested_count == 0 {
+            return Ok(CardBatchGetResult {
+                cards: Vec::new(),
+                missing_ids: Vec::new(),
+                failures: Vec::new(),
+                requested_count: 0,
+                concurrency: 0,
+            });
+        }
+
+        let effective_concurrency = concurrency.min(self.http.transport_policy().max_in_flight);
+        let mut pending = ids.into_iter().enumerate();
+        let mut join_set = JoinSet::new();
+        let mut found = Vec::new();
+        let mut missing = Vec::new();
+        let mut failures = Vec::new();
+
+        let spawn_request = |join_set: &mut JoinSet<(usize, String, Result<Card, PlankaError>)>,
+                             client: Self,
+                             index: usize,
+                             id: String| {
+            join_set.spawn(async move {
+                let result = client.get_card(&id).await;
+                (index, id, result)
+            });
+        };
+
+        for _ in 0..effective_concurrency {
+            if let Some((index, id)) = pending.next() {
+                spawn_request(&mut join_set, self.clone(), index, id);
+            }
+        }
+
+        while let Some(next) = join_set.join_next().await {
+            let (index, id, result) = next.map_err(|error| PlankaError::ApiError {
+                status: 0,
+                message: format!("card get-many worker failed: {error}"),
+            })?;
+
+            match result {
+                Ok(card) => found.push((index, card)),
+                Err(
+                    error @ (PlankaError::Remote404 { .. }
+                    | PlankaError::NotFound { .. }
+                    | PlankaError::NotFoundMessage { .. }),
+                ) => {
+                    let _ = error;
+                    missing.push((index, id));
+                }
+                Err(error) => failures.push((
+                    index,
+                    CardBatchFailure {
+                        id,
+                        error_type: error.error_type().to_string(),
+                        message: error.to_string(),
+                    },
+                )),
+            }
+
+            if let Some((next_index, next_id)) = pending.next() {
+                spawn_request(&mut join_set, self.clone(), next_index, next_id);
+            }
+        }
+
+        found.sort_by_key(|(index, _)| *index);
+        missing.sort_by_key(|(index, _)| *index);
+        failures.sort_by_key(|(index, _)| *index);
+
+        Ok(CardBatchGetResult {
+            cards: found.into_iter().map(|(_, card)| card).collect(),
+            missing_ids: missing.into_iter().map(|(_, id)| id).collect(),
+            failures: failures.into_iter().map(|(_, failure)| failure).collect(),
+            requested_count,
+            concurrency: effective_concurrency,
+        })
     }
 
     async fn get_card_snapshot(&self, id: &str) -> Result<serde_json::Value, PlankaError> {

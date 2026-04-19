@@ -65,6 +65,33 @@ fn machine_help_board_list() {
 }
 
 #[test]
+fn machine_help_card_get_many() {
+    let output = plnk()
+        .args(["card", "get-many", "--help", "--output", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    let opts = &json["options"];
+    assert_eq!(json["resource"], "card");
+    assert_eq!(json["action"], "get-many");
+    assert_eq!(opts["--id"]["type"], "string");
+    assert_eq!(opts["--id"]["required"], true);
+    assert_eq!(opts["--concurrency"]["type"], "integer");
+    assert_eq!(opts["--allow-missing"]["type"], "flag");
+    assert!(
+        json["examples"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|example| example.as_str().unwrap().contains("get-many"))
+    );
+}
+
+#[test]
 fn machine_help_card_list_includes_label_option_and_examples() {
     let output = plnk()
         .args(["card", "list", "--help", "--output", "json"])
@@ -156,6 +183,7 @@ fn machine_help_resource_level() {
     let opts = &json["options"];
     assert!(opts.get("list").is_some());
     assert!(opts.get("get").is_some());
+    assert!(opts.get("get-many").is_some());
     assert!(opts.get("create").is_some());
     assert!(opts.get("find").is_some());
     assert!(opts.get("move").is_some());

@@ -3,9 +3,7 @@ use plnk_core::models::{Envelope, Meta, Tabular};
 use serde::Serialize;
 
 fn render_json_error(message: impl Into<String>) -> PlankaError {
-    PlankaError::Json(serde_json::Error::io(std::io::Error::other(
-        message.into(),
-    )))
+    PlankaError::Json(serde_json::Error::io(std::io::Error::other(message.into())))
 }
 
 /// Print a collection as a full JSON envelope (all fields) to stdout.
@@ -15,6 +13,21 @@ pub fn print_collection_full<T: Serialize>(items: &[T]) -> Result<(), PlankaErro
         data: items,
         meta: Some(Meta { count: items.len() }),
     };
+    let json = serde_json::to_string_pretty(&envelope)?;
+    println!("{json}");
+    Ok(())
+}
+
+/// Print a collection as a full JSON envelope with explicit metadata.
+pub fn print_collection_full_with_meta<T: Serialize, M: Serialize>(
+    items: &[T],
+    meta: &M,
+) -> Result<(), PlankaError> {
+    let envelope = serde_json::json!({
+        "success": true,
+        "data": items,
+        "meta": meta,
+    });
     let json = serde_json::to_string_pretty(&envelope)?;
     println!("{json}");
     Ok(())
@@ -37,14 +50,27 @@ pub fn print_item_full<T: Serialize>(item: &T) -> Result<(), PlankaError> {
 /// Keys and types match the full envelope exactly — trimmed is a strict
 /// projection. Only the fields listed in `Tabular::trimmed_columns()` survive.
 pub fn print_collection_trimmed<T: Serialize + Tabular>(items: &[T]) -> Result<(), PlankaError> {
-    let rows: Vec<serde_json::Value> = items
-        .iter()
-        .map(project::<T>)
-        .collect::<Result<_, _>>()?;
+    let rows: Vec<serde_json::Value> = items.iter().map(project::<T>).collect::<Result<_, _>>()?;
     let envelope = serde_json::json!({
         "success": true,
         "data": rows,
         "meta": { "count": rows.len() }
+    });
+    let json = serde_json::to_string_pretty(&envelope)?;
+    println!("{json}");
+    Ok(())
+}
+
+/// Print a trimmed collection envelope with explicit metadata.
+pub fn print_collection_trimmed_with_meta<T: Serialize + Tabular, M: Serialize>(
+    items: &[T],
+    meta: &M,
+) -> Result<(), PlankaError> {
+    let rows: Vec<serde_json::Value> = items.iter().map(project::<T>).collect::<Result<_, _>>()?;
+    let envelope = serde_json::json!({
+        "success": true,
+        "data": rows,
+        "meta": meta,
     });
     let json = serde_json::to_string_pretty(&envelope)?;
     println!("{json}");

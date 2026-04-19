@@ -29,6 +29,22 @@ plnk card get 1234 --output json
 plnk card get 1234 --full                   # include all fields
 ```
 
+### Get many cards by exact ID
+
+```bash
+plnk card get-many --id <cardId> --id <cardId>
+plnk card get-many --id 1234 --id 5678 --output json
+plnk card get-many --id 1234 --id 5678 --concurrency 1
+plnk card get-many --id 1234 --id 9999 --allow-missing --output json
+```
+
+Notes:
+- Exact ID fetch only — no title matching or search fallback.
+- Output order matches the input `--id` order.
+- Default concurrency is `4`; valid range is `1..=16`.
+- `--allow-missing` downgrades per-card `404` misses into metadata, but auth/server/transport failures still fail the command.
+- JSON `meta` includes `requestedCount`, `foundCount`, `missingCount`, `missingIds`, `concurrency`, and `allowMissing`.
+
 ### Find cards by title and/or label
 
 Must be scoped to a list, board, or project. Title matching uses three-tier matching: exact > case-insensitive > substring.

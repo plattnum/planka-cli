@@ -25,6 +25,7 @@ fn card_json(id: &str, list_id: &str, name: &str) -> serde_json::Value {
     })
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn board_snapshot(
     labels: serde_json::Value,
     cards: serde_json::Value,
@@ -184,7 +185,7 @@ async fn repeated_label_flags_use_and_semantics() {
                     "boardId": "board-1",
                     "name": "Backend",
                     "color": "ocean-blue",
-                    "position": 131072.0,
+                    "position": 131_072.0,
                     "createdAt": "2026-04-14T12:00:00Z",
                     "updatedAt": null
                 }
@@ -242,7 +243,7 @@ async fn ambiguous_label_name_exits_2_and_lists_candidates() {
                     "boardId": "board-1",
                     "name": "Bugfix",
                     "color": "ocean-blue",
-                    "position": 131072.0,
+                    "position": 131_072.0,
                     "createdAt": "2026-04-14T12:00:00Z",
                     "updatedAt": null
                 }

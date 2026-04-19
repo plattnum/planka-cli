@@ -1,11 +1,26 @@
 use plnk_core::api::{CardApi, LabelApi, ListApi, match_by_name};
 use plnk_core::error::PlankaError;
-use plnk_core::models::{CreateCard, FindScope, Label, MoveCard, UpdateCard};
+use plnk_core::models::{CreateCard, ErrorFailure, FindScope, Label, MoveCard, UpdateCard};
+use serde::Serialize;
 
 use crate::app::OutputFormat;
 use crate::commands::project::confirm_delete;
 use crate::input::resolve_text;
-use crate::output::{render_collection, render_item, render_message, render_snapshot};
+use crate::output::{
+    render_collection, render_collection_with_meta, render_item, render_message, render_snapshot,
+};
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CardGetManyMeta {
+    count: usize,
+    requested_count: usize,
+    found_count: usize,
+    missing_count: usize,
+    missing_ids: Vec<String>,
+    concurrency: usize,
+    allow_missing: bool,
+}
 
 /// Parse position flag: "top", "bottom", or numeric value.
 fn parse_position(pos: &str) -> Result<f64, PlankaError> {
@@ -87,6 +102,62 @@ async fn resolve_label_scope(
     Ok(Some((board_id, list_id, resolved)))
 }
 
+fn build_get_many_meta(
+    found_count: usize,
+    requested_count: usize,
+    missing_ids: Vec<String>,
+    concurrency: usize,
+    allow_missing: bool,
+) -> CardGetManyMeta {
+    CardGetManyMeta {
+        count: found_count,
+        requested_count,
+        found_count,
+        missing_count: missing_ids.len(),
+        missing_ids,
+        concurrency,
+        allow_missing,
+    }
+}
+
+fn missing_cards_error(
+    requested_count: usize,
+    found_count: usize,
+    missing_ids: Vec<String>,
+) -> PlankaError {
+    let noun = if missing_ids.len() == 1 {
+        "card was"
+    } else {
+        "cards were"
+    };
+    PlankaError::BatchNotFound {
+        message: format!("{} requested {noun} not found", missing_ids.len()),
+        resource_type: "card".to_string(),
+        missing_ids,
+        requested_count,
+        found_count,
+    }
+}
+
+fn fatal_batch_error(requested_count: usize, failures: Vec<ErrorFailure>) -> PlankaError {
+    if failures
+        .iter()
+        .any(|failure| failure.error_type == "AuthenticationFailed")
+    {
+        PlankaError::BatchAuthenticationFailed {
+            message: "Batch card fetch failed".to_string(),
+            requested_count,
+            failures,
+        }
+    } else {
+        PlankaError::BatchApiError {
+            message: "Batch card fetch failed".to_string(),
+            requested_count,
+            failures,
+        }
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 pub async fn execute(
     client: &(impl CardApi + LabelApi + ListApi),
@@ -117,6 +188,55 @@ pub async fn execute(
         crate::app::CardAction::Get { id } => {
             let card = client.get_card(&id).await?;
             render_item(&card, format, full)?;
+        }
+        crate::app::CardAction::GetMany {
+            id,
+            concurrency,
+            allow_missing,
+        } => {
+            let batch = client.get_many_cards(id, usize::from(concurrency)).await?;
+            let found_count = batch.found_count();
+            let failures = batch
+                .failures
+                .into_iter()
+                .map(|failure| ErrorFailure {
+                    id: failure.id,
+                    error_type: failure.error_type,
+                    message: failure.message,
+                })
+                .collect::<Vec<_>>();
+
+            if !failures.is_empty() {
+                return Err(fatal_batch_error(batch.requested_count, failures));
+            }
+
+            if !allow_missing && !batch.missing_ids.is_empty() {
+                return Err(missing_cards_error(
+                    batch.requested_count,
+                    found_count,
+                    batch.missing_ids,
+                ));
+            }
+
+            if allow_missing
+                && !batch.missing_ids.is_empty()
+                && matches!(format, OutputFormat::Table | OutputFormat::Markdown)
+            {
+                eprintln!(
+                    "Warning: {} requested card(s) were missing: {}",
+                    batch.missing_ids.len(),
+                    batch.missing_ids.join(", ")
+                );
+            }
+
+            let meta = build_get_many_meta(
+                found_count,
+                batch.requested_count,
+                batch.missing_ids,
+                batch.concurrency,
+                allow_missing,
+            );
+            render_collection_with_meta(&batch.cards, format, full, &meta)?;
         }
         crate::app::CardAction::Snapshot { id } => {
             let snapshot = client.get_card_snapshot(&id).await?;

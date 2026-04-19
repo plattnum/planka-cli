@@ -74,3 +74,35 @@ pub struct MoveCard {
     pub list_id: ResourceId,
     pub position: f64,
 }
+
+/// Per-card fatal failure captured during `card get-many` execution.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CardBatchFailure {
+    pub id: ResourceId,
+    #[serde(rename = "type")]
+    pub error_type: String,
+    pub message: String,
+}
+
+/// Ordered result set for exact multi-ID card fetches.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CardBatchGetResult {
+    pub cards: Vec<Card>,
+    pub missing_ids: Vec<ResourceId>,
+    pub failures: Vec<CardBatchFailure>,
+    pub requested_count: usize,
+    pub concurrency: usize,
+}
+
+impl CardBatchGetResult {
+    #[must_use]
+    pub fn found_count(&self) -> usize {
+        self.cards.len()
+    }
+
+    #[must_use]
+    pub fn missing_count(&self) -> usize {
+        self.missing_ids.len()
+    }
+}

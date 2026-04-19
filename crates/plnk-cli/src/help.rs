@@ -286,13 +286,16 @@ fn infer_type(name: &str) -> String {
         "position" => "enum(top|bottom|int)".to_string(),
         "role" => "enum(admin|editor|viewer)".to_string(),
         "file" | "out" => "path".to_string(),
-        "http_max_in_flight"
+        "concurrency"
+        | "http_max_in_flight"
         | "http_rate_limit"
         | "http_burst"
         | "retry_attempts"
         | "retry_base_delay_ms"
         | "retry_max_delay_ms" => "integer".to_string(),
-        "no_retry" | "quiet" | "yes" | "full" | "no_color" | "verbose" => "flag".to_string(),
+        "allow_missing" | "no_retry" | "quiet" | "yes" | "full" | "no_color" | "verbose" => {
+            "flag".to_string()
+        }
         _ => "string".to_string(),
     }
 }
@@ -347,6 +350,12 @@ fn get_examples(resource: &str, action: &str) -> Vec<String> {
             "plnk card list --board 456 --label 111".into(),
         ],
         ("card", "get") => vec!["plnk card get 1234".into()],
+        ("card", "get-many") => vec![
+            "plnk card get-many --id 123 --id 456".into(),
+            "plnk card get-many --id 123 --id 456 --output json".into(),
+            "plnk card get-many --id 123 --id 999 --allow-missing --output json".into(),
+            "plnk card get-many --id 123 --id 456 --concurrency 1".into(),
+        ],
         ("card", "snapshot") => vec!["plnk card snapshot 1234 --output json".into()],
         ("card", "find") => vec![
             "plnk card find --list 789 --title 'Fix auth'".into(),

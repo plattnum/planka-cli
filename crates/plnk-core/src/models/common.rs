@@ -54,12 +54,32 @@ pub struct ErrorEnvelope {
     pub error: ErrorDetail,
 }
 
+/// Structured per-item failure detail inside batch error envelopes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ErrorFailure {
+    pub id: ResourceId,
+    #[serde(rename = "type")]
+    pub error_type: String,
+    pub message: String,
+}
+
 /// Structured error detail inside the error envelope.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ErrorDetail {
     #[serde(rename = "type")]
     pub error_type: String,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub field: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub missing_ids: Option<Vec<ResourceId>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub found_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failures: Option<Vec<ErrorFailure>>,
 }

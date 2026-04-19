@@ -10,10 +10,10 @@ use async_trait::async_trait;
 
 use crate::error::PlankaError;
 use crate::models::{
-    Attachment, Board, BoardMembership, Card, CardLabel, CardMembership, Comment, CreateBoard,
-    CreateCard, CreateComment, CreateList, CreateProject, FindScope, Label, List, MoveCard,
-    Project, ProjectManager, Task, UpdateBoard, UpdateCard, UpdateComment, UpdateLabel, UpdateList,
-    UpdateProject, UpdateTask, User,
+    Attachment, Board, BoardMembership, Card, CardBatchGetResult, CardLabel, CardMembership,
+    Comment, CreateBoard, CreateCard, CreateComment, CreateList, CreateProject, FindScope, Label,
+    List, MoveCard, Project, ProjectManager, Task, UpdateBoard, UpdateCard, UpdateComment,
+    UpdateLabel, UpdateList, UpdateProject, UpdateTask, User,
 };
 
 #[async_trait]
@@ -79,6 +79,11 @@ pub trait CardApi {
         label_ids: &[String],
     ) -> Result<Vec<Card>, PlankaError>;
     async fn get_card(&self, id: &str) -> Result<Card, PlankaError>;
+    async fn get_many_cards(
+        &self,
+        ids: Vec<String>,
+        concurrency: usize,
+    ) -> Result<CardBatchGetResult, PlankaError>;
     /// Return the full `GET /api/cards/{id}` response verbatim. See
     /// `ProjectApi::get_project_snapshot` for rationale.
     async fn get_card_snapshot(&self, id: &str) -> Result<serde_json::Value, PlankaError>;

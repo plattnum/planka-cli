@@ -1,6 +1,6 @@
 use std::fmt::Write as _;
 
-use crate::models::{ErrorDetail, ErrorEnvelope};
+use crate::models::{ErrorDetail, ErrorEnvelope, ErrorFailure};
 
 /// HTTP methods for which a 404 is ambiguous between "doesn't exist" and
 /// "you don't have permission". Planka returns 404 for permission denials
@@ -65,6 +65,29 @@ pub enum PlankaError {
     #[error("API error ({status}): {message}")]
     ApiError { status: u16, message: String },
 
+    #[error("{message}")]
+    BatchNotFound {
+        message: String,
+        resource_type: String,
+        missing_ids: Vec<String>,
+        requested_count: usize,
+        found_count: usize,
+    },
+
+    #[error("{message}")]
+    BatchAuthenticationFailed {
+        message: String,
+        requested_count: usize,
+        failures: Vec<ErrorFailure>,
+    },
+
+    #[error("{message}")]
+    BatchApiError {
+        message: String,
+        requested_count: usize,
+        failures: Vec<ErrorFailure>,
+    },
+
     #[error("File read error: {path}: {source}")]
     FileReadError {
         path: String,
@@ -99,11 +122,14 @@ impl PlankaError {
             | Self::MutuallyExclusiveOptions { .. }
             | Self::Url(_) => 2,
 
-            Self::AuthenticationFailed { .. } => 3,
+            Self::AuthenticationFailed { .. } | Self::BatchAuthenticationFailed { .. } => 3,
 
-            Self::NotFound { .. } | Self::NotFoundMessage { .. } | Self::Remote404 { .. } => 4,
+            Self::NotFound { .. }
+            | Self::NotFoundMessage { .. }
+            | Self::Remote404 { .. }
+            | Self::BatchNotFound { .. } => 4,
 
-            Self::ApiError { .. } | Self::Http(_) => 5,
+            Self::ApiError { .. } | Self::BatchApiError { .. } | Self::Http(_) => 5,
 
             Self::FileReadError { .. }
             | Self::Io(_)
@@ -119,11 +145,14 @@ impl PlankaError {
             Self::MissingRequiredOption { .. } => "MissingRequiredOption",
             Self::InvalidOptionValue { .. } | Self::Url(_) => "InvalidOptionValue",
             Self::MutuallyExclusiveOptions { .. } => "MutuallyExclusiveOptions",
-            Self::NotFound { .. } | Self::NotFoundMessage { .. } | Self::Remote404 { .. } => {
-                "ResourceNotFound"
+            Self::NotFound { .. }
+            | Self::NotFoundMessage { .. }
+            | Self::Remote404 { .. }
+            | Self::BatchNotFound { .. } => "ResourceNotFound",
+            Self::AuthenticationFailed { .. } | Self::BatchAuthenticationFailed { .. } => {
+                "AuthenticationFailed"
             }
-            Self::AuthenticationFailed { .. } => "AuthenticationFailed",
-            Self::ApiError { .. } | Self::Http(_) => "ApiError",
+            Self::ApiError { .. } | Self::BatchApiError { .. } | Self::Http(_) => "ApiError",
             Self::FileReadError { .. } | Self::Io(_) => "FileReadError",
             Self::Json(_) | Self::TomlDeserialize(_) | Self::TomlSerialize(_) => {
                 "SerializationError"
@@ -141,12 +170,53 @@ impl PlankaError {
             _ => None,
         };
 
+        let resource = match self {
+            Self::NotFound { resource_type, .. } | Self::BatchNotFound { resource_type, .. } => {
+                Some(resource_type.clone())
+            }
+            _ => None,
+        };
+
+        let missing_ids = match self {
+            Self::BatchNotFound { missing_ids, .. } => Some(missing_ids.clone()),
+            _ => None,
+        };
+
+        let requested_count = match self {
+            Self::BatchNotFound {
+                requested_count, ..
+            }
+            | Self::BatchAuthenticationFailed {
+                requested_count, ..
+            }
+            | Self::BatchApiError {
+                requested_count, ..
+            } => Some(*requested_count),
+            _ => None,
+        };
+
+        let found_count = match self {
+            Self::BatchNotFound { found_count, .. } => Some(*found_count),
+            _ => None,
+        };
+
+        let failures = match self {
+            Self::BatchAuthenticationFailed { failures, .. }
+            | Self::BatchApiError { failures, .. } => Some(failures.clone()),
+            _ => None,
+        };
+
         ErrorEnvelope {
             success: false,
             error: ErrorDetail {
                 error_type: self.error_type().to_string(),
                 message: self.to_string(),
                 field,
+                resource,
+                missing_ids,
+                requested_count,
+                found_count,
+                failures,
             },
         }
     }

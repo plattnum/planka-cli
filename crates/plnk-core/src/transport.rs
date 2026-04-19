@@ -621,7 +621,7 @@ mod tests {
         let first = runtime.acquire().await.unwrap();
         let cloned = runtime.clone();
 
-        let waiter = tokio::spawn(async move {
+        let acquire_task = tokio::spawn(async move {
             let start = Instant::now();
             let _second = cloned.acquire().await.unwrap();
             start.elapsed()
@@ -630,9 +630,9 @@ mod tests {
         sleep(Duration::from_millis(50)).await;
         drop(first);
 
-        let waited = waiter.await.unwrap();
+        let elapsed = acquire_task.await.unwrap();
         assert!(
-            waited >= Duration::from_millis(45),
+            elapsed >= Duration::from_millis(45),
             "second request should wait until the first permit is dropped"
         );
     }

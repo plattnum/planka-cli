@@ -172,7 +172,7 @@ async fn card_find_multiple_results() {
                     "boardId": "board-1",
                     "name": "Fix auth race",
                     "description": null,
-                    "position": 131072.0,
+                    "position": 131_072.0,
                     "isSubscribed": false,
                     "createdAt": "2026-04-14T12:00:00Z",
                     "updatedAt": null
@@ -183,7 +183,7 @@ async fn card_find_multiple_results() {
                     "boardId": "board-1",
                     "name": "Unrelated",
                     "description": null,
-                    "position": 196608.0,
+                    "position": 196_608.0,
                     "isSubscribed": false,
                     "createdAt": "2026-04-14T12:00:00Z",
                     "updatedAt": null
@@ -240,7 +240,7 @@ async fn card_find_substring_matches() {
                     "boardId": "board-1",
                     "name": "Fix auth race",
                     "description": null,
-                    "position": 131072.0,
+                    "position": 131_072.0,
                     "isSubscribed": false,
                     "createdAt": "2026-04-14T12:00:00Z",
                     "updatedAt": null
@@ -273,6 +273,7 @@ async fn card_find_substring_matches() {
 // ─── Board list (scoped) → card create → task create → comment create ─
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn board_card_task_comment_flow() {
     let server = MockServer::start().await;
 
