@@ -79,6 +79,13 @@ impl TransportPolicy {
             });
         }
 
+        if self.burst_size.is_some() && self.rate_limit_per_second.is_none() {
+            return Err(PlankaError::InvalidOptionValue {
+                field: "transport.burst_size".to_string(),
+                message: "requires rate_limit_per_second to also be set".to_string(),
+            });
+        }
+
         if self.retry_max_delay_ms < self.retry_base_delay_ms {
             return Err(PlankaError::InvalidOptionValue {
                 field: "transport.retry_max_delay_ms".to_string(),
@@ -153,8 +160,7 @@ impl TransportPolicy {
     }
 
     fn should_retry_error(&self, method: &str, error: &reqwest::Error) -> bool {
-        self.retries_allowed_for_method(method)
-            && (error.is_timeout() || error.is_connect() || error.is_request() || error.is_body())
+        self.retries_allowed_for_method(method) && (error.is_timeout() || error.is_connect())
     }
 }
 
@@ -388,6 +394,20 @@ mod tests {
         let err = policy.validate().unwrap_err();
         assert_eq!(err.error_type(), "InvalidOptionValue");
         assert!(err.to_string().contains("burst_size"));
+    }
+
+    #[test]
+    fn policy_rejects_burst_without_rate_limit() {
+        let policy = TransportPolicy {
+            rate_limit_per_second: None,
+            burst_size: Some(10),
+            ..TransportPolicy::default()
+        };
+
+        let err = policy.validate().unwrap_err();
+        assert_eq!(err.error_type(), "InvalidOptionValue");
+        assert!(err.to_string().contains("burst_size"));
+        assert!(err.to_string().contains("rate_limit_per_second"));
     }
 
     #[test]

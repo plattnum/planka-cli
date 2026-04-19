@@ -101,9 +101,9 @@ Current retry policy:
 
 - automatic retries apply to safe methods only by default: `GET`, `HEAD`, `OPTIONS`
 - retryable status codes: `429`, `502`, `503`, `504`
-- retryable transport failures: timeout/connect/request/body errors surfaced by `reqwest`
+- retryable transport failures: timeout/connect errors surfaced by `reqwest`
 - writes are **not** retried automatically by default: `POST`, `PATCH`, `DELETE`
-- `404`, `401`, and other non-transient failures are not retried
+- `404`, `401`, malformed requests, and other non-transient failures are not retried
 - `Retry-After` is honored when parseable and clamped to a sane upper bound
 
 ## CLI, environment, and config knobs
@@ -159,7 +159,7 @@ Current CLI/env/config validation:
 
 - `max_in_flight`: `1..=64`
 - `rate_limit`: `1..=1000`
-- `burst`: `1..=1000`
+- `burst`: `1..=1000` and requires `rate_limit` to also be set
 - `retry_attempts`: `0..=10`
 - `retry_base_delay_ms`: `1..=60000`
 - `retry_max_delay_ms`: `1..=60000`
