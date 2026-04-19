@@ -11,16 +11,31 @@ use tracing::{debug, trace};
 use crate::error::PlankaError;
 
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(30);
-static RETRY_JITTER_COUNTER: AtomicU64 = AtomicU64::new(0);
+static RETRY_JITTER_COUNTER: AtomicU64 = AtomicU64::new(initial_jitter_seed());
+
+const fn initial_jitter_seed() -> u64 {
+    0
+}
 
 fn jitter_offset(spread: u64) -> u64 {
     if spread == 0 {
         return 0;
     }
 
+    seed_retry_counter_once();
     let counter = RETRY_JITTER_COUNTER.fetch_add(1, Ordering::Relaxed);
     let mixed = splitmix64(counter);
     mixed % (spread.saturating_add(1))
+}
+
+fn seed_retry_counter_once() {
+    let seed = u64::from(
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_nanos(),
+    );
+    let _ = RETRY_JITTER_COUNTER.compare_exchange(0, seed, Ordering::Relaxed, Ordering::Relaxed);
 }
 
 fn splitmix64(mut value: u64) -> u64 {

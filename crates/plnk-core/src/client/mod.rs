@@ -12,8 +12,8 @@ use crate::transport::{TransportPolicy, TransportRuntime};
 ///
 /// Thin wrapper around `reqwest::Client` that handles base URL construction,
 /// auth header injection, request/response logging, and HTTP error mapping.
-/// All outbound requests flow through a shared `TransportRuntime`, which is
-/// where retries/rate limiting/concurrency limits are layered in over time.
+/// All outbound requests flow through a shared `TransportRuntime`, which
+/// enforces retries, rate limiting, and concurrency limits.
 #[derive(Debug, Clone)]
 pub struct HttpClient {
     inner: Client,
