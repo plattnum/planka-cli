@@ -29,6 +29,10 @@ fn jitter_offset(spread: u64) -> u64 {
 }
 
 fn seed_retry_counter_once() {
+    if RETRY_JITTER_COUNTER.load(Ordering::Relaxed) != 0 {
+        return;
+    }
+
     let seed = u64::from(
         SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
