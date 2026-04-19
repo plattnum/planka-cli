@@ -1,8 +1,7 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
-
-const TEST_SERVER: &str = "http://storm-front:3002";
-const TEST_TOKEN: &str = "tNub244N_MBnBqhLH7PE2fjwQD9w2w69t6f3uCrPM";
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn plnk() -> Command {
     let mut cmd = Command::cargo_bin("plnk").unwrap();
@@ -12,11 +11,36 @@ fn plnk() -> Command {
     cmd
 }
 
-fn plnk_authed() -> Command {
+fn plnk_with_server(server_uri: &str, token: &str) -> Command {
     let mut cmd = plnk();
-    cmd.env("PLANKA_SERVER", TEST_SERVER);
-    cmd.env("PLANKA_TOKEN", TEST_TOKEN);
+    cmd.env("PLANKA_SERVER", server_uri);
+    cmd.env("PLANKA_TOKEN", token);
     cmd
+}
+
+fn user_me_body() -> serde_json::Value {
+    serde_json::json!({
+        "item": {
+            "id": "user-1",
+            "name": "Claude",
+            "username": "claude",
+            "email": "claude@example.com",
+            "role": "projectOwner",
+            "isDeactivated": false,
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": null
+        }
+    })
+}
+
+async fn mock_whoami_ok() -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/users/me"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(user_me_body()))
+        .mount(&server)
+        .await;
+    server
 }
 
 // ─── Help ────────────────────────────────────────────────────────────
@@ -85,17 +109,18 @@ fn partial_flags_exits_3() {
     plnk()
         .env_remove("PLANKA_SERVER")
         .env_remove("PLANKA_TOKEN")
-        .args(["auth", "whoami", "--server", TEST_SERVER])
+        .args(["auth", "whoami", "--server", "http://example.com"])
         .assert()
         .failure()
         .code(3);
 }
 
-// ─── Whoami (live server) ────────────────────────────────────────────
+// ─── Whoami (mocked) ─────────────────────────────────────────────────
 
-#[test]
-fn whoami_table_shows_user() {
-    plnk_authed()
+#[tokio::test]
+async fn whoami_table_shows_user() {
+    let server = mock_whoami_ok().await;
+    plnk_with_server(&server.uri(), "test-token")
         .args(["auth", "whoami"])
         .assert()
         .success()
@@ -103,9 +128,10 @@ fn whoami_table_shows_user() {
         .stdout(predicate::str::contains("projectOwner"));
 }
 
-#[test]
-fn whoami_json_envelope() {
-    let output = plnk_authed()
+#[tokio::test]
+async fn whoami_json_envelope() {
+    let server = mock_whoami_ok().await;
+    let output = plnk_with_server(&server.uri(), "test-token")
         .args(["auth", "whoami", "--output", "json"])
         .assert()
         .success()
@@ -120,9 +146,10 @@ fn whoami_json_envelope() {
     assert!(json["data"]["id"].is_string());
 }
 
-#[test]
-fn whoami_markdown_format() {
-    plnk_authed()
+#[tokio::test]
+async fn whoami_markdown_format() {
+    let server = mock_whoami_ok().await;
+    plnk_with_server(&server.uri(), "test-token")
         .args(["auth", "whoami", "--output", "markdown"])
         .assert()
         .success()
@@ -130,22 +157,31 @@ fn whoami_markdown_format() {
         .stdout(predicate::str::contains("**Role:** projectOwner"));
 }
 
-#[test]
-fn whoami_invalid_token_exits_3() {
-    plnk()
-        .env("PLANKA_SERVER", TEST_SERVER)
-        .env("PLANKA_TOKEN", "invalid-token-12345")
+#[tokio::test]
+async fn whoami_invalid_token_exits_3() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/users/me"))
+        .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+            "code": "E_UNAUTHORIZED",
+            "message": "Unauthorized"
+        })))
+        .mount(&server)
+        .await;
+
+    plnk_with_server(&server.uri(), "invalid-token-12345")
         .args(["auth", "whoami"])
         .assert()
         .failure()
         .code(3);
 }
 
-// ─── Status (live server) ────────────────────────────────────────────
+// ─── Status (mocked) ─────────────────────────────────────────────────
 
-#[test]
-fn status_table_shows_server_and_source() {
-    plnk_authed()
+#[tokio::test]
+async fn status_table_shows_server_and_source() {
+    let server = mock_whoami_ok().await;
+    plnk_with_server(&server.uri(), "test-token")
         .args(["auth", "status"])
         .assert()
         .success()
@@ -154,9 +190,11 @@ fn status_table_shows_server_and_source() {
         .stdout(predicate::str::contains("User: Claude"));
 }
 
-#[test]
-fn status_json_envelope() {
-    let output = plnk_authed()
+#[tokio::test]
+async fn status_json_envelope() {
+    let server = mock_whoami_ok().await;
+    let server_uri = server.uri();
+    let output = plnk_with_server(&server_uri, "test-token")
         .args(["auth", "status", "--output", "json"])
         .assert()
         .success()
@@ -170,11 +208,10 @@ fn status_json_envelope() {
     // Clap's `env` attribute populates the flag from env vars, so
     // resolve_credentials sees them as flags, not env vars.
     assert_eq!(json["data"]["source"], "CLI flags");
+    let reported = json["data"]["server"].as_str().unwrap();
     assert!(
-        json["data"]["server"]
-            .as_str()
-            .unwrap()
-            .contains("storm-front")
+        reported.trim_end_matches('/') == server_uri.trim_end_matches('/'),
+        "server mismatch: reported={reported} expected={server_uri}"
     );
 }
 
@@ -327,10 +364,13 @@ fn token_set_uses_existing_server() {
     assert!(content.contains("existing-server.com"));
 }
 
-// ─── Token set → whoami flow (live server) ───────────────────────────
+// ─── Token set → whoami flow (mocked) ────────────────────────────────
 
-#[test]
-fn token_set_then_whoami_flow() {
+#[tokio::test]
+async fn token_set_then_whoami_flow() {
+    let server = mock_whoami_ok().await;
+    let server_uri = server.uri();
+
     let tmp = tempfile::tempdir().unwrap();
     let config_path = tmp.path().join("config.toml");
 
@@ -339,7 +379,14 @@ fn token_set_then_whoami_flow() {
         .env("PLANKA_CONFIG", config_path.to_str().unwrap())
         .env_remove("PLANKA_SERVER")
         .env_remove("PLANKA_TOKEN")
-        .args(["auth", "token", "set", TEST_TOKEN, "--server", TEST_SERVER])
+        .args([
+            "auth",
+            "token",
+            "set",
+            "test-token",
+            "--server",
+            &server_uri,
+        ])
         .assert()
         .success();
 
@@ -385,18 +432,20 @@ fn token_set_then_whoami_flow() {
 
 // ─── Verbosity ───────────────────────────────────────────────────────
 
-#[test]
-fn verbose_logs_to_stderr() {
-    plnk_authed()
+#[tokio::test]
+async fn verbose_logs_to_stderr() {
+    let server = mock_whoami_ok().await;
+    plnk_with_server(&server.uri(), "test-token")
         .args(["auth", "whoami", "-vv"])
         .assert()
         .success()
         .stderr(predicate::str::contains("GET"));
 }
 
-#[test]
-fn quiet_suppresses_logs() {
-    plnk_authed()
+#[tokio::test]
+async fn quiet_suppresses_logs() {
+    let server = mock_whoami_ok().await;
+    plnk_with_server(&server.uri(), "test-token")
         .args(["auth", "whoami", "--quiet"])
         .assert()
         .success()
