@@ -44,6 +44,34 @@ pub struct App {
     /// Show all fields (default output is trimmed to essentials)
     #[arg(long, global = true)]
     pub full: bool,
+
+    /// Max in-flight HTTP requests per process
+    #[arg(long = "http-max-in-flight", global = true)]
+    pub http_max_in_flight: Option<usize>,
+
+    /// Sustained HTTP request rate limit (requests/sec)
+    #[arg(long = "http-rate-limit", global = true)]
+    pub http_rate_limit: Option<u32>,
+
+    /// HTTP rate-limit burst size
+    #[arg(long = "http-burst", global = true)]
+    pub http_burst: Option<u32>,
+
+    /// Retry attempts after the initial HTTP request
+    #[arg(long = "retry-attempts", global = true)]
+    pub retry_attempts: Option<u32>,
+
+    /// Base retry delay in milliseconds
+    #[arg(long = "retry-base-delay-ms", global = true)]
+    pub retry_base_delay_ms: Option<u64>,
+
+    /// Maximum retry delay in milliseconds
+    #[arg(long = "retry-max-delay-ms", global = true)]
+    pub retry_max_delay_ms: Option<u64>,
+
+    /// Disable automatic HTTP retries
+    #[arg(long = "no-retry", global = true)]
+    pub no_retry: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]

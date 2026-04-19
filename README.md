@@ -97,6 +97,13 @@ Resources: `project`, `board`, `list`, `card`, `task`, `comment`, `label`, `atta
 | `--no-color` | Disable colored output |
 | `--yes` | Skip confirmation prompts |
 | `--full` | Show all fields (default is trimmed) |
+| `--http-max-in-flight <n>` | Max in-flight HTTP requests per process |
+| `--http-rate-limit <rps>` | Sustained HTTP request rate limit |
+| `--http-burst <n>` | HTTP rate-limit burst size |
+| `--retry-attempts <n>` | Retry attempts after the initial request |
+| `--retry-base-delay-ms <ms>` | Base retry delay |
+| `--retry-max-delay-ms <ms>` | Max retry delay |
+| `--no-retry` | Disable automatic HTTP retries |
 
 ### Plural aliases
 
@@ -271,6 +278,7 @@ Full command reference with examples for each resource is in [`docs/`](docs/):
 - [Attachments](docs/attachments.md)
 - [Memberships](docs/memberships.md)
 - [Users](docs/users.md)
+- [Transport policy](docs/transport.md)
 
 ## Architecture
 
@@ -280,6 +288,97 @@ Two-crate Rust workspace:
 - **`plnk-cli`** -- the `plnk` binary. Clap command tree, output rendering, input handling. Thin shell over `plnk-core`.
 
 API versioning is handled through traits. If Planka changes its API, only the implementation (`PlankaClientV1`) changes. Domain models and the CLI layer are untouched.
+
+## HTTP transport policy
+
+`plnk-core` now has a shared transport policy model for whole-stack HTTP behavior.
+
+Current status:
+
+- every `HttpClient` carries a shared `TransportPolicy`
+- all requests now flow through one common transport runtime hook
+- shared concurrency caps, rate limiting, and safe-method retries are active now
+- SDK callers can already set an explicit policy
+- CLI, environment variables, and config file can now tune transport settings
+
+Default policy values:
+
+| Field | Default |
+|------|---------|
+| `max_in_flight` | `8` |
+| `rate_limit_per_second` | `Some(10)` |
+| `burst_size` | `Some(10)` |
+| `retry_attempts` | `2` |
+| `retry_base_delay_ms` | `250` |
+| `retry_max_delay_ms` | `2000` |
+| `retry_jitter` | `true` |
+| `retry_safe_methods_only` | `true` |
+
+### How to set transport settings today
+
+**CLI users:** use global flags such as:
+
+```bash
+plnk --http-max-in-flight 4 --http-rate-limit 20 --retry-attempts 1 project list
+plnk --no-retry project list
+```
+
+**Environment variables:**
+
+```bash
+export PLNK_HTTP_MAX_IN_FLIGHT=4
+export PLNK_HTTP_RATE_LIMIT=20
+export PLNK_HTTP_BURST=20
+export PLNK_RETRY_ATTEMPTS=1
+export PLNK_RETRY_BASE_DELAY_MS=250
+export PLNK_RETRY_MAX_DELAY_MS=2000
+```
+
+**Config file:**
+
+```toml
+server = "https://planka.example.com"
+token = "your-api-token"
+
+[http]
+max_in_flight = 8
+rate_limit = 10
+burst = 10
+retry_attempts = 2
+retry_base_delay_ms = 250
+retry_max_delay_ms = 2000
+```
+
+Precedence is:
+- CLI flags
+- environment variables
+- config file
+- built-in defaults
+
+**SDK users:** create `HttpClient` with an explicit policy:
+
+```rust
+use plnk_core::client::HttpClient;
+use plnk_core::transport::TransportPolicy;
+use url::Url;
+
+let server = Url::parse("https://planka.example.com")?;
+let policy = TransportPolicy {
+    max_in_flight: 4,
+    retry_attempts: 1,
+    ..TransportPolicy::default()
+};
+let http = HttpClient::with_policy(server, "api-token", policy)?;
+```
+
+Current retry behavior:
+
+- `GET`/`HEAD`/`OPTIONS` retry automatically by default
+- `429`, `502`, `503`, and `504` are retryable
+- `Retry-After` is honored when present
+- `POST`/`PATCH`/`DELETE` are not retried automatically by default
+
+For the full transport write-up, including validation rules and the current rollout status, see [docs/transport.md](docs/transport.md).
 
 ## Building
 

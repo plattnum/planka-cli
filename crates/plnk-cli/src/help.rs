@@ -58,7 +58,17 @@ pub fn try_machine_help() -> bool {
 
 /// Extract positional arguments from raw CLI args, skipping flags and their values.
 fn extract_positionals(raw_args: &[String]) -> Vec<String> {
-    let value_flags: &[&str] = &["--server", "--token", "--output"];
+    let value_flags: &[&str] = &[
+        "--server",
+        "--token",
+        "--output",
+        "--http-max-in-flight",
+        "--http-rate-limit",
+        "--http-burst",
+        "--retry-attempts",
+        "--retry-base-delay-ms",
+        "--retry-max-delay-ms",
+    ];
     let mut skip_next = false;
     let mut positionals = Vec::new();
 
@@ -190,7 +200,7 @@ fn build_action_help(path: &[&str], cmd: &clap::Command) -> CommandHelp {
     for arg in cmd.get_arguments() {
         let name = arg.get_id().as_str();
 
-        if is_global_flag(name) {
+        if matches!(name, "help" | "version") {
             continue;
         }
 
@@ -209,7 +219,7 @@ fn build_action_help(path: &[&str], cmd: &clap::Command) -> CommandHelp {
                 description: help,
             });
         } else {
-            let flag_name = format!("--{name}");
+            let flag_name = format!("--{}", arg.get_long().unwrap_or(name));
             options.insert(
                 flag_name,
                 OptionHelp {
@@ -219,6 +229,23 @@ fn build_action_help(path: &[&str], cmd: &clap::Command) -> CommandHelp {
                 },
             );
         }
+    }
+
+    for arg in App::command().get_arguments() {
+        let name = arg.get_id().as_str();
+        if matches!(name, "help" | "version") {
+            continue;
+        }
+
+        let flag_name = format!("--{}", arg.get_long().unwrap_or(name));
+        options.entry(flag_name).or_insert_with(|| OptionHelp {
+            opt_type: infer_type(name),
+            required: arg.is_required_set(),
+            description: arg
+                .get_help()
+                .map(std::string::ToString::to_string)
+                .unwrap_or_default(),
+        });
     }
 
     // If the action command has subcommands, list them (e.g., card > label, card > assignee)
@@ -252,23 +279,6 @@ fn build_action_help(path: &[&str], cmd: &clap::Command) -> CommandHelp {
     }
 }
 
-fn is_global_flag(name: &str) -> bool {
-    matches!(
-        name,
-        "server"
-            | "token"
-            | "output"
-            | "verbose"
-            | "quiet"
-            | "no_color"
-            | "no-color"
-            | "yes"
-            | "full"
-            | "help"
-            | "version"
-    )
-}
-
 /// Infer a user-facing type string from the argument name.
 fn infer_type(name: &str) -> String {
     match name {
@@ -276,6 +286,13 @@ fn infer_type(name: &str) -> String {
         "position" => "enum(top|bottom|int)".to_string(),
         "role" => "enum(admin|editor|viewer)".to_string(),
         "file" | "out" => "path".to_string(),
+        "http_max_in_flight"
+        | "http_rate_limit"
+        | "http_burst"
+        | "retry_attempts"
+        | "retry_base_delay_ms"
+        | "retry_max_delay_ms" => "integer".to_string(),
+        "no_retry" | "quiet" | "yes" | "full" | "no_color" | "verbose" => "flag".to_string(),
         _ => "string".to_string(),
     }
 }
@@ -507,16 +524,20 @@ mod tests {
         assert_eq!(infer_type("position"), "enum(top|bottom|int)");
         assert_eq!(infer_type("title"), "string");
         assert_eq!(infer_type("file"), "path");
+        assert_eq!(infer_type("http_max_in_flight"), "integer");
+        assert_eq!(infer_type("no_retry"), "flag");
     }
 
     #[test]
-    fn global_flags_excluded() {
+    fn global_flags_included() {
         let cmd = App::command();
         let help = build_help(&cmd, &["card".into(), "create".into()]);
-        assert!(!help.options.contains_key("--server"));
-        assert!(!help.options.contains_key("--token"));
-        assert!(!help.options.contains_key("--output"));
-        assert!(!help.options.contains_key("--verbose"));
-        assert!(!help.options.contains_key("--quiet"));
+        assert!(help.options.contains_key("--server"));
+        assert!(help.options.contains_key("--token"));
+        assert!(help.options.contains_key("--output"));
+        assert!(help.options.contains_key("--verbose"));
+        assert!(help.options.contains_key("--quiet"));
+        assert!(help.options.contains_key("--http-max-in-flight"));
+        assert!(help.options.contains_key("--retry-attempts"));
     }
 }

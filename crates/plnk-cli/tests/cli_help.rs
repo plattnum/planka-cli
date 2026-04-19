@@ -39,10 +39,13 @@ fn machine_help_card_create() {
     assert!(json["examples"].is_array());
     assert!(!json["examples"].as_array().unwrap().is_empty());
 
-    // Global flags excluded
-    assert!(opts.get("--server").is_none());
-    assert!(opts.get("--token").is_none());
-    assert!(opts.get("--output").is_none());
+    // Global flags included, including transport tuning knobs
+    assert_eq!(opts["--server"]["type"], "string");
+    assert_eq!(opts["--token"]["type"], "string");
+    assert_eq!(opts["--output"]["type"], "string");
+    assert_eq!(opts["--http-max-in-flight"]["type"], "integer");
+    assert_eq!(opts["--retry-attempts"]["type"], "integer");
+    assert_eq!(opts["--no-retry"]["type"], "flag");
 }
 
 #[test]

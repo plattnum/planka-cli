@@ -4,6 +4,7 @@ use url::Url;
 use crate::client::HttpClient;
 use crate::error::PlankaError;
 use crate::models::User;
+use crate::transport::TransportPolicy;
 
 /// Request body for `POST /api/access-tokens`.
 #[derive(Serialize)]
@@ -29,38 +30,32 @@ struct UserMeResponse {
 /// # Errors
 /// Returns `PlankaError::AuthenticationFailed` on invalid credentials.
 pub async fn login(server: &Url, email: &str, password: &str) -> Result<String, PlankaError> {
-    // Build a temporary client without auth for the login request
-    let client = reqwest::Client::builder()
-        .user_agent(format!("plnk/{}", env!("CARGO_PKG_VERSION")))
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| PlankaError::ApiError {
-            status: 0,
-            message: format!("Failed to build HTTP client: {e}"),
-        })?;
+    login_with_policy(server, email, password, TransportPolicy::default()).await
+}
 
-    let url = server.join("/api/access-tokens")?;
+/// Exchange email + password for an API token using an explicit transport policy.
+///
+/// # Errors
+/// Returns `PlankaError::AuthenticationFailed` on invalid credentials.
+pub async fn login_with_policy(
+    server: &Url,
+    email: &str,
+    password: &str,
+    policy: TransportPolicy,
+) -> Result<String, PlankaError> {
+    let client = HttpClient::unauthenticated_with_policy(server.clone(), policy)?;
     let body = LoginRequest { email, password };
 
-    let resp = client.post(url).json(&body).send().await?;
-    let status = resp.status();
-
-    if status == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(PlankaError::AuthenticationFailed {
+    match client
+        .post::<_, LoginResponse>("/api/access-tokens", &body)
+        .await
+    {
+        Ok(login_resp) => Ok(login_resp.item),
+        Err(PlankaError::AuthenticationFailed { .. }) => Err(PlankaError::AuthenticationFailed {
             message: "Invalid email or password.".to_string(),
-        });
+        }),
+        Err(err) => Err(err),
     }
-
-    if !status.is_success() {
-        let text = resp.text().await.unwrap_or_default();
-        return Err(PlankaError::ApiError {
-            status: status.as_u16(),
-            message: text,
-        });
-    }
-
-    let login_resp: LoginResponse = resp.json().await?;
-    Ok(login_resp.item)
 }
 
 /// Validate a token by hitting `GET /api/users/me`.
@@ -68,7 +63,19 @@ pub async fn login(server: &Url, email: &str, password: &str) -> Result<String, 
 /// # Errors
 /// Returns `PlankaError::AuthenticationFailed` if the token is invalid.
 pub async fn validate_token(server: &Url, token: &str) -> Result<User, PlankaError> {
-    let client = HttpClient::new(server.clone(), token)?;
+    validate_token_with_policy(server, token, TransportPolicy::default()).await
+}
+
+/// Validate a token by hitting `GET /api/users/me` using an explicit transport policy.
+///
+/// # Errors
+/// Returns `PlankaError::AuthenticationFailed` if the token is invalid.
+pub async fn validate_token_with_policy(
+    server: &Url,
+    token: &str,
+    policy: TransportPolicy,
+) -> Result<User, PlankaError> {
+    let client = HttpClient::with_policy(server.clone(), token, policy)?;
     let resp: UserMeResponse = client.get("/api/users/me").await?;
     Ok(resp.item)
 }

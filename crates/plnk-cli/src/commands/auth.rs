@@ -1,7 +1,9 @@
 use plnk_core::auth::{
-    self, ConfigFile, delete_config, read_config, resolve_credentials, validate_token, write_config,
+    self, ConfigFile, delete_config, read_config, resolve_credentials, validate_token_with_policy,
+    write_config,
 };
 use plnk_core::error::PlankaError;
+use plnk_core::transport::TransportPolicy;
 
 use crate::app::{AuthAction, AuthCommand, OutputFormat, TokenAction};
 use crate::output::{render_item, render_message};
@@ -11,6 +13,7 @@ pub async fn execute(
     flag_server: Option<&str>,
     flag_token: Option<&str>,
     format: OutputFormat,
+    transport_policy: &TransportPolicy,
 ) -> Result<(), PlankaError> {
     match cmd.action {
         AuthAction::Login {
@@ -23,6 +26,7 @@ pub async fn execute(
                 email.as_deref(),
                 password.as_deref(),
                 format,
+                transport_policy,
             )
             .await
         }
@@ -31,9 +35,9 @@ pub async fn execute(
                 do_token_set(&token, server.as_deref().or(flag_server), format)
             }
         },
-        AuthAction::Whoami => do_whoami(flag_server, flag_token, format).await,
+        AuthAction::Whoami => do_whoami(flag_server, flag_token, format, transport_policy).await,
         AuthAction::Logout => do_logout(format),
-        AuthAction::Status => do_status(flag_server, flag_token, format).await,
+        AuthAction::Status => do_status(flag_server, flag_token, format, transport_policy).await,
     }
 }
 
@@ -42,6 +46,7 @@ async fn do_login(
     email: Option<&str>,
     password: Option<&str>,
     format: OutputFormat,
+    transport_policy: &TransportPolicy,
 ) -> Result<(), PlankaError> {
     // Resolve server URL
     let server_url = if let Some(s) = server {
@@ -91,16 +96,20 @@ async fn do_login(
     };
 
     // Exchange credentials for token
-    let token = auth::login(&server, &email_str, &password_str).await?;
+    let token =
+        auth::login_with_policy(&server, &email_str, &password_str, transport_policy.clone())
+            .await?;
 
-    // Save to config
+    // Save to config, preserving any existing transport settings.
+    let existing_http = read_config()?.and_then(|config| config.http);
     write_config(&ConfigFile {
         server: server_url,
         token: token.clone(),
+        http: existing_http,
     })?;
 
     // Validate and show user identity
-    let user = validate_token(&server, &token).await?;
+    let user = validate_token_with_policy(&server, &token, transport_policy.clone()).await?;
 
     if format == OutputFormat::Json {
         render_item(&user, format, false)?;
@@ -132,9 +141,11 @@ fn do_token_set(
         });
     };
 
+    let existing_http = read_config()?.and_then(|config| config.http);
     write_config(&ConfigFile {
         server: server_url,
         token: token.to_string(),
+        http: existing_http,
     })?;
 
     render_message("Token saved.", format)?;
@@ -145,9 +156,11 @@ async fn do_whoami(
     flag_server: Option<&str>,
     flag_token: Option<&str>,
     format: OutputFormat,
+    transport_policy: &TransportPolicy,
 ) -> Result<(), PlankaError> {
     let creds = resolve_credentials(flag_server, flag_token)?;
-    let user = validate_token(&creds.server, &creds.token).await?;
+    let user =
+        validate_token_with_policy(&creds.server, &creds.token, transport_policy.clone()).await?;
     render_item(&user, format, false)?;
     Ok(())
 }
@@ -162,6 +175,7 @@ async fn do_status(
     flag_server: Option<&str>,
     flag_token: Option<&str>,
     format: OutputFormat,
+    transport_policy: &TransportPolicy,
 ) -> Result<(), PlankaError> {
     let creds = match resolve_credentials(flag_server, flag_token) {
         Ok(c) => c,
@@ -186,7 +200,8 @@ async fn do_status(
     };
 
     // Try validating the token
-    let valid = validate_token(&creds.server, &creds.token).await;
+    let valid =
+        validate_token_with_policy(&creds.server, &creds.token, transport_policy.clone()).await;
 
     if format == OutputFormat::Json {
         let (authenticated, user_name) = match &valid {

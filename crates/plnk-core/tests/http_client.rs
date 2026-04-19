@@ -1,9 +1,14 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
+
 use plnk_core::client::HttpClient;
 use plnk_core::error::PlankaError;
+use plnk_core::transport::TransportPolicy;
 use serde::{Deserialize, Serialize};
 use url::Url;
 use wiremock::matchers::{header, method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct TestItem {
@@ -14,6 +19,42 @@ struct TestItem {
 fn client_for(server: &MockServer) -> HttpClient {
     let base_url = Url::parse(&server.uri()).unwrap();
     HttpClient::new(base_url, "test-api-key").unwrap()
+}
+
+fn client_for_with_policy(server: &MockServer, policy: TransportPolicy) -> HttpClient {
+    let base_url = Url::parse(&server.uri()).unwrap();
+    HttpClient::with_policy(base_url, "test-api-key", policy).unwrap()
+}
+
+#[derive(Clone)]
+struct FlakyResponder {
+    attempts: Arc<AtomicUsize>,
+    first: ResponseTemplate,
+    rest: ResponseTemplate,
+}
+
+impl Respond for FlakyResponder {
+    fn respond(&self, _request: &Request) -> ResponseTemplate {
+        let attempt = self.attempts.fetch_add(1, Ordering::SeqCst);
+        if attempt == 0 {
+            self.first.clone()
+        } else {
+            self.rest.clone()
+        }
+    }
+}
+
+#[derive(Clone)]
+struct CountingResponder {
+    attempts: Arc<AtomicUsize>,
+    response: ResponseTemplate,
+}
+
+impl Respond for CountingResponder {
+    fn respond(&self, _request: &Request) -> ResponseTemplate {
+        self.attempts.fetch_add(1, Ordering::SeqCst);
+        self.response.clone()
+    }
 }
 
 // ─── GET ─────────────────────────────────────────────────────────────
@@ -96,6 +137,79 @@ async fn get_500_returns_api_error() {
     assert!(err.to_string().contains("kaboom"));
 }
 
+#[tokio::test]
+async fn get_503_retries_then_succeeds() {
+    let server = MockServer::start().await;
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&attempts);
+
+    Mock::given(method("GET"))
+        .and(path("/api/flaky"))
+        .respond_with(FlakyResponder {
+            attempts: counter,
+            first: ResponseTemplate::new(503),
+            rest: ResponseTemplate::new(200).set_body_json(TestItem {
+                id: "retry-ok".to_string(),
+                name: "worked".to_string(),
+            }),
+        })
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let client = client_for_with_policy(
+        &server,
+        TransportPolicy {
+            retry_jitter: false,
+            retry_base_delay_ms: 10,
+            retry_max_delay_ms: 10,
+            ..TransportPolicy::default()
+        },
+    );
+    let result: TestItem = client.get("/api/flaky").await.unwrap();
+
+    assert_eq!(result.id, "retry-ok");
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn get_429_honors_retry_after() {
+    let server = MockServer::start().await;
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&attempts);
+
+    Mock::given(method("GET"))
+        .and(path("/api/retry-after"))
+        .respond_with(FlakyResponder {
+            attempts: counter,
+            first: ResponseTemplate::new(429).insert_header("Retry-After", "1"),
+            rest: ResponseTemplate::new(200).set_body_json(TestItem {
+                id: "after-wait".to_string(),
+                name: "ok".to_string(),
+            }),
+        })
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let client = client_for_with_policy(
+        &server,
+        TransportPolicy {
+            retry_jitter: false,
+            retry_base_delay_ms: 10,
+            retry_max_delay_ms: 10,
+            ..TransportPolicy::default()
+        },
+    );
+
+    let start = Instant::now();
+    let result: TestItem = client.get("/api/retry-after").await.unwrap();
+
+    assert_eq!(result.id, "after-wait");
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    assert!(start.elapsed() >= std::time::Duration::from_millis(950));
+}
+
 // ─── POST ────────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -118,6 +232,41 @@ async fn post_success() {
 
     assert_eq!(result.id, "2");
     assert_eq!(result.name, "created");
+}
+
+#[tokio::test]
+async fn post_503_is_not_retried_by_default() {
+    let server = MockServer::start().await;
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&attempts);
+
+    Mock::given(method("POST"))
+        .and(path("/api/items"))
+        .respond_with(CountingResponder {
+            attempts: counter,
+            response: ResponseTemplate::new(503),
+        })
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client_for_with_policy(
+        &server,
+        TransportPolicy {
+            retry_jitter: false,
+            retry_base_delay_ms: 10,
+            retry_max_delay_ms: 10,
+            ..TransportPolicy::default()
+        },
+    );
+    let body = serde_json::json!({"name": "new item"});
+    let err = client
+        .post::<_, TestItem>("/api/items", &body)
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.exit_code(), 5);
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
 }
 
 // ─── PATCH ───────────────────────────────────────────────────────────
@@ -174,6 +323,31 @@ async fn delete_404() {
 }
 
 // ─── Auth header on all requests ─────────────────────────────────────
+
+#[test]
+fn client_exposes_explicit_transport_policy() {
+    let base_url = Url::parse("http://example.test").unwrap();
+    let policy = TransportPolicy {
+        max_in_flight: 3,
+        rate_limit_per_second: Some(7),
+        burst_size: Some(9),
+        retry_attempts: 1,
+        retry_base_delay_ms: 111,
+        retry_max_delay_ms: 999,
+        retry_jitter: false,
+        retry_safe_methods_only: false,
+    };
+
+    let client = HttpClient::with_policy(base_url, "test-api-key", policy.clone()).unwrap();
+    assert_eq!(client.transport_policy(), &policy);
+}
+
+#[test]
+fn unauthenticated_client_uses_default_transport_policy() {
+    let base_url = Url::parse("http://example.test").unwrap();
+    let client = HttpClient::unauthenticated(base_url).unwrap();
+    assert_eq!(client.transport_policy(), &TransportPolicy::default());
+}
 
 #[tokio::test]
 async fn auth_header_present_on_all_methods() {

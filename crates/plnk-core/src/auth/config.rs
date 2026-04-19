@@ -5,11 +5,24 @@ use tracing::warn;
 
 use crate::error::PlankaError;
 
+/// Optional transport tuning in the config file.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct HttpConfig {
+    pub max_in_flight: Option<usize>,
+    pub rate_limit: Option<u32>,
+    pub burst: Option<u32>,
+    pub retry_attempts: Option<u32>,
+    pub retry_base_delay_ms: Option<u64>,
+    pub retry_max_delay_ms: Option<u64>,
+}
+
 /// Config file contents (`~/.config/planka/config.toml`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigFile {
     pub server: String,
     pub token: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http: Option<HttpConfig>,
 }
 
 /// Resolve the config file path using the spec's precedence:
@@ -125,12 +138,21 @@ mod tests {
         let config = ConfigFile {
             server: "http://localhost:3000".to_string(),
             token: "test-token-123".to_string(),
+            http: Some(HttpConfig {
+                max_in_flight: Some(8),
+                rate_limit: Some(10),
+                burst: Some(10),
+                retry_attempts: Some(2),
+                retry_base_delay_ms: Some(250),
+                retry_max_delay_ms: Some(2_000),
+            }),
         };
 
         let toml_str = toml::to_string_pretty(&config).unwrap();
         let parsed: ConfigFile = toml::from_str(&toml_str).unwrap();
         assert_eq!(parsed.server, config.server);
         assert_eq!(parsed.token, config.token);
+        assert_eq!(parsed.http, config.http);
     }
 
     #[test]

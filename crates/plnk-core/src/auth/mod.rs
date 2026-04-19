@@ -1,8 +1,8 @@
 mod config;
 mod login;
 
-pub use config::{ConfigFile, config_path, delete_config, read_config, write_config};
-pub use login::{login, validate_token};
+pub use config::{ConfigFile, HttpConfig, config_path, delete_config, read_config, write_config};
+pub use login::{login, login_with_policy, validate_token, validate_token_with_policy};
 
 use tracing::debug;
 use url::Url;
