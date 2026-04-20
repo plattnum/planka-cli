@@ -164,6 +164,9 @@ struct BoardIncluded {
     card_labels: Vec<CardLabelItem>,
     card_memberships: Vec<CardMembershipItem>,
     users: Vec<UserItem>,
+    attachments: Vec<AttachmentItem>,
+    task_lists: Vec<TaskListItem>,
+    tasks: Vec<TaskItem>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -199,6 +202,27 @@ struct ProjectSnapshot {
 #[derive(Debug, Clone, Deserialize)]
 struct ProjectIncluded {
     boards: Vec<ProjectBoardItem>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CommentIncluded {
+    users: Vec<UserItem>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommentItem {
+    id: String,
+    text: String,
+    created_at: String,
+    updated_at: Option<String>,
+    user_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CommentsResponse {
+    items: Vec<CommentItem>,
+    included: CommentIncluded,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -239,6 +263,40 @@ struct UserItem {
     username: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AttachmentItem {
+    id: String,
+    card_id: String,
+    name: String,
+    data: AttachmentData,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AttachmentData {
+    url: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TaskListItem {
+    id: String,
+    card_id: String,
+    name: String,
+    position: f64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TaskItem {
+    id: String,
+    task_list_id: String,
+    name: String,
+    is_completed: bool,
+    assignee_user_id: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 struct LabelSummary {
     id: String,
@@ -254,16 +312,50 @@ struct UserSummary {
 }
 
 #[derive(Debug, Clone)]
+struct AttachmentSummary {
+    id: String,
+    name: String,
+    url: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct TaskSummary {
+    id: String,
+    name: String,
+    is_completed: bool,
+    assignee: Option<UserSummary>,
+}
+
+#[derive(Debug, Clone)]
+struct TaskListSummary {
+    id: String,
+    name: String,
+    tasks: Vec<TaskSummary>,
+}
+
+#[derive(Debug, Clone)]
+struct CommentSummary {
+    id: String,
+    text: String,
+    created_at: String,
+    updated_at: Option<String>,
+    author: Option<UserSummary>,
+}
+
+#[derive(Debug, Clone)]
 struct CardSummary {
     id: String,
     name: String,
     description: Option<String>,
     position: f64,
+    is_closed: bool,
     comments_total: usize,
     due_date: Option<String>,
     creator: Option<UserSummary>,
     labels: Vec<LabelSummary>,
     assignees: Vec<UserSummary>,
+    attachments: Vec<AttachmentSummary>,
+    task_lists: Vec<TaskListSummary>,
     is_subscribed: bool,
 }
 
@@ -273,6 +365,8 @@ struct ListSummary {
     name: String,
     position: f64,
     card_count: usize,
+    active_card_count: usize,
+    closed_card_count: usize,
     cards: Vec<CardSummary>,
 }
 
@@ -283,6 +377,8 @@ struct BoardSummary {
     project_id: String,
     position: f64,
     total_cards: usize,
+    active_card_count: usize,
+    closed_card_count: usize,
     active_lists: Vec<ListSummary>,
     labels: Vec<LabelSummary>,
     members: Vec<UserSummary>,
@@ -359,14 +455,63 @@ impl BoardSummary {
             assignees.sort_by(|left, right| left.name.cmp(&right.name));
         }
 
-        let mut cards = included
-            .cards
-            .into_iter()
-            .filter(|card| !card.is_closed)
-            .collect::<Vec<_>>();
+        let mut attachments_by_card = HashMap::<String, Vec<AttachmentSummary>>::new();
+        for attachment in included.attachments {
+            attachments_by_card
+                .entry(attachment.card_id)
+                .or_default()
+                .push(AttachmentSummary {
+                    id: attachment.id,
+                    name: attachment.name,
+                    url: attachment.data.url,
+                });
+        }
+        for attachments in attachments_by_card.values_mut() {
+            attachments.sort_by(|left, right| left.name.cmp(&right.name));
+        }
+
+        let mut tasks_by_task_list = HashMap::<String, Vec<TaskSummary>>::new();
+        for task in included.tasks {
+            tasks_by_task_list
+                .entry(task.task_list_id)
+                .or_default()
+                .push(TaskSummary {
+                    id: task.id,
+                    name: task.name,
+                    is_completed: task.is_completed,
+                    assignee: task
+                        .assignee_user_id
+                        .as_ref()
+                        .and_then(|user_id| users_by_id.get(user_id).cloned()),
+                });
+        }
+        for tasks in tasks_by_task_list.values_mut() {
+            tasks.sort_by(|left, right| left.name.cmp(&right.name));
+        }
+
+        let mut task_lists_by_card = HashMap::<String, Vec<TaskListSummary>>::new();
+        let mut task_lists = included.task_lists;
+        task_lists.sort_by(|left, right| left.position.total_cmp(&right.position));
+        for task_list in task_lists {
+            task_lists_by_card
+                .entry(task_list.card_id)
+                .or_default()
+                .push(TaskListSummary {
+                    id: task_list.id.clone(),
+                    name: task_list.name,
+                    tasks: tasks_by_task_list.remove(&task_list.id).unwrap_or_default(),
+                });
+        }
+        for task_lists in task_lists_by_card.values_mut() {
+            task_lists.sort_by(|left, right| left.name.cmp(&right.name));
+        }
+
+        let mut cards = included.cards;
         cards.sort_by(|left, right| left.position.total_cmp(&right.position));
 
         let total_cards = cards.len();
+        let active_card_count = cards.iter().filter(|card| !card.is_closed).count();
+        let closed_card_count = total_cards.saturating_sub(active_card_count);
 
         let mut lists = included.lists;
         lists.sort_by(|left, right| match (left.position, right.position) {
@@ -393,6 +538,7 @@ impl BoardSummary {
                         name: card.name.clone(),
                         description: card.description.clone(),
                         position: card.position,
+                        is_closed: card.is_closed,
                         comments_total: card.comments_total,
                         due_date: card.due_date.clone(),
                         creator: card
@@ -401,15 +547,27 @@ impl BoardSummary {
                             .and_then(|user_id| users_by_id.get(user_id).cloned()),
                         labels: labels_by_card.get(&card.id).cloned().unwrap_or_default(),
                         assignees: assignees_by_card.get(&card.id).cloned().unwrap_or_default(),
+                        attachments: attachments_by_card
+                            .get(&card.id)
+                            .cloned()
+                            .unwrap_or_default(),
+                        task_lists: task_lists_by_card
+                            .get(&card.id)
+                            .cloned()
+                            .unwrap_or_default(),
                         is_subscribed: card.is_subscribed,
                     })
                     .collect::<Vec<_>>();
+                let active_count = list_cards.iter().filter(|card| !card.is_closed).count();
+                let closed_count = list_cards.len().saturating_sub(active_count);
 
                 Some(ListSummary {
                     id: list.id,
                     name,
                     position,
                     card_count: list_cards.len(),
+                    active_card_count: active_count,
+                    closed_card_count: closed_count,
                     cards: list_cards,
                 })
             })
@@ -421,6 +579,8 @@ impl BoardSummary {
             project_id: item.project_id,
             position: item.position,
             total_cards,
+            active_card_count,
+            closed_card_count,
             active_lists,
             labels,
             members,
@@ -434,6 +594,8 @@ impl BoardSummary {
             project_id,
             position,
             total_cards: 0,
+            active_card_count: 0,
+            closed_card_count: 0,
             active_lists: Vec::new(),
             labels: Vec::new(),
             members: Vec::new(),
@@ -457,7 +619,18 @@ enum AppEvent {
     SocketConnecting,
     SocketLive(BoardSummary),
     BoardHydrated(BoardSummary),
-    BoardLoadFailed { board_id: String, message: String },
+    BoardLoadFailed {
+        board_id: String,
+        message: String,
+    },
+    CardCommentsLoaded {
+        card_id: String,
+        comments: Vec<CommentSummary>,
+    },
+    CardCommentsLoadFailed {
+        card_id: String,
+        message: String,
+    },
     SocketError(String),
     LiveEvent(LiveEventRecord),
 }
@@ -543,6 +716,9 @@ struct AppState {
     selected: Option<TreeKey>,
     focus: PaneFocus,
     detail_scroll: usize,
+    card_comments: HashMap<String, Vec<CommentSummary>>,
+    loading_card_comments: HashSet<String>,
+    card_comment_errors: HashMap<String, String>,
     show_debug_log: bool,
 }
 
@@ -566,6 +742,9 @@ impl AppState {
         let expanded_lists = HashSet::new();
         let loading_boards = HashSet::new();
         let board_errors = HashMap::new();
+        let card_comments = HashMap::new();
+        let loading_card_comments = HashSet::new();
+        let card_comment_errors = HashMap::new();
 
         let selected = projects
             .iter()
@@ -603,6 +782,9 @@ impl AppState {
             selected,
             focus: PaneFocus::Explorer,
             detail_scroll: 0,
+            card_comments,
+            loading_card_comments,
+            card_comment_errors,
             show_debug_log: false,
         }
     }
@@ -637,6 +819,15 @@ impl AppState {
                     },
                 );
                 self.recent_events.truncate(24);
+            }
+            AppEvent::CardCommentsLoaded { card_id, comments } => {
+                self.loading_card_comments.remove(&card_id);
+                self.card_comment_errors.remove(&card_id);
+                self.card_comments.insert(card_id, comments);
+            }
+            AppEvent::CardCommentsLoadFailed { card_id, message } => {
+                self.loading_card_comments.remove(&card_id);
+                self.card_comment_errors.insert(card_id, message.clone());
             }
             AppEvent::SocketError(message) => {
                 self.status = ConnectionState::Error(message);
@@ -704,9 +895,10 @@ impl AppState {
                     Some(format!("load failed • {}", truncate(message, 40)))
                 } else if board_loaded {
                     Some(format!(
-                        "{} lists • {} cards",
+                        "{} lists • {} active • {} closed",
                         board.active_lists.len(),
-                        board.total_cards
+                        board.active_card_count,
+                        board.closed_card_count
                     ))
                 } else {
                     Some("unloaded • press → to hydrate".to_string())
@@ -736,7 +928,10 @@ impl AppState {
                         depth: 2,
                         kind: TreeKind::List,
                         label: list.name.clone(),
-                        meta: Some(format!("{} cards", list.card_count)),
+                        meta: Some(format!(
+                            "{} active • {} closed",
+                            list.active_card_count, list.closed_card_count
+                        )),
                         has_children: !list.cards.is_empty(),
                         expanded: list_expanded,
                         live: false,
@@ -753,7 +948,11 @@ impl AppState {
                             depth: 3,
                             kind: TreeKind::Card,
                             label: card.name.clone(),
-                            meta: None,
+                            meta: if card.is_closed {
+                                Some("closed".to_string())
+                            } else {
+                                None
+                            },
                             has_children: false,
                             expanded: false,
                             live: false,
@@ -782,6 +981,25 @@ impl AppState {
         if changed {
             self.detail_scroll = 0;
         }
+    }
+
+    fn selected_card_id(&self) -> Option<&str> {
+        match self.selected.as_ref() {
+            Some(TreeKey::Card(card_id)) => Some(card_id.as_str()),
+            _ => None,
+        }
+    }
+
+    fn mark_selected_card_comments_loading(&mut self) -> Option<String> {
+        let card_id = self.selected_card_id()?.to_string();
+        if self.card_comments.contains_key(&card_id)
+            || self.loading_card_comments.contains(&card_id)
+            || self.card_comment_errors.contains_key(&card_id)
+        {
+            return None;
+        }
+        self.loading_card_comments.insert(card_id.clone());
+        Some(card_id)
     }
 
     fn toggle_focus(&mut self) {
@@ -977,91 +1195,112 @@ impl AppState {
             return;
         };
 
-        let Some(board) = self.subscribed_board_mut() else {
-            return;
+        let invalidate_comments = {
+            let Some(board) = self.subscribed_board_mut() else {
+                return;
+            };
+
+            let existing = remove_card_from_board(board, &card_id);
+
+            let Some(list_id) = json_string(item, "listId") else {
+                return;
+            };
+
+            let creator = match json_string_field(item, "creatorUserId") {
+                JsonField::Value(user_id) => board
+                    .members
+                    .iter()
+                    .find(|user| user.id == user_id)
+                    .cloned(),
+                JsonField::Null => None,
+                JsonField::Missing => existing.as_ref().and_then(|card| card.creator.clone()),
+            };
+
+            let position = json_f64(item, "position")
+                .or_else(|| existing.as_ref().map(|card| card.position))
+                .unwrap_or(f64::MAX);
+
+            let description = match json_string_field(item, "description") {
+                JsonField::Value(value) => Some(value),
+                JsonField::Null => None,
+                JsonField::Missing => existing.as_ref().and_then(|card| card.description.clone()),
+            };
+
+            let due_date = match json_string_field(item, "dueDate") {
+                JsonField::Value(value) => Some(value),
+                JsonField::Null => None,
+                JsonField::Missing => existing.as_ref().and_then(|card| card.due_date.clone()),
+            };
+
+            let comments_total = json_u64(item, "commentsTotal")
+                .and_then(|value| usize::try_from(value).ok())
+                .or_else(|| existing.as_ref().map(|card| card.comments_total))
+                .unwrap_or(0);
+            let invalidate_comments = existing
+                .as_ref()
+                .is_some_and(|card| card.comments_total != comments_total);
+
+            let is_subscribed = json_bool(item, "isSubscribed")
+                .or_else(|| existing.as_ref().map(|card| card.is_subscribed))
+                .unwrap_or(false);
+            let is_closed = json_bool(item, "isClosed")
+                .or_else(|| existing.as_ref().map(|card| card.is_closed))
+                .unwrap_or(false);
+
+            let labels = existing
+                .as_ref()
+                .map(|card| card.labels.clone())
+                .unwrap_or_default();
+            let assignees = existing
+                .as_ref()
+                .map(|card| card.assignees.clone())
+                .unwrap_or_default();
+            let attachments = existing
+                .as_ref()
+                .map(|card| card.attachments.clone())
+                .unwrap_or_default();
+            let task_lists = existing
+                .as_ref()
+                .map(|card| card.task_lists.clone())
+                .unwrap_or_default();
+
+            let Some(list) = board
+                .active_lists
+                .iter_mut()
+                .find(|list| list.id == list_id)
+            else {
+                recount_board(board);
+                return;
+            };
+
+            list.cards.push(CardSummary {
+                id: card_id.clone(),
+                name: json_string(item, "name")
+                    .map(ToOwned::to_owned)
+                    .or_else(|| existing.as_ref().map(|card| card.name.clone()))
+                    .unwrap_or_else(|| "untitled".to_string()),
+                description,
+                position,
+                is_closed,
+                comments_total,
+                due_date,
+                creator,
+                labels,
+                assignees,
+                attachments,
+                task_lists,
+                is_subscribed,
+            });
+            list.cards
+                .sort_by(|left, right| left.position.total_cmp(&right.position));
+            recount_board(board);
+            invalidate_comments
         };
 
-        let existing = remove_card_from_board(board, &card_id);
-        if json_bool(item, "isClosed").unwrap_or(false) {
-            recount_board(board);
-            return;
+        if invalidate_comments {
+            self.card_comments.remove(&card_id);
+            self.card_comment_errors.remove(&card_id);
         }
-
-        let Some(list_id) = json_string(item, "listId") else {
-            return;
-        };
-
-        let creator = match json_string_field(item, "creatorUserId") {
-            JsonField::Value(user_id) => board
-                .members
-                .iter()
-                .find(|user| user.id == user_id)
-                .cloned(),
-            JsonField::Null => None,
-            JsonField::Missing => existing.as_ref().and_then(|card| card.creator.clone()),
-        };
-
-        let position = json_f64(item, "position")
-            .or_else(|| existing.as_ref().map(|card| card.position))
-            .unwrap_or(f64::MAX);
-
-        let description = match json_string_field(item, "description") {
-            JsonField::Value(value) => Some(value),
-            JsonField::Null => None,
-            JsonField::Missing => existing.as_ref().and_then(|card| card.description.clone()),
-        };
-
-        let due_date = match json_string_field(item, "dueDate") {
-            JsonField::Value(value) => Some(value),
-            JsonField::Null => None,
-            JsonField::Missing => existing.as_ref().and_then(|card| card.due_date.clone()),
-        };
-
-        let comments_total = json_u64(item, "commentsTotal")
-            .and_then(|value| usize::try_from(value).ok())
-            .or_else(|| existing.as_ref().map(|card| card.comments_total))
-            .unwrap_or(0);
-
-        let is_subscribed = json_bool(item, "isSubscribed")
-            .or_else(|| existing.as_ref().map(|card| card.is_subscribed))
-            .unwrap_or(false);
-
-        let labels = existing
-            .as_ref()
-            .map(|card| card.labels.clone())
-            .unwrap_or_default();
-        let assignees = existing
-            .as_ref()
-            .map(|card| card.assignees.clone())
-            .unwrap_or_default();
-
-        let Some(list) = board
-            .active_lists
-            .iter_mut()
-            .find(|list| list.id == list_id)
-        else {
-            recount_board(board);
-            return;
-        };
-
-        list.cards.push(CardSummary {
-            id: card_id,
-            name: json_string(item, "name")
-                .map(ToOwned::to_owned)
-                .or_else(|| existing.as_ref().map(|card| card.name.clone()))
-                .unwrap_or_else(|| "untitled".to_string()),
-            description,
-            position,
-            comments_total,
-            due_date,
-            creator,
-            labels,
-            assignees,
-            is_subscribed,
-        });
-        list.cards
-            .sort_by(|left, right| left.position.total_cmp(&right.position));
-        recount_board(board);
     }
 
     fn apply_card_delete(&mut self, payload: &Value) {
@@ -1069,11 +1308,15 @@ impl AppState {
         let Some(card_id) = json_string(item, "id") else {
             return;
         };
-        let Some(board) = self.subscribed_board_mut() else {
-            return;
-        };
-        let _ = remove_card_from_board(board, card_id);
-        recount_board(board);
+        {
+            let Some(board) = self.subscribed_board_mut() else {
+                return;
+            };
+            let _ = remove_card_from_board(board, card_id);
+            recount_board(board);
+        }
+        self.card_comments.remove(card_id);
+        self.card_comment_errors.remove(card_id);
     }
 
     fn apply_list_upsert(&mut self, payload: &Value) {
@@ -1123,6 +1366,8 @@ impl AppState {
                 name,
                 position,
                 card_count: 0,
+                active_card_count: 0,
+                closed_card_count: 0,
                 cards: Vec::new(),
             });
         }
@@ -1549,6 +1794,47 @@ async fn fetch_board_summary(
     Ok(BoardSummary::from_snapshot(snapshot))
 }
 
+async fn fetch_card_comments(
+    server: &Url,
+    token: &str,
+    card_id: &str,
+) -> Result<Vec<CommentSummary>, TuiError> {
+    let client = reqwest::Client::new();
+    let response = client
+        .get(server.join(&format!("api/cards/{card_id}/comments"))?)
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()?;
+    let response = response.json::<CommentsResponse>().await?;
+
+    let users_by_id = response
+        .included
+        .users
+        .into_iter()
+        .map(|user| {
+            let summary = UserSummary {
+                id: user.id,
+                name: user.name,
+                username: user.username,
+            };
+            (summary.id.clone(), summary)
+        })
+        .collect::<HashMap<_, _>>();
+
+    Ok(response
+        .items
+        .into_iter()
+        .map(|comment| CommentSummary {
+            id: comment.id,
+            text: comment.text,
+            created_at: comment.created_at,
+            updated_at: comment.updated_at,
+            author: users_by_id.get(&comment.user_id).cloned(),
+        })
+        .collect::<Vec<_>>())
+}
+
 fn spawn_board_loader(
     runtime: &Arc<tokio::runtime::Handle>,
     server: &Url,
@@ -1568,6 +1854,32 @@ fn spawn_board_loader(
             Err(err) => {
                 let _ = tx.send(AppEvent::BoardLoadFailed {
                     board_id,
+                    message: err.to_string(),
+                });
+            }
+        }
+    });
+}
+
+fn spawn_comment_loader(
+    runtime: &Arc<tokio::runtime::Handle>,
+    server: &Url,
+    token: &str,
+    card_id: String,
+    tx: &Sender<AppEvent>,
+) {
+    let runtime = Arc::clone(runtime);
+    let server = server.clone();
+    let token = token.to_string();
+    let tx = tx.clone();
+    runtime.spawn(async move {
+        match fetch_card_comments(&server, &token, &card_id).await {
+            Ok(comments) => {
+                let _ = tx.send(AppEvent::CardCommentsLoaded { card_id, comments });
+            }
+            Err(err) => {
+                let _ = tx.send(AppEvent::CardCommentsLoadFailed {
+                    card_id,
                     message: err.to_string(),
                 });
             }
@@ -1986,6 +2298,8 @@ fn remove_card_from_board(board: &mut BoardSummary, card_id: &str) -> Option<Car
         if let Some(index) = list.cards.iter().position(|card| card.id == card_id) {
             let removed = list.cards.remove(index);
             list.card_count = list.cards.len();
+            list.active_card_count = list.cards.iter().filter(|card| !card.is_closed).count();
+            list.closed_card_count = list.card_count.saturating_sub(list.active_card_count);
             return Some(removed);
         }
     }
@@ -1996,10 +2310,18 @@ fn remove_card_from_board(board: &mut BoardSummary, card_id: &str) -> Option<Car
 fn recount_board(board: &mut BoardSummary) {
     for list in &mut board.active_lists {
         list.card_count = list.cards.len();
+        list.active_card_count = list.cards.iter().filter(|card| !card.is_closed).count();
+        list.closed_card_count = list.card_count.saturating_sub(list.active_card_count);
         list.cards
             .sort_by(|left, right| left.position.total_cmp(&right.position));
     }
     board.total_cards = board.active_lists.iter().map(|list| list.cards.len()).sum();
+    board.active_card_count = board
+        .active_lists
+        .iter()
+        .map(|list| list.active_card_count)
+        .sum();
+    board.closed_card_count = board.total_cards.saturating_sub(board.active_card_count);
 }
 
 fn truncate(text: &str, max: usize) -> String {
@@ -2053,6 +2375,12 @@ fn run_headless_probe(
             Ok(AppEvent::BoardLoadFailed { board_id, message }) => {
                 println!("event: board load failed: {board_id} :: {message}");
             }
+            Ok(AppEvent::CardCommentsLoaded { card_id, comments }) => {
+                println!("event: comments loaded: {card_id} :: {}", comments.len());
+            }
+            Ok(AppEvent::CardCommentsLoadFailed { card_id, message }) => {
+                println!("event: comments load failed: {card_id} :: {message}");
+            }
             Ok(AppEvent::SocketError(message)) => println!("event: socket error: {message}"),
             Ok(AppEvent::LiveEvent(record)) => {
                 println!("event: {} :: {}", record.name, record.summary);
@@ -2075,6 +2403,10 @@ fn run_app(
     loop {
         while let Ok(message) = rx.try_recv() {
             app.apply(message);
+        }
+
+        if let Some(card_id) = app.mark_selected_card_comments_loading() {
+            spawn_comment_loader(runtime, server, token, card_id, tx);
         }
 
         terminal.draw(|frame| draw(frame, app))?;
@@ -2342,15 +2674,16 @@ fn build_project_detail(app: &AppState, project_id: &str) -> Vec<Line<'static>> 
         .count();
     let mut lines = vec![
         detail_title("project"),
-        Line::from(format!("name: {}", project.name)),
-        Line::from(format!("project id: {}", project.id)),
-        Line::from(format!(
-            "boards: {} | loaded boards: {}",
-            project.boards.len(),
-            loaded_boards
-        )),
+        header_value_line(&project.name),
+        id_line("project", &project.id),
         Line::from(""),
-        Line::from("description:"),
+        section_header("Summary"),
+        kv_line(
+            "boards",
+            format!("{} total • {} loaded", project.boards.len(), loaded_boards),
+        ),
+        Line::from(""),
+        section_header("Description"),
     ];
 
     push_optional_text_block(
@@ -2359,16 +2692,16 @@ fn build_project_detail(app: &AppState, project_id: &str) -> Vec<Line<'static>> 
         "No project description.",
     );
     lines.push(Line::from(""));
-    lines.push(Line::from("boards:"));
+    lines.push(section_header("Boards"));
     lines.extend(project.boards.iter().take(12).map(|board| {
-        let suffix = if board.id == app.subscribed_board_id {
-            "  [live subscribed board]"
+        let status = if board.id == app.subscribed_board_id {
+            "live"
         } else if board.is_loaded() {
-            "  [snapshot loaded]"
+            "loaded"
         } else {
-            ""
+            "stub"
         };
-        Line::from(format!("- {} [{}]{}", board.name, board.id, suffix))
+        bullet_with_meta(&board.name, &format!("{status} • {}", board.id))
     }));
     lines
 }
@@ -2378,61 +2711,80 @@ fn build_board_detail(app: &AppState, board_id: &str) -> Vec<Line<'static>> {
         if let Some(board) = project.boards.iter().find(|board| board.id == board_id) {
             let mut lines = vec![
                 detail_title("board"),
-                Line::from(format!("name: {}", board.name)),
-                Line::from(format!("board id: {}", board.id)),
-                Line::from(format!("project: {} [{}]", project.name, project.id)),
-                Line::from(format!(
-                    "live subscribed: {}",
+                header_value_line(&board.name),
+                id_line("board", &board.id),
+                context_entity_line("project", &project.name, &project.id),
+                Line::from(""),
+                section_header("Summary"),
+                kv_line(
+                    "status",
                     if board.id == app.subscribed_board_id {
-                        "yes"
+                        "live subscribed".to_string()
                     } else {
-                        "no"
-                    }
-                )),
+                        "loaded by snapshot".to_string()
+                    },
+                ),
             ];
 
             if board.is_loaded() {
-                lines.push(Line::from(format!(
-                    "active lists: {} | cards: {} | labels: {} | members: {}",
-                    board.active_lists.len(),
-                    board.total_cards,
-                    board.labels.len(),
-                    board.members.len()
-                )));
+                lines.push(kv_line(
+                    "cards",
+                    format!(
+                        "{} active • {} closed",
+                        board.active_card_count, board.closed_card_count
+                    ),
+                ));
+                lines.push(kv_line("lists", board.active_lists.len().to_string()));
+                lines.push(kv_line("labels", board.labels.len().to_string()));
+                lines.push(kv_line("members", board.members.len().to_string()));
+
                 lines.push(Line::from(""));
-                lines.push(Line::from("lists:"));
+                lines.push(section_header("Lists"));
                 lines.extend(board.active_lists.iter().take(10).map(|list| {
-                    Line::from(format!(
-                        "- {} [{}] ({})",
-                        list.name, list.id, list.card_count
-                    ))
+                    bullet_with_meta(
+                        &list.name,
+                        &format!(
+                            "{} active • {} closed • {}",
+                            list.active_card_count, list.closed_card_count, list.id
+                        ),
+                    )
                 }));
+
                 lines.push(Line::from(""));
-                lines.push(Line::from("labels:"));
+                lines.push(section_header("Labels"));
                 if board.labels.is_empty() {
-                    lines.push(Line::from("- none"));
+                    lines.push(empty_state_line("No labels."));
                 } else {
                     lines.extend(board.labels.iter().take(8).map(|label| {
-                        let color = label.color.as_deref().unwrap_or("?");
-                        Line::from(format!("- {} [{}] color={}", label.name, label.id, color))
+                        bullet_with_meta(
+                            &label.name,
+                            &format!(
+                                "color={} • {}",
+                                label.color.as_deref().unwrap_or("?"),
+                                label.id
+                            ),
+                        )
                     }));
                 }
+
                 lines.push(Line::from(""));
-                lines.push(Line::from("members:"));
-                lines.extend(
-                    board.members.iter().take(8).map(|member| {
-                        Line::from(format!("- {} ({})", member.name, member.username))
-                    }),
-                );
+                lines.push(section_header("Members"));
+                lines.extend(board.members.iter().take(8).map(|member| {
+                    bullet_with_meta(
+                        &member.name,
+                        &format!("@{} • {}", member.username, member.id),
+                    )
+                }));
             } else {
                 lines.push(Line::from(""));
-                lines.push(Line::from(
+                lines.push(section_header("Load state"));
+                lines.push(muted_line(
                     "Board known from project snapshot, but richer list/card detail not loaded yet.",
                 ));
-                lines.push(Line::from(
+                lines.push(muted_line(
                     "Press → or Enter to lazy-load this board snapshot over HTTP.",
                 ));
-                lines.push(Line::from(
+                lines.push(muted_line(
                     "Only subscribed board gets continuous websocket live sync right now.",
                 ));
             }
@@ -2450,21 +2802,32 @@ fn build_list_detail(app: &AppState, list_id: &str) -> Vec<Line<'static>> {
             if let Some(list) = board.active_lists.iter().find(|list| list.id == list_id) {
                 let mut lines = vec![
                     detail_title("list"),
-                    Line::from(format!("name: {}", list.name)),
-                    Line::from(format!("list id: {}", list.id)),
-                    Line::from(format!("board: {} [{}]", board.name, board.id)),
-                    Line::from(format!("project: {} [{}]", project.name, project.id)),
-                    Line::from(format!("card count: {}", list.card_count)),
+                    header_value_line(&list.name),
+                    id_line("list", &list.id),
+                    context_entity_line("board", &board.name, &board.id),
+                    context_entity_line("project", &project.name, &project.id),
                     Line::from(""),
-                    Line::from("cards in list:"),
+                    section_header("Summary"),
+                    kv_line(
+                        "cards",
+                        format!(
+                            "{} total • {} active • {} closed",
+                            list.card_count, list.active_card_count, list.closed_card_count
+                        ),
+                    ),
+                    Line::from(""),
+                    section_header("Cards in list"),
                 ];
                 lines.extend(list.cards.iter().take(14).map(|card| {
-                    let label_meta = if card.labels.is_empty() {
-                        String::new()
-                    } else {
-                        format!("  [{}]", join_label_names(&card.labels))
-                    };
-                    Line::from(format!("- {} [{}]{}", card.name, card.id, label_meta))
+                    let mut meta = Vec::new();
+                    if !card.labels.is_empty() {
+                        meta.push(join_label_names(&card.labels));
+                    }
+                    if card.is_closed {
+                        meta.push("closed".to_string());
+                    }
+                    meta.push(card.id.clone());
+                    bullet_with_meta(&card.name, &meta.join(" • "))
                 }));
                 return lines;
             }
@@ -2474,57 +2837,184 @@ fn build_list_detail(app: &AppState, list_id: &str) -> Vec<Line<'static>> {
     vec![Line::from("Selected list is no longer available.")]
 }
 
+#[allow(clippy::too_many_lines)]
 fn build_card_detail(app: &AppState, card_id: &str) -> Vec<Line<'static>> {
     for project in &app.projects {
         for board in &project.boards {
             for list in &board.active_lists {
                 if let Some(card) = list.cards.iter().find(|card| card.id == card_id) {
+                    let status = if card.is_closed { "CLOSED" } else { "ACTIVE" };
+                    let due = card.due_date.as_deref().unwrap_or("no due date");
+                    let subscribed = if card.is_subscribed {
+                        "subscribed"
+                    } else {
+                        "not subscribed"
+                    };
+
                     let mut lines = vec![
                         detail_title("card"),
-                        Line::from(format!("title: {}", card.name)),
-                        Line::from(format!("card id: {}", card.id)),
-                        Line::from(format!("list: {} [{}]", list.name, list.id)),
-                        Line::from(format!("board: {} [{}]", board.name, board.id)),
-                        Line::from(format!("project: {} [{}]", project.name, project.id)),
-                        Line::from(format!(
-                            "due: {} | comments: {} | subscribed: {}",
-                            card.due_date.as_deref().unwrap_or("none"),
-                            card.comments_total,
-                            if card.is_subscribed { "yes" } else { "no" }
-                        )),
-                        Line::from(format!(
-                            "creator: {}",
+                        header_value_line(&card.name),
+                        Line::from(vec![
+                            chip_span(
+                                status,
+                                if card.is_closed {
+                                    Color::Yellow
+                                } else {
+                                    Color::LightGreen
+                                },
+                            ),
+                            Span::raw("  "),
+                            chip_span(due, Color::LightBlue),
+                            Span::raw("  "),
+                            chip_span(subscribed, Color::Gray),
+                        ]),
+                        id_line("card", &card.id),
+                        Line::from(""),
+                        section_header("Context"),
+                        context_entity_line("list", &list.name, &list.id),
+                        context_entity_line("board", &board.name, &board.id),
+                        context_entity_line("project", &project.name, &project.id),
+                        Line::from(""),
+                        section_header("Metadata"),
+                        kv_line(
+                            "creator",
                             card.creator.as_ref().map_or_else(
                                 || "unknown".to_string(),
-                                |creator| format!("{} ({})", creator.name, creator.username),
-                            )
-                        )),
-                        Line::from(format!(
-                            "labels: {}",
+                                |creator| format!("{} (@{})", creator.name, creator.username),
+                            ),
+                        ),
+                        kv_line(
+                            "labels",
                             if card.labels.is_empty() {
                                 "none".to_string()
                             } else {
                                 join_label_names(&card.labels)
-                            }
-                        )),
-                        Line::from(format!(
-                            "assignees: {}",
+                            },
+                        ),
+                        kv_line(
+                            "assignees",
                             if card.assignees.is_empty() {
                                 "none".to_string()
                             } else {
                                 join_user_names(&card.assignees)
-                            }
-                        )),
+                            },
+                        ),
+                        kv_line("comments", card.comments_total.to_string()),
                         Line::from(""),
-                        Line::from("description:"),
+                        section_header("Description"),
                     ];
                     push_optional_text_block(
                         &mut lines,
                         card.description.as_deref(),
                         "No card description.",
                     );
+
                     lines.push(Line::from(""));
-                    lines.push(Line::from(
+                    lines.push(section_header("Attachments"));
+                    if card.attachments.is_empty() {
+                        lines.push(empty_state_line("No attachments."));
+                    } else {
+                        for attachment in &card.attachments {
+                            lines.push(bullet_with_meta(&attachment.name, &attachment.id));
+                            if let Some(url) = &attachment.url {
+                                lines
+                                    .push(muted_indented_line(&format!("↳ {}", truncate(url, 72))));
+                            }
+                        }
+                    }
+
+                    lines.push(Line::from(""));
+                    lines.push(section_header("Tasks"));
+                    if card.task_lists.is_empty() {
+                        lines.push(empty_state_line("No task lists."));
+                    } else {
+                        for task_list in &card.task_lists {
+                            let completed = task_list
+                                .tasks
+                                .iter()
+                                .filter(|task| task.is_completed)
+                                .count();
+                            lines.push(bullet_with_meta(
+                                &task_list.name,
+                                &format!(
+                                    "{}/{} • {}",
+                                    completed,
+                                    task_list.tasks.len(),
+                                    task_list.id
+                                ),
+                            ));
+                            for task in &task_list.tasks {
+                                let marker = if task.is_completed { "[x]" } else { "[ ]" };
+                                let assignee = task
+                                    .assignee
+                                    .as_ref()
+                                    .map_or(String::new(), |user| format!(" • @{}", user.username));
+                                lines.push(muted_indented_line(&format!(
+                                    "{} {}{} • {}",
+                                    marker, task.name, assignee, task.id
+                                )));
+                            }
+                        }
+                    }
+
+                    lines.push(Line::from(""));
+                    lines.push(section_header("Comments"));
+                    match (
+                        app.card_comments.get(card_id),
+                        app.loading_card_comments.contains(card_id),
+                        app.card_comment_errors.get(card_id),
+                    ) {
+                        (Some(comments), _, _) if comments.is_empty() => {
+                            lines.push(empty_state_line("No comments."));
+                        }
+                        (Some(comments), _, _) => {
+                            for comment in comments {
+                                let author = comment.author.as_ref().map_or_else(
+                                    || "unknown".to_string(),
+                                    |author| format!("{} (@{})", author.name, author.username),
+                                );
+                                lines.push(Line::from(vec![
+                                    Span::styled(
+                                        author,
+                                        Style::default()
+                                            .fg(Color::White)
+                                            .add_modifier(Modifier::BOLD),
+                                    ),
+                                    Span::raw("  "),
+                                    Span::styled(
+                                        truncate(&comment.created_at, 32),
+                                        Style::default().fg(Color::DarkGray),
+                                    ),
+                                ]));
+                                lines.push(muted_indented_line(&format!("id: {}", comment.id)));
+                                push_prefixed_text_block(&mut lines, &comment.text, "    ");
+                                if let Some(updated_at) = &comment.updated_at {
+                                    lines.push(muted_indented_line(&format!(
+                                        "updated: {updated_at}"
+                                    )));
+                                }
+                                lines.push(Line::from(""));
+                            }
+                            let _ = lines.pop();
+                        }
+                        (None, true, _) => {
+                            lines.push(empty_state_line("Loading comments…"));
+                        }
+                        (None, _, Some(message)) => {
+                            lines.push(empty_state_line(&format!(
+                                "Failed to load comments: {message}"
+                            )));
+                        }
+                        (None, false, None) => {
+                            lines.push(empty_state_line(
+                                "Comments will load when card is selected.",
+                            ));
+                        }
+                    }
+
+                    lines.push(Line::from(""));
+                    lines.push(section_header("Editing"));
+                    lines.push(muted_line(
                         "V1 card editing target: title + description, with long-form edits via $EDITOR.",
                     ));
                     return lines;
@@ -2534,6 +3024,96 @@ fn build_card_detail(app: &AppState, card_id: &str) -> Vec<Line<'static>> {
     }
 
     vec![Line::from("Selected card is no longer available.")]
+}
+
+fn header_value_line(value: &str) -> Line<'static> {
+    Line::from(Span::styled(
+        value.to_string(),
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    ))
+}
+
+fn section_header(title: &str) -> Line<'static> {
+    Line::from(Span::styled(
+        format!("─ {title} ─"),
+        Style::default()
+            .fg(Color::LightCyan)
+            .add_modifier(Modifier::BOLD),
+    ))
+}
+
+fn key_span(label: &str) -> Span<'static> {
+    Span::styled(
+        format!("{label}: "),
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    )
+}
+
+fn value_span(value: &str) -> Span<'static> {
+    Span::styled(value.to_string(), Style::default().fg(Color::Gray))
+}
+
+fn dim_span(value: &str) -> Span<'static> {
+    Span::styled(value.to_string(), Style::default().fg(Color::DarkGray))
+}
+
+fn kv_line(label: &str, value: impl std::fmt::Display) -> Line<'static> {
+    let value = format!("{value}");
+    Line::from(vec![key_span(label), value_span(&value)])
+}
+
+fn id_line(kind: &str, id: &str) -> Line<'static> {
+    Line::from(vec![dim_span(&format!("{kind} id: {id}"))])
+}
+
+fn context_entity_line(label: &str, name: &str, id: &str) -> Line<'static> {
+    Line::from(vec![
+        key_span(label),
+        Span::styled(name.to_string(), Style::default().fg(Color::White)),
+        Span::raw("  "),
+        dim_span(&format!("[{id}]")),
+    ])
+}
+
+fn chip_span(text: &str, color: Color) -> Span<'static> {
+    Span::styled(
+        format!(" {text} "),
+        Style::default().fg(color).add_modifier(Modifier::BOLD),
+    )
+}
+
+fn bullet_with_meta(name: &str, meta: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled("• ", Style::default().fg(Color::DarkGray)),
+        Span::styled(name.to_string(), Style::default().fg(Color::White)),
+        Span::raw("  "),
+        dim_span(meta),
+    ])
+}
+
+fn empty_state_line(text: &str) -> Line<'static> {
+    Line::from(Span::styled(
+        text.to_string(),
+        Style::default().fg(Color::DarkGray),
+    ))
+}
+
+fn muted_line(text: &str) -> Line<'static> {
+    Line::from(Span::styled(
+        text.to_string(),
+        Style::default().fg(Color::Gray),
+    ))
+}
+
+fn muted_indented_line(text: &str) -> Line<'static> {
+    Line::from(Span::styled(
+        format!("    {text}"),
+        Style::default().fg(Color::Gray),
+    ))
 }
 
 fn join_label_names(labels: &[LabelSummary]) -> String {
@@ -2566,6 +3146,18 @@ fn push_optional_text_block(lines: &mut Vec<Line<'static>>, text: Option<&str>, 
 
     for line in trimmed.lines() {
         lines.push(Line::from(line.to_string()));
+    }
+}
+
+fn push_prefixed_text_block(lines: &mut Vec<Line<'static>>, text: &str, prefix: &str) {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        lines.push(Line::from(format!("{prefix}<empty>")));
+        return;
+    }
+
+    for line in trimmed.lines() {
+        lines.push(Line::from(format!("{prefix}{line}")));
     }
 }
 
