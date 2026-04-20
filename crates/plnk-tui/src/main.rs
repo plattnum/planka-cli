@@ -736,7 +736,16 @@ enum TreeKey {
     Project(String),
     Board(String),
     List(String),
+    LabelGroup {
+        board_id: String,
+        list_id: String,
+        label_id: Option<String>,
+    },
     Card(String),
+    GroupedCard {
+        group_key: String,
+        card_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -744,7 +753,30 @@ enum TreeKind {
     Project,
     Board,
     List,
+    LabelGroup,
     Card,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExplorerView {
+    Hierarchy,
+    Labels,
+}
+
+impl ExplorerView {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Hierarchy => "hierarchy",
+            Self::Labels => "labels",
+        }
+    }
+
+    fn toggle(self) -> Self {
+        match self {
+            Self::Hierarchy => Self::Labels,
+            Self::Labels => Self::Hierarchy,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -767,6 +799,28 @@ struct TreeRow {
 }
 
 #[derive(Debug, Clone)]
+struct LabelGroupCard {
+    card_id: String,
+    card_name: String,
+    list_id: String,
+    list_name: String,
+    card_position: f64,
+    is_closed: bool,
+}
+
+#[derive(Debug, Clone)]
+struct LabelGroupSummary {
+    board_id: String,
+    list_id: String,
+    label_id: Option<String>,
+    label_name: String,
+    color: Option<String>,
+    active_card_count: usize,
+    closed_card_count: usize,
+    cards: Vec<LabelGroupCard>,
+}
+
+#[derive(Debug, Clone)]
 struct AppState {
     server: String,
     login: String,
@@ -780,9 +834,11 @@ struct AppState {
     expanded_projects: HashSet<String>,
     expanded_boards: HashSet<String>,
     expanded_lists: HashSet<String>,
+    expanded_label_groups: HashSet<String>,
     loading_boards: HashSet<String>,
     board_errors: HashMap<String, String>,
     selected: Option<TreeKey>,
+    explorer_view: ExplorerView,
     focus: PaneFocus,
     detail_scroll: usize,
     card_comments: HashMap<String, Vec<CommentSummary>>,
@@ -816,6 +872,7 @@ impl AppState {
         let mut expanded_projects = HashSet::new();
         let mut expanded_boards = HashSet::new();
         let expanded_lists = HashSet::new();
+        let expanded_label_groups = HashSet::new();
         let loading_boards = HashSet::new();
         let board_errors = HashMap::new();
         let card_comments = HashMap::new();
@@ -860,9 +917,11 @@ impl AppState {
             expanded_projects,
             expanded_boards,
             expanded_lists,
+            expanded_label_groups,
             loading_boards,
             board_errors,
             selected,
+            explorer_view: ExplorerView::Hierarchy,
             focus: PaneFocus::Explorer,
             detail_scroll: 0,
             card_comments,
@@ -979,6 +1038,7 @@ impl AppState {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn visible_rows(&self) -> Vec<TreeRow> {
         let mut rows = Vec::new();
 
@@ -1039,43 +1099,131 @@ impl AppState {
                     continue;
                 }
 
-                for list in &board.active_lists {
-                    let list_expanded = self.expanded_lists.contains(&list.id);
-                    rows.push(TreeRow {
-                        key: TreeKey::List(list.id.clone()),
-                        parent: Some(TreeKey::Board(board.id.clone())),
-                        depth: 2,
-                        kind: TreeKind::List,
-                        label: list.name.clone(),
-                        meta: Some(format!(
-                            "{} active • {} closed",
-                            list.active_card_count, list.closed_card_count
-                        )),
-                        has_children: !list.cards.is_empty(),
-                        expanded: list_expanded,
-                        live: false,
-                    });
+                match self.explorer_view {
+                    ExplorerView::Hierarchy => {
+                        for list in &board.active_lists {
+                            let list_expanded = self.expanded_lists.contains(&list.id);
+                            rows.push(TreeRow {
+                                key: TreeKey::List(list.id.clone()),
+                                parent: Some(TreeKey::Board(board.id.clone())),
+                                depth: 2,
+                                kind: TreeKind::List,
+                                label: list.name.clone(),
+                                meta: Some(format!(
+                                    "{} active • {} closed",
+                                    list.active_card_count, list.closed_card_count
+                                )),
+                                has_children: !list.cards.is_empty(),
+                                expanded: list_expanded,
+                                live: false,
+                            });
 
-                    if !list_expanded {
-                        continue;
+                            if !list_expanded {
+                                continue;
+                            }
+
+                            for card in &list.cards {
+                                rows.push(TreeRow {
+                                    key: TreeKey::Card(card.id.clone()),
+                                    parent: Some(TreeKey::List(list.id.clone())),
+                                    depth: 3,
+                                    kind: TreeKind::Card,
+                                    label: card.name.clone(),
+                                    meta: if card.is_closed {
+                                        Some("closed".to_string())
+                                    } else {
+                                        None
+                                    },
+                                    has_children: false,
+                                    expanded: false,
+                                    live: false,
+                                });
+                            }
+                        }
                     }
+                    ExplorerView::Labels => {
+                        for list in &board.active_lists {
+                            let list_expanded = self.expanded_lists.contains(&list.id);
+                            let label_groups = label_groups_for_list(board, list);
+                            rows.push(TreeRow {
+                                key: TreeKey::List(list.id.clone()),
+                                parent: Some(TreeKey::Board(board.id.clone())),
+                                depth: 2,
+                                kind: TreeKind::List,
+                                label: list.name.clone(),
+                                meta: Some(format!(
+                                    "{} groups • {} active • {} closed",
+                                    label_groups.len(),
+                                    list.active_card_count,
+                                    list.closed_card_count
+                                )),
+                                has_children: !label_groups.is_empty(),
+                                expanded: list_expanded,
+                                live: false,
+                            });
 
-                    for card in &list.cards {
-                        rows.push(TreeRow {
-                            key: TreeKey::Card(card.id.clone()),
-                            parent: Some(TreeKey::List(list.id.clone())),
-                            depth: 3,
-                            kind: TreeKind::Card,
-                            label: card.name.clone(),
-                            meta: if card.is_closed {
-                                Some("closed".to_string())
-                            } else {
-                                None
-                            },
-                            has_children: false,
-                            expanded: false,
-                            live: false,
-                        });
+                            if !list_expanded {
+                                continue;
+                            }
+
+                            for group in label_groups {
+                                let group_key = label_group_key(
+                                    &group.board_id,
+                                    &group.list_id,
+                                    group.label_id.as_deref(),
+                                );
+                                let group_expanded =
+                                    self.expanded_label_groups.contains(&group_key);
+                                rows.push(TreeRow {
+                                    key: TreeKey::LabelGroup {
+                                        board_id: group.board_id.clone(),
+                                        list_id: group.list_id.clone(),
+                                        label_id: group.label_id.clone(),
+                                    },
+                                    parent: Some(TreeKey::List(list.id.clone())),
+                                    depth: 3,
+                                    kind: TreeKind::LabelGroup,
+                                    label: group.label_name.clone(),
+                                    meta: Some(format!(
+                                        "{} active • {} closed",
+                                        group.active_card_count, group.closed_card_count
+                                    )),
+                                    has_children: !group.cards.is_empty(),
+                                    expanded: group_expanded,
+                                    live: false,
+                                });
+
+                                if !group_expanded {
+                                    continue;
+                                }
+
+                                for card in group.cards {
+                                    let card_meta = if card.is_closed {
+                                        "closed".to_string()
+                                    } else {
+                                        "active".to_string()
+                                    };
+                                    rows.push(TreeRow {
+                                        key: TreeKey::GroupedCard {
+                                            group_key: group_key.clone(),
+                                            card_id: card.card_id.clone(),
+                                        },
+                                        parent: Some(TreeKey::LabelGroup {
+                                            board_id: group.board_id.clone(),
+                                            list_id: group.list_id.clone(),
+                                            label_id: group.label_id.clone(),
+                                        }),
+                                        depth: 4,
+                                        kind: TreeKind::Card,
+                                        label: card.card_name,
+                                        meta: Some(card_meta),
+                                        has_children: false,
+                                        expanded: false,
+                                        live: false,
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1104,7 +1252,9 @@ impl AppState {
 
     fn selected_card_id(&self) -> Option<&str> {
         match self.selected.as_ref() {
-            Some(TreeKey::Card(card_id)) => Some(card_id.as_str()),
+            Some(TreeKey::Card(card_id) | TreeKey::GroupedCard { card_id, .. }) => {
+                Some(card_id.as_str())
+            }
             _ => None,
         }
     }
@@ -1114,6 +1264,24 @@ impl AppState {
             Some(TreeKey::Board(board_id)) => Some(board_id.as_str()),
             _ => None,
         }
+    }
+
+    fn toggle_explorer_view(&mut self) {
+        let replacement = match self.selected.as_ref() {
+            Some(TreeKey::Card(card_id) | TreeKey::GroupedCard { card_id, .. }) => self
+                .card_list_id(card_id)
+                .map(|list_id| TreeKey::List(list_id.to_string())),
+            Some(TreeKey::List(list_id) | TreeKey::LabelGroup { list_id, .. }) => {
+                Some(TreeKey::List(list_id.clone()))
+            }
+            _ => None,
+        };
+        if let Some(replacement) = replacement {
+            self.set_selected(replacement);
+        }
+        self.explorer_view = self.explorer_view.toggle();
+        self.ensure_selected_visible();
+        self.set_notice(format!("Explorer view: {}.", self.explorer_view.label()));
     }
 
     fn selected_card_summary(&self) -> Option<&CardSummary> {
@@ -1157,6 +1325,19 @@ impl AppState {
             .iter()
             .flat_map(|project| project.boards.iter())
             .find(|board| board.id == board_id)
+    }
+
+    fn card_list_id(&self, card_id: &str) -> Option<&str> {
+        self.projects.iter().find_map(|project| {
+            project.boards.iter().find_map(|board| {
+                board.active_lists.iter().find_map(|list| {
+                    list.cards
+                        .iter()
+                        .any(|card| card.id == card_id)
+                        .then_some(list.id.as_str())
+                })
+            })
+        })
     }
 
     fn board_project_id(&self, board_id: &str) -> Option<&str> {
@@ -1528,7 +1709,19 @@ impl AppState {
                     self.set_selected(next_row.key.clone());
                 }
             }
-            TreeKey::Card(_) => {}
+            TreeKey::LabelGroup {
+                board_id,
+                list_id,
+                label_id,
+            } => {
+                let group_key = label_group_key(board_id, list_id, label_id.as_deref());
+                if row.has_children && !row.expanded {
+                    self.expanded_label_groups.insert(group_key);
+                } else if let Some(next_row) = rows.get(index + 1) {
+                    self.set_selected(next_row.key.clone());
+                }
+            }
+            TreeKey::Card(_) | TreeKey::GroupedCard { .. } => {}
         }
 
         None
@@ -1561,7 +1754,19 @@ impl AppState {
                     self.set_selected(parent.clone());
                 }
             }
-            TreeKey::Card(_) => {
+            TreeKey::LabelGroup {
+                board_id,
+                list_id,
+                label_id,
+            } => {
+                let group_key = label_group_key(board_id, list_id, label_id.as_deref());
+                if row.expanded {
+                    self.expanded_label_groups.remove(&group_key);
+                } else if let Some(parent) = &row.parent {
+                    self.set_selected(parent.clone());
+                }
+            }
+            TreeKey::Card(_) | TreeKey::GroupedCard { .. } => {
                 if let Some(parent) = &row.parent {
                     self.set_selected(parent.clone());
                 }
@@ -3137,6 +3342,14 @@ fn run_app(
                                 app.set_notice("Discarded local card edits.");
                             }
                         }
+                        KeyCode::Char('v') if app.has_dirty_card_draft() => {
+                            app.set_notice(
+                                "Save or discard dirty card before changing explorer view.",
+                            );
+                        }
+                        KeyCode::Char('v') => {
+                            app.toggle_explorer_view();
+                        }
                         KeyCode::Char('e') => {
                             if app.selected_card_id().is_some() {
                                 app.start_title_editor();
@@ -3329,9 +3542,10 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
             app.server, app.login, app.current_user.name, app.current_user.username
         )),
         Line::from(format!(
-            "visible projects: {} | current user id: {} | subscribed board: {}",
+            "visible projects: {} | current user id: {} | explorer view: {} | subscribed board: {}",
             app.projects.len(),
             app.current_user.id,
+            app.explorer_view.label(),
             app.subscribed_board_id
         )),
     ];
@@ -3362,7 +3576,10 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
     }
 
     let tree = List::new(tree_items)
-        .block(panel_block("explorer", app.focus == PaneFocus::Explorer))
+        .block(panel_block(
+            &format!("explorer • {}", app.explorer_view.label()),
+            app.focus == PaneFocus::Explorer,
+        ))
         .highlight_style(
             Style::default()
                 .bg(Color::Rgb(32, 46, 70))
@@ -3418,7 +3635,7 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
     } else if app.title_editor.is_some() {
         "TITLE MODE: type text • ←/→ move • Enter save • Esc cancel • Ctrl-c force quit"
     } else {
-        "L make selected board live • e edit title • E edit description in $EDITOR • Tab switch pane • Ctrl-c quit"
+        "v toggle explorer view • L make selected board live • e edit title • E edit description in $EDITOR • Ctrl-c quit"
     };
     frame.render_widget(
         Paragraph::new(key_help).block(panel_block("keys", false)),
@@ -3447,12 +3664,14 @@ fn render_tree_row(row: &TreeRow) -> ListItem<'static> {
         TreeKind::Project => "◼",
         TreeKind::Board => "▣",
         TreeKind::List => "≡",
+        TreeKind::LabelGroup => "◌",
         TreeKind::Card => "·",
     };
     let accent = match row.kind {
         TreeKind::Project => Color::Cyan,
         TreeKind::Board => Color::LightGreen,
         TreeKind::List => Color::Yellow,
+        TreeKind::LabelGroup => Color::Magenta,
         TreeKind::Card => Color::White,
     };
 
@@ -3502,7 +3721,14 @@ fn build_detail_lines(app: &AppState) -> Vec<Line<'static>> {
         TreeKey::Project(project_id) => build_project_detail(app, project_id),
         TreeKey::Board(board_id) => build_board_detail(app, board_id),
         TreeKey::List(list_id) => build_list_detail(app, list_id),
-        TreeKey::Card(card_id) => build_card_detail(app, card_id),
+        TreeKey::LabelGroup {
+            board_id,
+            list_id,
+            label_id,
+        } => build_label_group_detail(app, board_id, list_id, label_id.as_deref()),
+        TreeKey::Card(card_id) | TreeKey::GroupedCard { card_id, .. } => {
+            build_card_detail(app, card_id)
+        }
     }
 }
 
@@ -3642,6 +3868,78 @@ fn build_board_detail(app: &AppState, board_id: &str) -> Vec<Line<'static>> {
     }
 
     vec![Line::from("Selected board is no longer available.")]
+}
+
+fn build_label_group_detail(
+    app: &AppState,
+    board_id: &str,
+    list_id: &str,
+    label_id: Option<&str>,
+) -> Vec<Line<'static>> {
+    for project in &app.projects {
+        if let Some(board) = project.boards.iter().find(|board| board.id == board_id) {
+            if let Some(list) = board.active_lists.iter().find(|list| list.id == list_id) {
+                let groups = label_groups_for_list(board, list);
+                let Some(group) = groups
+                    .iter()
+                    .find(|group| group.label_id.as_deref() == label_id)
+                else {
+                    return vec![Line::from("Selected label group is no longer available.")];
+                };
+
+                let mut lines = vec![
+                    detail_title("label group"),
+                    header_value_line(&group.label_name),
+                    context_entity_line("list", &list.name, &list.id),
+                    context_entity_line("board", &board.name, &board.id),
+                    context_entity_line("project", &project.name, &project.id),
+                    Line::from(""),
+                    section_header("Summary"),
+                    kv_line(
+                        "cards",
+                        format!(
+                            "{} active • {} closed • {} total",
+                            group.active_card_count,
+                            group.closed_card_count,
+                            group.cards.len()
+                        ),
+                    ),
+                ];
+
+                if let Some(label_id) = &group.label_id {
+                    lines.push(kv_line("label id", label_id.clone()));
+                    lines.push(kv_line(
+                        "color",
+                        group.color.clone().unwrap_or_else(|| "none".to_string()),
+                    ));
+                } else {
+                    lines.push(kv_line("bucket", "cards without labels".to_string()));
+                }
+
+                lines.push(Line::from(""));
+                lines.push(section_header("Cards"));
+                if group.cards.is_empty() {
+                    lines.push(empty_state_line("No cards in this label group."));
+                } else {
+                    lines.extend(group.cards.iter().take(16).map(|card| {
+                        bullet_with_meta(
+                            &card.card_name,
+                            &format!(
+                                "{}{} • {}",
+                                card.list_name,
+                                if card.is_closed { " • closed" } else { "" },
+                                card.card_id
+                            ),
+                        )
+                    }));
+                }
+
+                return lines;
+            }
+        }
+    }
+
+    vec![Line::from("Selected label group is no longer available.")]
 }
 
 fn build_list_detail(app: &AppState, list_id: &str) -> Vec<Line<'static>> {
@@ -3992,6 +4290,97 @@ fn muted_indented_line(text: &str) -> Line<'static> {
         format!("    {text}"),
         Style::default().fg(Color::Gray),
     ))
+}
+
+fn label_group_key(board_id: &str, list_id: &str, label_id: Option<&str>) -> String {
+    match label_id {
+        Some(label_id) => format!("{board_id}::{list_id}::{label_id}"),
+        None => format!("{board_id}::{list_id}::__unlabeled"),
+    }
+}
+
+fn label_groups_for_list(board: &BoardSummary, list: &ListSummary) -> Vec<LabelGroupSummary> {
+    let mut groups = board
+        .labels
+        .iter()
+        .map(|label| LabelGroupSummary {
+            board_id: board.id.clone(),
+            list_id: list.id.clone(),
+            label_id: Some(label.id.clone()),
+            label_name: label.name.clone(),
+            color: label.color.clone(),
+            active_card_count: 0,
+            closed_card_count: 0,
+            cards: Vec::new(),
+        })
+        .collect::<Vec<_>>();
+    let mut unlabeled = LabelGroupSummary {
+        board_id: board.id.clone(),
+        list_id: list.id.clone(),
+        label_id: None,
+        label_name: "Unlabeled".to_string(),
+        color: None,
+        active_card_count: 0,
+        closed_card_count: 0,
+        cards: Vec::new(),
+    };
+
+    for card in &list.cards {
+        let grouped_card = LabelGroupCard {
+            card_id: card.id.clone(),
+            card_name: card.name.clone(),
+            list_id: list.id.clone(),
+            list_name: list.name.clone(),
+            card_position: card.position,
+            is_closed: card.is_closed,
+        };
+
+        if card.labels.is_empty() {
+            if card.is_closed {
+                unlabeled.closed_card_count += 1;
+            } else {
+                unlabeled.active_card_count += 1;
+            }
+            unlabeled.cards.push(grouped_card);
+            continue;
+        }
+
+        for card_label in &card.labels {
+            if let Some(group) = groups
+                .iter_mut()
+                .find(|group| group.label_id.as_deref() == Some(card_label.id.as_str()))
+            {
+                if card.is_closed {
+                    group.closed_card_count += 1;
+                } else {
+                    group.active_card_count += 1;
+                }
+                group.cards.push(grouped_card.clone());
+            }
+        }
+    }
+
+    groups.retain(|group| !group.cards.is_empty());
+    if !unlabeled.cards.is_empty() {
+        groups.push(unlabeled);
+    }
+
+    for group in &mut groups {
+        group.cards.sort_by(|left, right| {
+            left.card_position
+                .total_cmp(&right.card_position)
+                .then_with(|| left.card_name.cmp(&right.card_name))
+                .then_with(|| left.list_id.cmp(&right.list_id))
+        });
+    }
+
+    groups.sort_by(|left, right| {
+        left.label_name
+            .to_lowercase()
+            .cmp(&right.label_name.to_lowercase())
+            .then_with(|| left.label_name.cmp(&right.label_name))
+    });
+    groups
 }
 
 fn join_label_names(labels: &[LabelSummary]) -> String {
