@@ -124,6 +124,20 @@ All task tracking lives in Planka on the planka-cli project:
 - Prefix blocker comments with `BLOCKED:`.
 - Cards move left-to-right. Moving backward requires a comment explaining why.
 
+## Agent Guidance for Planka Usage
+
+Use `plnk` as the canonical interface to Planka.
+
+- Prefer `plnk ... --output json` for agent work unless the user explicitly wants table or markdown.
+- Do not assume canonical list names. Inspect the board's actual lists before moving cards by workflow intent.
+- In this repo, common list names are usually `Backlog`, `In Progress`, `Review`, and `Done`, with some boards also using `Blocked` or `WontDo`, but these are conventions rather than guarantees.
+- Resolve names to IDs before mutation. Use `find` for lookup and `get` for exact ID reads.
+- Prefer the narrowest scope possible: `--list` over `--board`, `--board` over `--project`.
+- Read current state before write when context is incomplete.
+- Ask before destructive or bulk actions such as delete, archive, or broad moves unless the user was already explicit.
+- Do not maintain a parallel TODO system unless explicitly asked.
+- If command syntax is uncertain, inspect `plnk --help --output json` or `plnk <resource> <action> --help --output json` instead of guessing.
+
 ### Dependency Order
 
 ```
