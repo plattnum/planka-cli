@@ -1,8 +1,12 @@
 use std::collections::{HashMap, HashSet};
+use std::env;
+use std::fs;
 use std::io;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
 use crossterm::event::{self, Event as CEvent, KeyCode, KeyEventKind, KeyModifiers};
@@ -22,6 +26,7 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
+use tokio::sync::watch;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -31,6 +36,7 @@ use url::Url;
 const SOCKET_IO_PROTOCOL_VERSION: &str = "4";
 const SAILS_IO_SDK_VERSION: &str = "1.2.1";
 const SUBSCRIBE_ACK_ID: u64 = 1;
+const MIN_SAVE_FEEDBACK_DURATION: Duration = Duration::from_millis(900);
 
 #[derive(Debug, Parser)]
 #[command(
@@ -177,7 +183,7 @@ struct BoardListItem {
     position: Option<f64>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CardItem {
     id: String,
@@ -340,6 +346,48 @@ struct CommentSummary {
     created_at: String,
     updated_at: Option<String>,
     author: Option<UserSummary>,
+}
+
+#[derive(Debug, Clone)]
+struct CardDraft {
+    card_id: String,
+    base_title: String,
+    draft_title: String,
+    base_description: Option<String>,
+    draft_description: Option<String>,
+    remote_changed: bool,
+}
+
+impl CardDraft {
+    fn is_dirty(&self) -> bool {
+        self.base_title != self.draft_title || self.base_description != self.draft_description
+    }
+}
+
+#[derive(Debug, Clone)]
+struct InlineEditorState {
+    card_id: String,
+    buffer: String,
+    cursor: usize,
+}
+
+#[derive(Debug, Clone)]
+enum DraftFieldUpdate<T> {
+    Unchanged,
+    Set(T),
+    Clear,
+}
+
+#[derive(Debug, Clone)]
+enum SaveCompletion {
+    Succeeded { card_id: String, item: Value },
+    Failed { card_id: String, message: String },
+}
+
+#[derive(Debug, Clone)]
+struct PendingSaveCompletion {
+    ready_at: Instant,
+    completion: SaveCompletion,
 }
 
 #[derive(Debug, Clone)]
@@ -616,8 +664,14 @@ struct LiveEventRecord {
 
 #[derive(Debug, Clone)]
 enum AppEvent {
-    SocketConnecting,
-    SocketLive(BoardSummary),
+    SocketConnecting {
+        session_id: u64,
+        board_id: String,
+    },
+    SocketLive {
+        session_id: u64,
+        board: BoardSummary,
+    },
     BoardHydrated(BoardSummary),
     BoardLoadFailed {
         board_id: String,
@@ -631,8 +685,22 @@ enum AppEvent {
         card_id: String,
         message: String,
     },
-    SocketError(String),
-    LiveEvent(LiveEventRecord),
+    CardSaveSucceeded {
+        card_id: String,
+        item: Value,
+    },
+    CardSaveFailed {
+        card_id: String,
+        message: String,
+    },
+    SocketError {
+        session_id: u64,
+        message: String,
+    },
+    LiveEvent {
+        session_id: u64,
+        record: LiveEventRecord,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -706,6 +774,7 @@ struct AppState {
     projects: Vec<ProjectTree>,
     board: Option<BoardSummary>,
     subscribed_board_id: String,
+    active_socket_session_id: u64,
     status: ConnectionState,
     recent_events: Vec<LiveEventRecord>,
     expanded_projects: HashSet<String>,
@@ -719,6 +788,12 @@ struct AppState {
     card_comments: HashMap<String, Vec<CommentSummary>>,
     loading_card_comments: HashSet<String>,
     card_comment_errors: HashMap<String, String>,
+    card_draft: Option<CardDraft>,
+    title_editor: Option<InlineEditorState>,
+    saving_card: Option<String>,
+    save_started_at: Option<Instant>,
+    pending_save_completion: Option<PendingSaveCompletion>,
+    notice: Option<String>,
     show_debug_log: bool,
 }
 
@@ -736,6 +811,7 @@ impl AppState {
         current_user: CurrentUser,
         projects: Vec<ProjectTree>,
         subscribed_board_id: String,
+        active_socket_session_id: u64,
     ) -> Self {
         let mut expanded_projects = HashSet::new();
         let mut expanded_boards = HashSet::new();
@@ -745,6 +821,12 @@ impl AppState {
         let card_comments = HashMap::new();
         let loading_card_comments = HashSet::new();
         let card_comment_errors = HashMap::new();
+        let card_draft = None;
+        let title_editor = None;
+        let saving_card = None;
+        let save_started_at = None;
+        let pending_save_completion = None;
+        let notice = None;
 
         let selected = projects
             .iter()
@@ -772,6 +854,7 @@ impl AppState {
             projects,
             board: None,
             subscribed_board_id,
+            active_socket_session_id,
             status: ConnectionState::Loading,
             recent_events: Vec::new(),
             expanded_projects,
@@ -785,16 +868,35 @@ impl AppState {
             card_comments,
             loading_card_comments,
             card_comment_errors,
+            card_draft,
+            title_editor,
+            saving_card,
+            save_started_at,
+            pending_save_completion,
+            notice,
             show_debug_log: false,
         }
     }
 
     fn apply(&mut self, event: AppEvent) {
         match event {
-            AppEvent::SocketConnecting => {
+            AppEvent::SocketConnecting {
+                session_id,
+                board_id,
+            } => {
+                if session_id != self.active_socket_session_id
+                    || board_id != self.subscribed_board_id
+                {
+                    return;
+                }
                 self.status = ConnectionState::Connecting;
             }
-            AppEvent::SocketLive(board) => {
+            AppEvent::SocketLive { session_id, board } => {
+                if session_id != self.active_socket_session_id
+                    || board.id != self.subscribed_board_id
+                {
+                    return;
+                }
                 self.loading_boards.remove(&board.id);
                 self.board_errors.remove(&board.id);
                 self.merge_board(&board);
@@ -829,10 +931,25 @@ impl AppState {
                 self.loading_card_comments.remove(&card_id);
                 self.card_comment_errors.insert(card_id, message.clone());
             }
-            AppEvent::SocketError(message) => {
+            AppEvent::CardSaveSucceeded { card_id, item } => {
+                self.finish_or_defer_save(SaveCompletion::Succeeded { card_id, item });
+            }
+            AppEvent::CardSaveFailed { card_id, message } => {
+                self.finish_or_defer_save(SaveCompletion::Failed { card_id, message });
+            }
+            AppEvent::SocketError {
+                session_id,
+                message,
+            } => {
+                if session_id != self.active_socket_session_id {
+                    return;
+                }
                 self.status = ConnectionState::Error(message);
             }
-            AppEvent::LiveEvent(record) => {
+            AppEvent::LiveEvent { session_id, record } => {
+                if session_id != self.active_socket_session_id {
+                    return;
+                }
                 self.apply_live_payload(&record);
                 self.recent_events.insert(0, record);
                 self.recent_events.truncate(24);
@@ -887,8 +1004,10 @@ impl AppState {
                 let board_expanded = self.expanded_boards.contains(&board.id);
                 let board_loaded = board.is_loaded();
                 let board_loading = self.loading_boards.contains(&board.id);
-                let board_meta = if board.id == self.subscribed_board_id && !board_loaded {
-                    Some("live target • waiting websocket snapshot".to_string())
+                let board_meta = if self.is_live_target(&board.id)
+                    && !matches!(self.status, ConnectionState::Live)
+                {
+                    Some("switching live target • waiting websocket snapshot".to_string())
                 } else if board_loading {
                     Some("loading board snapshot…".to_string())
                 } else if let Some(message) = self.board_errors.get(&board.id) {
@@ -913,7 +1032,7 @@ impl AppState {
                     meta: board_meta,
                     has_children: !board_loaded || !board.active_lists.is_empty(),
                     expanded: board_expanded,
-                    live: board.id == self.subscribed_board_id,
+                    live: self.is_live_connected(&board.id),
                 });
 
                 if !(board_expanded && board_loaded) {
@@ -987,6 +1106,319 @@ impl AppState {
         match self.selected.as_ref() {
             Some(TreeKey::Card(card_id)) => Some(card_id.as_str()),
             _ => None,
+        }
+    }
+
+    fn selected_board_id(&self) -> Option<&str> {
+        match self.selected.as_ref() {
+            Some(TreeKey::Board(board_id)) => Some(board_id.as_str()),
+            _ => None,
+        }
+    }
+
+    fn selected_card_summary(&self) -> Option<&CardSummary> {
+        let card_id = self.selected_card_id()?;
+        self.projects
+            .iter()
+            .flat_map(|project| project.boards.iter())
+            .flat_map(|board| board.active_lists.iter())
+            .flat_map(|list| list.cards.iter())
+            .find(|card| card.id == card_id)
+    }
+
+    fn ensure_card_draft(&mut self) -> Option<&mut CardDraft> {
+        let card = self.selected_card_summary()?.clone();
+        let card_id = card.id.clone();
+        let needs_new = self
+            .card_draft
+            .as_ref()
+            .is_none_or(|draft| draft.card_id != card_id);
+        if needs_new {
+            self.card_draft = Some(CardDraft {
+                card_id,
+                base_title: card.name.clone(),
+                draft_title: card.name,
+                base_description: card.description.clone(),
+                draft_description: card.description,
+                remote_changed: false,
+            });
+        }
+        self.card_draft.as_mut()
+    }
+
+    fn current_card_draft(&self, card_id: &str) -> Option<&CardDraft> {
+        self.card_draft
+            .as_ref()
+            .filter(|draft| draft.card_id == card_id)
+    }
+
+    fn board_summary(&self, board_id: &str) -> Option<&BoardSummary> {
+        self.projects
+            .iter()
+            .flat_map(|project| project.boards.iter())
+            .find(|board| board.id == board_id)
+    }
+
+    fn board_project_id(&self, board_id: &str) -> Option<&str> {
+        self.projects.iter().find_map(|project| {
+            project
+                .boards
+                .iter()
+                .any(|board| board.id == board_id)
+                .then_some(project.id.as_str())
+        })
+    }
+
+    fn is_live_target(&self, board_id: &str) -> bool {
+        board_id == self.subscribed_board_id
+    }
+
+    fn is_live_connected(&self, board_id: &str) -> bool {
+        self.is_live_target(board_id) && matches!(self.status, ConnectionState::Live)
+    }
+
+    fn switch_live_board(&mut self, board_id: &str) {
+        let board_name = self
+            .board_summary(board_id)
+            .map_or_else(|| board_id.to_string(), |board| board.name.clone());
+        self.subscribed_board_id = board_id.to_string();
+        self.active_socket_session_id = self.active_socket_session_id.saturating_add(1);
+        self.status = ConnectionState::Connecting;
+        self.board_errors.remove(board_id);
+        self.board = self
+            .board_summary(board_id)
+            .filter(|board| board.is_loaded())
+            .cloned();
+        if let Some(project_id) = self.board_project_id(board_id) {
+            self.expanded_projects.insert(project_id.to_string());
+        }
+        self.expanded_boards.insert(board_id.to_string());
+        self.set_notice(format!("Switching live board to {board_name}…"));
+    }
+
+    fn flush_pending_save_completion(&mut self) {
+        if self
+            .pending_save_completion
+            .as_ref()
+            .is_some_and(|pending| Instant::now() >= pending.ready_at)
+        {
+            let Some(pending) = self.pending_save_completion.take() else {
+                return;
+            };
+            self.finish_save(pending.completion);
+        }
+    }
+
+    fn finish_or_defer_save(&mut self, completion: SaveCompletion) {
+        let Some(started_at) = self.save_started_at else {
+            self.finish_save(completion);
+            return;
+        };
+
+        let elapsed = started_at.elapsed();
+        if elapsed >= MIN_SAVE_FEEDBACK_DURATION {
+            self.finish_save(completion);
+            return;
+        }
+
+        let Some(remaining) = MIN_SAVE_FEEDBACK_DURATION.checked_sub(elapsed) else {
+            self.finish_save(completion);
+            return;
+        };
+
+        self.pending_save_completion = Some(PendingSaveCompletion {
+            ready_at: Instant::now() + remaining,
+            completion,
+        });
+    }
+
+    fn finish_save(&mut self, completion: SaveCompletion) {
+        self.saving_card = None;
+        self.save_started_at = None;
+        self.pending_save_completion = None;
+        match completion {
+            SaveCompletion::Succeeded { card_id, item } => {
+                let payload = serde_json::json!({ "item": item });
+                self.apply_card_upsert(&payload);
+                if self
+                    .card_draft
+                    .as_ref()
+                    .is_some_and(|draft| draft.card_id == card_id)
+                {
+                    self.card_draft = None;
+                }
+                self.notice = Some("Saved card changes.".to_string());
+            }
+            SaveCompletion::Failed { card_id, message } => {
+                self.notice = Some(format!("Save failed for {card_id}: {message}"));
+            }
+        }
+    }
+
+    fn card_summary(&self, card_id: &str) -> Option<&CardSummary> {
+        self.projects
+            .iter()
+            .flat_map(|project| project.boards.iter())
+            .flat_map(|board| board.active_lists.iter())
+            .flat_map(|list| list.cards.iter())
+            .find(|card| card.id == card_id)
+    }
+
+    fn saving_card_label(&self) -> Option<&str> {
+        self.saving_card.as_deref().and_then(|card_id| {
+            self.current_card_draft(card_id)
+                .map(|draft| draft.draft_title.as_str())
+                .or_else(|| self.card_summary(card_id).map(|card| card.name.as_str()))
+        })
+    }
+
+    fn has_dirty_card_draft(&self) -> bool {
+        self.card_draft.as_ref().is_some_and(CardDraft::is_dirty)
+    }
+
+    fn set_notice(&mut self, message: impl Into<String>) {
+        self.notice = Some(message.into());
+    }
+
+    fn clear_notice(&mut self) {
+        self.notice = None;
+    }
+
+    fn start_title_editor(&mut self) {
+        let Some(draft) = self.ensure_card_draft() else {
+            return;
+        };
+        self.title_editor = Some(InlineEditorState {
+            card_id: draft.card_id.clone(),
+            buffer: draft.draft_title.clone(),
+            cursor: draft.draft_title.chars().count(),
+        });
+        self.set_notice("Editing card title. Type to edit • Enter apply • Esc cancel.");
+    }
+
+    fn cancel_title_editor(&mut self) {
+        self.title_editor = None;
+        self.set_notice("Cancelled title edit.");
+    }
+
+    fn apply_title_editor(&mut self) {
+        let Some(editor) = self.title_editor.take() else {
+            return;
+        };
+        if let Some(draft) = self
+            .card_draft
+            .as_mut()
+            .filter(|draft| draft.card_id == editor.card_id)
+        {
+            draft.draft_title = editor.buffer;
+        }
+    }
+
+    fn discard_card_draft(&mut self) {
+        self.card_draft = None;
+        self.title_editor = None;
+        self.saving_card = None;
+        self.save_started_at = None;
+        self.pending_save_completion = None;
+        self.clear_notice();
+    }
+
+    fn save_request(
+        &mut self,
+    ) -> Option<(String, DraftFieldUpdate<String>, DraftFieldUpdate<String>)> {
+        if self.title_editor.is_some() {
+            self.apply_title_editor();
+        }
+        let draft = self.card_draft.as_ref()?;
+        if !draft.is_dirty() {
+            self.set_notice("No unsaved card changes.");
+            return None;
+        }
+        if self.saving_card.is_some() {
+            self.set_notice("Save already in progress.");
+            return None;
+        }
+        let card_id = draft.card_id.clone();
+        let title = if draft.base_title == draft.draft_title {
+            DraftFieldUpdate::Unchanged
+        } else {
+            DraftFieldUpdate::Set(draft.draft_title.clone())
+        };
+        let description = if draft.base_description == draft.draft_description {
+            DraftFieldUpdate::Unchanged
+        } else {
+            match draft.draft_description.clone() {
+                Some(value) => DraftFieldUpdate::Set(value),
+                None => DraftFieldUpdate::Clear,
+            }
+        };
+        self.saving_card = Some(card_id.clone());
+        self.save_started_at = Some(Instant::now());
+        self.pending_save_completion = None;
+        self.set_notice("Saving card changes…");
+        Some((card_id, title, description))
+    }
+
+    fn edit_title_insert(&mut self, ch: char) {
+        let Some(editor) = self.title_editor.as_mut() else {
+            return;
+        };
+        let mut chars = editor.buffer.chars().collect::<Vec<_>>();
+        chars.insert(editor.cursor, ch);
+        editor.cursor = editor.cursor.saturating_add(1);
+        editor.buffer = chars.into_iter().collect();
+    }
+
+    fn edit_title_backspace(&mut self) {
+        let Some(editor) = self.title_editor.as_mut() else {
+            return;
+        };
+        if editor.cursor == 0 {
+            return;
+        }
+        let mut chars = editor.buffer.chars().collect::<Vec<_>>();
+        let index = editor.cursor.saturating_sub(1);
+        let _ = chars.remove(index);
+        editor.cursor = index;
+        editor.buffer = chars.into_iter().collect();
+    }
+
+    fn edit_title_delete(&mut self) {
+        let Some(editor) = self.title_editor.as_mut() else {
+            return;
+        };
+        let mut chars = editor.buffer.chars().collect::<Vec<_>>();
+        if editor.cursor >= chars.len() {
+            return;
+        }
+        let _ = chars.remove(editor.cursor);
+        editor.buffer = chars.into_iter().collect();
+    }
+
+    fn edit_title_move_left(&mut self) {
+        if let Some(editor) = self.title_editor.as_mut() {
+            editor.cursor = editor.cursor.saturating_sub(1);
+        }
+    }
+
+    fn edit_title_move_right(&mut self) {
+        if let Some(editor) = self.title_editor.as_mut() {
+            editor.cursor = editor
+                .cursor
+                .saturating_add(1)
+                .min(editor.buffer.chars().count());
+        }
+    }
+
+    fn edit_title_move_home(&mut self) {
+        if let Some(editor) = self.title_editor.as_mut() {
+            editor.cursor = 0;
+        }
+    }
+
+    fn edit_title_move_end(&mut self) {
+        if let Some(editor) = self.title_editor.as_mut() {
+            editor.cursor = editor.buffer.chars().count();
         }
     }
 
@@ -1152,6 +1584,18 @@ impl AppState {
         let Some(payload) = record.payload.as_ref() else {
             return;
         };
+
+        if self.has_dirty_card_draft()
+            && self
+                .card_draft
+                .as_ref()
+                .is_some_and(|draft| payload_touches_card(payload, &draft.card_id))
+            && self.saving_card.as_deref() != payload_card_id(payload)
+        {
+            if let Some(draft) = self.card_draft.as_mut() {
+                draft.remote_changed = true;
+            }
+        }
 
         match record.name.as_str() {
             "boardUpdate" => self.apply_board_update(payload),
@@ -1624,11 +2068,13 @@ async fn main() -> Result<(), TuiError> {
     let projects = fetch_projects(&server, &token).await?;
     let project_trees = fetch_project_trees(&server, &token, &projects).await?;
 
+    let initial_socket_session_id = 1;
     let (tx, rx) = mpsc::channel();
-    spawn_socket_listener(
+    let initial_socket_shutdown = spawn_socket_listener(
         server.clone(),
         token.clone(),
         args.board.clone(),
+        initial_socket_session_id,
         tx.clone(),
     );
 
@@ -1644,10 +2090,20 @@ async fn main() -> Result<(), TuiError> {
         current_user,
         project_trees,
         args.board,
+        initial_socket_session_id,
     );
     let runtime = Arc::new(tokio::runtime::Handle::current());
 
-    let result = run_app(&mut terminal, &mut app, &rx, &tx, &server, &token, &runtime);
+    let result = run_app(
+        &mut terminal,
+        &mut app,
+        &rx,
+        &tx,
+        &server,
+        &token,
+        &runtime,
+        initial_socket_shutdown,
+    );
     restore_terminal()?;
     result
 }
@@ -1835,6 +2291,41 @@ async fn fetch_card_comments(
         .collect::<Vec<_>>())
 }
 
+async fn update_card_fields(
+    server: &Url,
+    token: &str,
+    card_id: &str,
+    title: DraftFieldUpdate<String>,
+    description: DraftFieldUpdate<String>,
+) -> Result<Value, TuiError> {
+    let client = reqwest::Client::new();
+    let mut body = serde_json::Map::new();
+    match title {
+        DraftFieldUpdate::Set(title) => {
+            body.insert("name".to_string(), Value::String(title));
+        }
+        DraftFieldUpdate::Unchanged | DraftFieldUpdate::Clear => {}
+    }
+    match description {
+        DraftFieldUpdate::Set(description) => {
+            body.insert("description".to_string(), Value::String(description));
+        }
+        DraftFieldUpdate::Clear => {
+            body.insert("description".to_string(), Value::Null);
+        }
+        DraftFieldUpdate::Unchanged => {}
+    }
+
+    let response = client
+        .patch(server.join(&format!("api/cards/{card_id}"))?)
+        .bearer_auth(token)
+        .json(&body)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(response.json::<ItemResponse<Value>>().await?.item)
+}
+
 fn spawn_board_loader(
     runtime: &Arc<tokio::runtime::Handle>,
     server: &Url,
@@ -1887,21 +2378,67 @@ fn spawn_comment_loader(
     });
 }
 
-fn spawn_socket_listener(server: Url, token: String, board_id: String, tx: Sender<AppEvent>) {
-    tokio::spawn(async move {
-        if let Err(err) = socket_task(server, token, board_id, tx.clone()).await {
-            let _ = tx.send(AppEvent::SocketError(err.to_string()));
+fn spawn_card_save(
+    runtime: &Arc<tokio::runtime::Handle>,
+    server: &Url,
+    token: &str,
+    card_id: String,
+    title: DraftFieldUpdate<String>,
+    description: DraftFieldUpdate<String>,
+    tx: &Sender<AppEvent>,
+) {
+    let runtime = Arc::clone(runtime);
+    let server = server.clone();
+    let token = token.to_string();
+    let tx = tx.clone();
+    runtime.spawn(async move {
+        match update_card_fields(&server, &token, &card_id, title, description).await {
+            Ok(item) => {
+                let _ = tx.send(AppEvent::CardSaveSucceeded { card_id, item });
+            }
+            Err(err) => {
+                let _ = tx.send(AppEvent::CardSaveFailed {
+                    card_id,
+                    message: err.to_string(),
+                });
+            }
         }
     });
+}
+
+fn spawn_socket_listener(
+    server: Url,
+    token: String,
+    board_id: String,
+    session_id: u64,
+    tx: Sender<AppEvent>,
+) -> watch::Sender<bool> {
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    tokio::spawn(async move {
+        if let Err(err) =
+            socket_task(server, token, board_id, session_id, tx.clone(), shutdown_rx).await
+        {
+            let _ = tx.send(AppEvent::SocketError {
+                session_id,
+                message: err.to_string(),
+            });
+        }
+    });
+    shutdown_tx
 }
 
 async fn socket_task(
     server: Url,
     token: String,
     board_id: String,
+    session_id: u64,
     tx: Sender<AppEvent>,
+    mut shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(), TuiError> {
-    let _ = tx.send(AppEvent::SocketConnecting);
+    let _ = tx.send(AppEvent::SocketConnecting {
+        session_id,
+        board_id: board_id.clone(),
+    });
 
     let request = build_socket_request(&server)?;
     let (mut socket, _response) = connect_async(request)
@@ -1910,14 +2447,38 @@ async fn socket_task(
 
     let mut state = SocketSessionState::default();
 
-    while let Some(message) = socket.next().await {
+    loop {
+        let message = tokio::select! {
+            changed = shutdown_rx.changed() => {
+                match changed {
+                    Ok(()) if *shutdown_rx.borrow() => {
+                        let _ = socket.close(None).await;
+                        return Ok(());
+                    }
+                    Ok(()) | Err(_) => continue,
+                }
+            }
+            message = socket.next() => message,
+        };
+
+        let Some(message) = message else {
+            break;
+        };
         let message =
             message.map_err(|err| TuiError::Socket(format!("websocket read failed: {err}")))?;
 
         match message {
             Message::Text(text) => {
-                handle_engine_text_message(&text, &mut socket, &token, &board_id, &tx, &mut state)
-                    .await?;
+                handle_engine_text_message(
+                    &text,
+                    &mut socket,
+                    &token,
+                    &board_id,
+                    session_id,
+                    &tx,
+                    &mut state,
+                )
+                .await?;
             }
             Message::Ping(payload) => {
                 socket
@@ -1946,6 +2507,7 @@ async fn handle_engine_text_message<S>(
     socket: &mut S,
     token: &str,
     board_id: &str,
+    session_id: u64,
     tx: &Sender<AppEvent>,
     state: &mut SocketSessionState,
 ) -> Result<(), TuiError>
@@ -1961,14 +2523,17 @@ where
             let open = serde_json::from_str::<EngineOpen>(&text[1..])
                 .map_err(|err| TuiError::Socket(format!("invalid engine open packet: {err}")))?;
             state.engine_sid = Some(open.sid.clone());
-            let _ = tx.send(AppEvent::LiveEvent(LiveEventRecord {
-                name: "engineOpen".to_string(),
-                summary: format!(
-                    "sid={} pingInterval={} pingTimeout={}",
-                    open.sid, open.ping_interval, open.ping_timeout
-                ),
-                payload: None,
-            }));
+            let _ = tx.send(AppEvent::LiveEvent {
+                session_id,
+                record: LiveEventRecord {
+                    name: "engineOpen".to_string(),
+                    summary: format!(
+                        "sid={} pingInterval={} pingTimeout={}",
+                        open.sid, open.ping_interval, open.ping_timeout
+                    ),
+                    payload: None,
+                },
+            });
             socket
                 .send(Message::Text("40".to_string()))
                 .await
@@ -1993,6 +2558,7 @@ where
                 socket,
                 token,
                 board_id,
+                session_id,
                 tx,
                 &mut state.namespace_connected,
                 &mut state.subscribe_sent,
@@ -2000,22 +2566,27 @@ where
             .await?;
         }
         other => {
-            let _ = tx.send(AppEvent::LiveEvent(LiveEventRecord {
-                name: "engineOther".to_string(),
-                summary: format!("type={other} raw={}", truncate(text, 120)),
-                payload: None,
-            }));
+            let _ = tx.send(AppEvent::LiveEvent {
+                session_id,
+                record: LiveEventRecord {
+                    name: "engineOther".to_string(),
+                    summary: format!("type={other} raw={}", truncate(text, 120)),
+                    payload: None,
+                },
+            });
         }
     }
 
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_socket_io_packet<S>(
     packet: &str,
     socket: &mut S,
     token: &str,
     board_id: &str,
+    session_id: u64,
     tx: &Sender<AppEvent>,
     namespace_connected: &mut bool,
     subscribe_sent: &mut bool,
@@ -2025,11 +2596,14 @@ where
 {
     if packet.starts_with('0') {
         *namespace_connected = true;
-        let _ = tx.send(AppEvent::LiveEvent(LiveEventRecord {
-            name: "socketConnect".to_string(),
-            summary: truncate(packet, 120),
-            payload: None,
-        }));
+        let _ = tx.send(AppEvent::LiveEvent {
+            session_id,
+            record: LiveEventRecord {
+                name: "socketConnect".to_string(),
+                summary: truncate(packet, 120),
+                payload: None,
+            },
+        });
 
         if !*subscribe_sent {
             let subscribe = build_subscribe_packet(token, board_id)?;
@@ -2052,25 +2626,31 @@ where
     if let Some((ack_id, ack_value)) = parse_socket_ack(packet)? {
         if ack_id == SUBSCRIBE_ACK_ID {
             let board = parse_board_snapshot_value(ack_value)?;
-            let _ = tx.send(AppEvent::SocketLive(board));
+            let _ = tx.send(AppEvent::SocketLive { session_id, board });
         }
         return Ok(());
     }
 
     if let Some((event_name, payload)) = parse_socket_event(packet)? {
-        let _ = tx.send(AppEvent::LiveEvent(LiveEventRecord {
-            name: event_name,
-            summary: summarize_json(&payload),
-            payload: Some(payload),
-        }));
+        let _ = tx.send(AppEvent::LiveEvent {
+            session_id,
+            record: LiveEventRecord {
+                name: event_name,
+                summary: summarize_json(&payload),
+                payload: Some(payload),
+            },
+        });
         return Ok(());
     }
 
-    let _ = tx.send(AppEvent::LiveEvent(LiveEventRecord {
-        name: "socketPacket".to_string(),
-        summary: truncate(packet, 160),
-        payload: None,
-    }));
+    let _ = tx.send(AppEvent::LiveEvent {
+        session_id,
+        record: LiveEventRecord {
+            name: "socketPacket".to_string(),
+            summary: truncate(packet, 160),
+            payload: None,
+        },
+    });
 
     Ok(())
 }
@@ -2249,6 +2829,15 @@ fn event_item(payload: &Value) -> &Value {
     payload.get("item").unwrap_or(payload)
 }
 
+fn payload_card_id(payload: &Value) -> Option<&str> {
+    let item = event_item(payload);
+    json_string(item, "cardId").or_else(|| json_string(item, "id"))
+}
+
+fn payload_touches_card(payload: &Value, card_id: &str) -> bool {
+    payload_card_id(payload) == Some(card_id)
+}
+
 fn json_string<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value.get(key).and_then(Value::as_str)
 }
@@ -2348,6 +2937,58 @@ fn restore_terminal() -> Result<(), TuiError> {
     Ok(())
 }
 
+fn edit_description_via_editor(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    current: Option<&str>,
+    card_id: &str,
+) -> Result<Option<String>, TuiError> {
+    let path = temp_editor_path(card_id);
+    fs::write(&path, current.unwrap_or_default())?;
+
+    restore_terminal()?;
+    let editor_cmd = env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+    let command = format!("{} {}", editor_cmd, shell_escape(&path));
+    let status = Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .status()
+        .map_err(TuiError::Io)?;
+    *terminal = init_terminal()?;
+
+    let text = fs::read_to_string(&path)?;
+    let _ = fs::remove_file(&path);
+
+    if !status.success() {
+        return Err(TuiError::Io(io::Error::other(
+            "$EDITOR exited unsuccessfully",
+        )));
+    }
+
+    if current.is_some_and(|existing| text == existing || text == format!("{existing}\n")) {
+        return Ok(current.map(ToOwned::to_owned));
+    }
+
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(text))
+    }
+}
+
+fn temp_editor_path(card_id: &str) -> PathBuf {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    env::temp_dir().join(format!("plnk-tui-card-{card_id}-{stamp}.md"))
+}
+
+fn shell_escape(path: &Path) -> String {
+    let text = path.to_string_lossy();
+    format!("'{}'", text.replace('\'', "'\\''"))
+}
+
 fn run_headless_probe(
     current_user: &CurrentUser,
     projects: &[ProjectSummary],
@@ -2364,8 +3005,10 @@ fn run_headless_probe(
     let start = std::time::Instant::now();
     while start.elapsed() < Duration::from_secs(timeout_secs) {
         match rx.recv_timeout(Duration::from_millis(250)) {
-            Ok(AppEvent::SocketConnecting) => println!("event: socket connecting"),
-            Ok(AppEvent::SocketLive(board) | AppEvent::BoardHydrated(board)) => println!(
+            Ok(AppEvent::SocketConnecting { board_id, .. }) => {
+                println!("event: socket connecting: {board_id}");
+            }
+            Ok(AppEvent::SocketLive { board, .. } | AppEvent::BoardHydrated(board)) => println!(
                 "event: board live: {} [{}] cards={} lists={}",
                 board.name,
                 board.id,
@@ -2381,8 +3024,16 @@ fn run_headless_probe(
             Ok(AppEvent::CardCommentsLoadFailed { card_id, message }) => {
                 println!("event: comments load failed: {card_id} :: {message}");
             }
-            Ok(AppEvent::SocketError(message)) => println!("event: socket error: {message}"),
-            Ok(AppEvent::LiveEvent(record)) => {
+            Ok(AppEvent::CardSaveSucceeded { card_id, .. }) => {
+                println!("event: card saved: {card_id}");
+            }
+            Ok(AppEvent::CardSaveFailed { card_id, message }) => {
+                println!("event: card save failed: {card_id} :: {message}");
+            }
+            Ok(AppEvent::SocketError { message, .. }) => {
+                println!("event: socket error: {message}");
+            }
+            Ok(AppEvent::LiveEvent { record, .. }) => {
                 println!("event: {} :: {}", record.name, record.summary);
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -2391,6 +3042,7 @@ fn run_headless_probe(
     }
 }
 
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut AppState,
@@ -2399,11 +3051,13 @@ fn run_app(
     server: &Url,
     token: &str,
     runtime: &Arc<tokio::runtime::Handle>,
+    mut socket_shutdown: watch::Sender<bool>,
 ) -> Result<(), TuiError> {
     loop {
         while let Ok(message) = rx.try_recv() {
             app.apply(message);
         }
+        app.flush_pending_save_completion();
 
         if let Some(card_id) = app.mark_selected_card_comments_loading() {
             spawn_comment_loader(runtime, server, token, card_id, tx);
@@ -2413,58 +3067,212 @@ fn run_app(
 
         if event::poll(Duration::from_millis(200))? {
             match event::read()? {
-                CEvent::Key(key) if key.kind == KeyEventKind::Press => match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                    KeyCode::Tab | KeyCode::BackTab => app.toggle_focus(),
-                    KeyCode::Char('g') if app.focus == PaneFocus::Details => {
-                        app.scroll_details_to_top();
-                    }
-                    KeyCode::Char('G') if app.focus == PaneFocus::Details => {
-                        app.scroll_details_to_bottom();
-                    }
-                    KeyCode::PageDown if app.focus == PaneFocus::Details => {
-                        app.scroll_details_by(10);
-                    }
-                    KeyCode::PageUp if app.focus == PaneFocus::Details => {
-                        app.scroll_details_by(-10);
-                    }
-                    KeyCode::Char('d')
-                        if app.focus == PaneFocus::Details
-                            && key.modifiers.contains(KeyModifiers::CONTROL) =>
+                CEvent::Key(key) if key.kind == KeyEventKind::Press => {
+                    if key.code == KeyCode::Char('c')
+                        && key.modifiers.contains(KeyModifiers::CONTROL)
                     {
-                        app.scroll_details_by(10);
+                        return Ok(());
                     }
-                    KeyCode::Char('u')
-                        if app.focus == PaneFocus::Details
-                            && key.modifiers.contains(KeyModifiers::CONTROL) =>
-                    {
-                        app.scroll_details_by(-10);
+
+                    if app.saving_card.is_some() {
+                        app.set_notice("Save in progress… please wait.");
+                        continue;
                     }
-                    KeyCode::Char('d' | 'D') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        app.toggle_debug_log();
+
+                    if app.title_editor.is_some() {
+                        match key.code {
+                            KeyCode::Esc => app.cancel_title_editor(),
+                            KeyCode::Enter => {
+                                app.apply_title_editor();
+                                if let Some((card_id, title, description)) = app.save_request() {
+                                    spawn_card_save(
+                                        runtime,
+                                        server,
+                                        token,
+                                        card_id,
+                                        title,
+                                        description,
+                                        tx,
+                                    );
+                                } else if !app.has_dirty_card_draft() {
+                                    app.set_notice("No title changes to save.");
+                                }
+                            }
+                            KeyCode::Left => app.edit_title_move_left(),
+                            KeyCode::Right => app.edit_title_move_right(),
+                            KeyCode::Home => app.edit_title_move_home(),
+                            KeyCode::End => app.edit_title_move_end(),
+                            KeyCode::Backspace => app.edit_title_backspace(),
+                            KeyCode::Delete => app.edit_title_delete(),
+                            KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                app.edit_title_insert(ch);
+                            }
+                            _ => {}
+                        }
+                        continue;
                     }
-                    KeyCode::Down | KeyCode::Char('j') => match app.focus {
-                        PaneFocus::Explorer => app.select_relative(1),
-                        PaneFocus::Details => app.scroll_details_by(1),
-                    },
-                    KeyCode::Up | KeyCode::Char('k') => match app.focus {
-                        PaneFocus::Explorer => app.select_relative(-1),
-                        PaneFocus::Details => app.scroll_details_by(-1),
-                    },
-                    KeyCode::Left | KeyCode::Char('h') => match app.focus {
-                        PaneFocus::Explorer => app.collapse_or_ascend(),
-                        PaneFocus::Details => app.focus_explorer(),
-                    },
-                    KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter => match app.focus {
-                        PaneFocus::Explorer => {
-                            if let Some(board_id) = app.expand_or_descend() {
-                                spawn_board_loader(runtime, server, token, board_id, tx);
+
+                    match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc if app.has_dirty_card_draft() => {
+                            app.set_notice("Unsaved card changes. Ctrl-s save • Ctrl-x discard.");
+                        }
+                        KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
+                        KeyCode::Tab | KeyCode::BackTab => app.toggle_focus(),
+                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            if let Some((card_id, title, description)) = app.save_request() {
+                                spawn_card_save(
+                                    runtime,
+                                    server,
+                                    token,
+                                    card_id,
+                                    title,
+                                    description,
+                                    tx,
+                                );
                             }
                         }
-                        PaneFocus::Details => app.focus_details(),
-                    },
-                    _ => {}
-                },
+                        KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            if app.has_dirty_card_draft() {
+                                app.discard_card_draft();
+                                app.set_notice("Discarded local card edits.");
+                            }
+                        }
+                        KeyCode::Char('e') => {
+                            if app.selected_card_id().is_some() {
+                                app.start_title_editor();
+                            } else {
+                                app.set_notice("Select card first to edit title.");
+                            }
+                        }
+                        KeyCode::Char('E') => {
+                            if let Some(card_id) = app.selected_card_id().map(ToOwned::to_owned) {
+                                let current = app
+                                    .ensure_card_draft()
+                                    .and_then(|draft| draft.draft_description.clone());
+                                match edit_description_via_editor(
+                                    terminal,
+                                    current.as_deref(),
+                                    &card_id,
+                                ) {
+                                    Ok(description) => {
+                                        if let Some(draft) = app.ensure_card_draft() {
+                                            draft.draft_description.clone_from(&description);
+                                        }
+                                        if description == current {
+                                            app.set_notice("No description changes from $EDITOR.");
+                                        } else if let Some((card_id, title, description)) =
+                                            app.save_request()
+                                        {
+                                            spawn_card_save(
+                                                runtime,
+                                                server,
+                                                token,
+                                                card_id,
+                                                title,
+                                                description,
+                                                tx,
+                                            );
+                                        } else if !app.has_dirty_card_draft() {
+                                            app.set_notice("No description changes to save.");
+                                        }
+                                    }
+                                    Err(err) => app.set_notice(err.to_string()),
+                                }
+                            } else {
+                                app.set_notice("Select card first to edit description.");
+                            }
+                        }
+                        KeyCode::Char('L') => {
+                            if let Some(board_id) = app.selected_board_id().map(ToOwned::to_owned) {
+                                if app.is_live_target(&board_id) {
+                                    app.set_notice("Selected board is already the live target.");
+                                } else {
+                                    let _ = socket_shutdown.send(true);
+                                    app.switch_live_board(&board_id);
+                                    socket_shutdown = spawn_socket_listener(
+                                        server.clone(),
+                                        token.to_string(),
+                                        board_id,
+                                        app.active_socket_session_id,
+                                        tx.clone(),
+                                    );
+                                }
+                            } else {
+                                app.set_notice("Select a board to make it live.");
+                            }
+                        }
+                        KeyCode::Char('g') if app.focus == PaneFocus::Details => {
+                            app.scroll_details_to_top();
+                        }
+                        KeyCode::Char('G') if app.focus == PaneFocus::Details => {
+                            app.scroll_details_to_bottom();
+                        }
+                        KeyCode::PageDown if app.focus == PaneFocus::Details => {
+                            app.scroll_details_by(10);
+                        }
+                        KeyCode::PageUp if app.focus == PaneFocus::Details => {
+                            app.scroll_details_by(-10);
+                        }
+                        KeyCode::Char('d')
+                            if app.focus == PaneFocus::Details
+                                && key.modifiers.contains(KeyModifiers::CONTROL) =>
+                        {
+                            app.scroll_details_by(10);
+                        }
+                        KeyCode::Char('u')
+                            if app.focus == PaneFocus::Details
+                                && key.modifiers.contains(KeyModifiers::CONTROL) =>
+                        {
+                            app.scroll_details_by(-10);
+                        }
+                        KeyCode::Char('d' | 'D')
+                            if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+                        {
+                            app.toggle_debug_log();
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => match app.focus {
+                            PaneFocus::Explorer if app.has_dirty_card_draft() => {
+                                app.set_notice(
+                                    "Save or discard dirty card before changing selection.",
+                                );
+                            }
+                            PaneFocus::Explorer => app.select_relative(1),
+                            PaneFocus::Details => app.scroll_details_by(1),
+                        },
+                        KeyCode::Up | KeyCode::Char('k') => match app.focus {
+                            PaneFocus::Explorer if app.has_dirty_card_draft() => {
+                                app.set_notice(
+                                    "Save or discard dirty card before changing selection.",
+                                );
+                            }
+                            PaneFocus::Explorer => app.select_relative(-1),
+                            PaneFocus::Details => app.scroll_details_by(-1),
+                        },
+                        KeyCode::Left | KeyCode::Char('h') => match app.focus {
+                            PaneFocus::Explorer if app.has_dirty_card_draft() => {
+                                app.set_notice(
+                                    "Save or discard dirty card before changing selection.",
+                                );
+                            }
+                            PaneFocus::Explorer => app.collapse_or_ascend(),
+                            PaneFocus::Details => app.focus_explorer(),
+                        },
+                        KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter => match app.focus {
+                            PaneFocus::Explorer if app.has_dirty_card_draft() => {
+                                app.set_notice(
+                                    "Save or discard dirty card before changing selection.",
+                                );
+                            }
+                            PaneFocus::Explorer => {
+                                if let Some(board_id) = app.expand_or_descend() {
+                                    spawn_board_loader(runtime, server, token, board_id, tx);
+                                }
+                            }
+                            PaneFocus::Details => app.focus_details(),
+                        },
+                        _ => {}
+                    }
+                }
                 _ => {}
             }
         }
@@ -2483,17 +3291,39 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
         ])
         .split(area);
 
+    let mut header_title = vec![
+        Span::styled(
+            "plnk-tui explorer",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  •  "),
+        Span::styled(app.status.label(), app.status.style()),
+    ];
+    if app.title_editor.is_some() {
+        header_title.push(Span::raw("  •  "));
+        header_title.push(chip_span("EDITING TITLE", Color::LightYellow));
+    }
+    if app.has_dirty_card_draft() {
+        header_title.push(Span::raw("  •  "));
+        header_title.push(chip_span("DIRTY", Color::Yellow));
+    }
+    if app
+        .card_draft
+        .as_ref()
+        .is_some_and(|draft| draft.remote_changed && draft.is_dirty())
+    {
+        header_title.push(Span::raw("  •  "));
+        header_title.push(chip_span("REMOTE CHANGED", Color::LightRed));
+    }
+    if app.saving_card.is_some() {
+        header_title.push(Span::raw("  •  "));
+        header_title.push(chip_span("SAVING", Color::LightBlue));
+    }
+
     let header_lines = vec![
-        Line::from(vec![
-            Span::styled(
-                "plnk-tui explorer",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw("  •  "),
-            Span::styled(app.status.label(), app.status.style()),
-        ]),
+        Line::from(header_title),
         Line::from(format!(
             "server: {} | login: {} | current user: {} ({})",
             app.server, app.login, app.current_user.name, app.current_user.username
@@ -2569,6 +3399,10 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
             )
         )),
         Line::from(format!("latest event: {}", app.latest_event_summary())),
+        Line::from(format!(
+            "notice: {}",
+            app.notice.as_deref().unwrap_or("none")
+        )),
         Line::from(""),
         Line::from("tip: press D to toggle the websocket debug log overlay"),
     ];
@@ -2579,16 +3413,26 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
         right[1],
     );
 
+    let key_help = if app.saving_card.is_some() {
+        "SAVING: waiting for server response • controls paused • Ctrl-c force quit"
+    } else if app.title_editor.is_some() {
+        "TITLE MODE: type text • ←/→ move • Enter save • Esc cancel • Ctrl-c force quit"
+    } else {
+        "L make selected board live • e edit title • E edit description in $EDITOR • Tab switch pane • Ctrl-c quit"
+    };
     frame.render_widget(
-        Paragraph::new(
-            "Tab switch pane • arrows = hjkl aliases • details: j/k or ↑/↓ scroll • PgUp/PgDn or Ctrl-u/Ctrl-d page • q quits",
-        )
-        .block(panel_block("keys", false)),
+        Paragraph::new(key_help).block(panel_block("keys", false)),
         chunks[2],
     );
 
     if app.show_debug_log {
         draw_debug_overlay(frame, area, app);
+    }
+    if app.title_editor.is_some() {
+        draw_title_editor_overlay(frame, area, app);
+    }
+    if app.saving_card.is_some() {
+        draw_saving_overlay(frame, area, app);
     }
 }
 
@@ -2694,8 +3538,10 @@ fn build_project_detail(app: &AppState, project_id: &str) -> Vec<Line<'static>> 
     lines.push(Line::from(""));
     lines.push(section_header("Boards"));
     lines.extend(project.boards.iter().take(12).map(|board| {
-        let status = if board.id == app.subscribed_board_id {
+        let status = if app.is_live_connected(&board.id) {
             "live"
+        } else if app.is_live_target(&board.id) {
+            "live target"
         } else if board.is_loaded() {
             "loaded"
         } else {
@@ -2718,8 +3564,10 @@ fn build_board_detail(app: &AppState, board_id: &str) -> Vec<Line<'static>> {
                 section_header("Summary"),
                 kv_line(
                     "status",
-                    if board.id == app.subscribed_board_id {
+                    if app.is_live_connected(&board.id) {
                         "live subscribed".to_string()
+                    } else if app.is_live_target(&board.id) {
+                        "switching live target".to_string()
                     } else {
                         "loaded by snapshot".to_string()
                     },
@@ -2785,7 +3633,7 @@ fn build_board_detail(app: &AppState, board_id: &str) -> Vec<Line<'static>> {
                     "Press → or Enter to lazy-load this board snapshot over HTTP.",
                 ));
                 lines.push(muted_line(
-                    "Only subscribed board gets continuous websocket live sync right now.",
+                    "Press L on a board node to make that board the websocket live target.",
                 ));
             }
 
@@ -2843,6 +3691,12 @@ fn build_card_detail(app: &AppState, card_id: &str) -> Vec<Line<'static>> {
         for board in &project.boards {
             for list in &board.active_lists {
                 if let Some(card) = list.cards.iter().find(|card| card.id == card_id) {
+                    let draft = app.current_card_draft(card_id);
+                    let title =
+                        draft.map_or(card.name.as_str(), |draft| draft.draft_title.as_str());
+                    let description = draft
+                        .and_then(|draft| draft.draft_description.as_deref())
+                        .or(card.description.as_deref());
                     let status = if card.is_closed { "CLOSED" } else { "ACTIVE" };
                     let due = card.due_date.as_deref().unwrap_or("no due date");
                     let subscribed = if card.is_subscribed {
@@ -2851,23 +3705,37 @@ fn build_card_detail(app: &AppState, card_id: &str) -> Vec<Line<'static>> {
                         "not subscribed"
                     };
 
+                    let mut chips = vec![
+                        chip_span(
+                            status,
+                            if card.is_closed {
+                                Color::Yellow
+                            } else {
+                                Color::LightGreen
+                            },
+                        ),
+                        Span::raw("  "),
+                        chip_span(due, Color::LightBlue),
+                        Span::raw("  "),
+                        chip_span(subscribed, Color::Gray),
+                    ];
+                    if draft.is_some_and(CardDraft::is_dirty) {
+                        chips.push(Span::raw("  "));
+                        chips.push(chip_span("DIRTY", Color::Yellow));
+                    }
+                    if draft.is_some_and(|draft| draft.remote_changed && draft.is_dirty()) {
+                        chips.push(Span::raw("  "));
+                        chips.push(chip_span("REMOTE CHANGED", Color::LightRed));
+                    }
+                    if app.saving_card.as_deref() == Some(card_id) {
+                        chips.push(Span::raw("  "));
+                        chips.push(chip_span("SAVING", Color::LightBlue));
+                    }
+
                     let mut lines = vec![
                         detail_title("card"),
-                        header_value_line(&card.name),
-                        Line::from(vec![
-                            chip_span(
-                                status,
-                                if card.is_closed {
-                                    Color::Yellow
-                                } else {
-                                    Color::LightGreen
-                                },
-                            ),
-                            Span::raw("  "),
-                            chip_span(due, Color::LightBlue),
-                            Span::raw("  "),
-                            chip_span(subscribed, Color::Gray),
-                        ]),
+                        header_value_line(title),
+                        Line::from(chips),
                         id_line("card", &card.id),
                         Line::from(""),
                         section_header("Context"),
@@ -2903,11 +3771,7 @@ fn build_card_detail(app: &AppState, card_id: &str) -> Vec<Line<'static>> {
                         Line::from(""),
                         section_header("Description"),
                     ];
-                    push_optional_text_block(
-                        &mut lines,
-                        card.description.as_deref(),
-                        "No card description.",
-                    );
+                    push_optional_text_block(&mut lines, description, "No card description.");
 
                     lines.push(Line::from(""));
                     lines.push(section_header("Attachments"));
@@ -3015,8 +3879,22 @@ fn build_card_detail(app: &AppState, card_id: &str) -> Vec<Line<'static>> {
                     lines.push(Line::from(""));
                     lines.push(section_header("Editing"));
                     lines.push(muted_line(
-                        "V1 card editing target: title + description, with long-form edits via $EDITOR.",
+                        "e edits title inline • E opens description in $EDITOR and saves on exit • Ctrl-s saves • Ctrl-x discards",
                     ));
+                    if app.saving_card.as_deref() == Some(card_id) {
+                        lines.push(muted_line(
+                            "Saving current card changes to Planka server… controls are paused until response.",
+                        ));
+                    } else if let Some(draft) = draft.filter(|draft| draft.is_dirty()) {
+                        lines.push(muted_line(&format!(
+                            "Local draft differs from base snapshot.{}",
+                            if draft.remote_changed {
+                                " Remote changes also arrived while dirty."
+                            } else {
+                                ""
+                            }
+                        )));
+                    }
                     return lines;
                 }
             }
@@ -3205,6 +4083,105 @@ fn draw_debug_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &AppState
     frame.render_widget(Clear, popup);
     frame.render_widget(
         List::new(debug_items).block(panel_block("websocket debug log • press D to close", false)),
+        popup,
+    );
+}
+
+fn draw_title_editor_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &AppState) {
+    let Some(editor) = app.title_editor.as_ref() else {
+        return;
+    };
+
+    let popup = centered_rect(72, 22, area);
+    let chars = editor.buffer.chars().collect::<Vec<_>>();
+    let cursor = editor.cursor.min(chars.len());
+    let before = chars[..cursor].iter().collect::<String>();
+    let at = chars
+        .get(cursor)
+        .map_or(" ".to_string(), ToString::to_string);
+    let after = if cursor < chars.len() {
+        chars[cursor + 1..].iter().collect::<String>()
+    } else {
+        String::new()
+    };
+
+    let lines = vec![
+        Line::from(Span::styled(
+            "Edit card title",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(dim_span("Enter save • Esc cancel • Ctrl-c force quit")),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(before, Style::default().fg(Color::White)),
+            Span::styled(
+                at,
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(after, Style::default().fg(Color::White)),
+        ]),
+    ];
+
+    frame.render_widget(Clear, popup);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(panel_block("title editor", true))
+            .wrap(Wrap { trim: false }),
+        popup,
+    );
+}
+
+fn draw_saving_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &AppState) {
+    let Some(card_id) = app.saving_card.as_deref() else {
+        return;
+    };
+
+    let popup = centered_rect(58, 20, area);
+    let spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let tick = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        / 120;
+    let spinner = spinner_frames[(tick as usize) % spinner_frames.len()];
+    let label = app.saving_card_label().unwrap_or("selected card");
+
+    let lines = vec![
+        Line::from(vec![Span::styled(
+            format!("{spinner} Saving card changes"),
+            Style::default()
+                .fg(Color::LightBlue)
+                .add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("card: ", Style::default().fg(Color::Cyan)),
+            Span::raw(truncate(label, 54)),
+        ]),
+        Line::from(vec![
+            Span::styled("id: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(truncate(card_id, 54), Style::default().fg(Color::Gray)),
+        ]),
+        Line::from(""),
+        Line::from(dim_span(
+            "Waiting for server response. Controls are paused until save succeeds or fails.",
+        )),
+        Line::from(dim_span(
+            "Dialog stays visible for a short minimum time so fast saves are still readable.",
+        )),
+        Line::from(dim_span("Ctrl-c force quits if you get stuck.")),
+    ];
+
+    frame.render_widget(Clear, popup);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(panel_block("saving", true))
+            .wrap(Wrap { trim: true }),
         popup,
     );
 }
