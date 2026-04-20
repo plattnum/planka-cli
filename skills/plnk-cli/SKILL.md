@@ -1,31 +1,41 @@
 ---
-name: plnk CLI — Planka Board Management
-description: >
-  This skill should be used when the user asks to "manage planka boards",
-  "move a card", "create a task", "list boards", "find cards", "update card description",
-  "add a comment to the card", "check what's on the board", "upload attachment",
-  "assign a user", "add a label", or any Planka kanban board operation via CLI.
-  Also triggers when working in a project that uses Planka for task tracking
-  (indicated by CLAUDE.md referencing plnk, Planka, or board/card/task management).
+name: plnk-cli
+description: Use this skill when the user wants to inspect or manage Planka projects, boards, lists, cards, tasks, comments, labels, attachments, memberships, users, or authentication with the plnk CLI.
 ---
 
-# plnk CLI — Planka Board Management
+# plnk-cli
 
-`plnk` is a CLI and SDK for [Planka](https://planka.app) kanban project management. Use it to manage projects, boards, lists, cards, tasks, comments, labels, attachments, and memberships from the terminal.
+Use `plnk` as the canonical interface to Planka. Do not invent a parallel task API or assume a fixed kanban workflow. Operate through the CLI, prefer machine-readable output, and resolve ambiguity before mutating state.
 
-## Grammar
+## When to use this skill
 
-```
-plnk <resource> <action> [target] [flags]
-```
+Use this skill when the user wants to:
 
-Resources: `project`, `board`, `list`, `card`, `task`, `comment`, `label`, `attachment`, `membership`, `user`, `auth`
+- inspect Planka projects, boards, lists, cards, tasks, comments, labels, attachments, memberships, or users
+- create, update, move, archive, unarchive, or delete Planka resources
+- find cards, lists, boards, or labels by name/title
+- add comments, tasks, assignees, labels, or attachments to cards
+- understand or debug `plnk` command behavior
 
-## Hierarchy
+## Core Rules
 
-All operations follow a strict hierarchy. Never attempt unscoped queries.
+- Use `plnk` as the source of truth for Planka operations.
+- Prefer `--output json` for agent work unless the user explicitly asked for table or markdown output.
+- IDs are opaque strings. Pass them through exactly as returned.
+- Use `get` for exact ID lookup.
+- Use `find` for name/title lookup.
+- `find` may return multiple results. Do not guess when matches are ambiguous.
+- Prefer the narrowest scope possible: `--list` over `--board`, `--board` over `--project`.
+- Read before write when current state is unclear.
+- After discovery, perform mutations using IDs, not names.
+- Ask before destructive or bulk operations unless the user was already explicit.
+- Do not maintain a parallel TODO system unless the user explicitly asks for one.
 
-```
+## Resource Hierarchy
+
+All operations are hierarchical.
+
+```text
 project
   board
     list
@@ -37,201 +47,176 @@ project
   membership
 ```
 
-To list cards, a list ID is required. To list tasks, a card ID is required. To find cards, scope to a list, board, or project. There are no global flat queries — except `project find`, which is unscoped because projects are the root resource.
+Implications:
 
-## Authentication
+- `project find` is the only unscoped `find`.
+- `board find` requires `--project`.
+- `list find` requires `--board`.
+- `card find` requires exactly one of `--list`, `--board`, or `--project`.
+- tasks and comments live under cards
+- labels live under boards
 
-Credential precedence (first match wins):
+## Default Operating Procedure
 
-1. CLI flags: `--server <url>` and `--token <token>`
-2. Environment: `PLANKA_SERVER` and `PLANKA_TOKEN`
-3. Config file: `~/.config/planka/config.toml`
+When the user asks to inspect or modify Planka state:
 
-For scripting and CI, prefer environment variables:
+1. **Identify the narrowest possible scope.**
+   - Prefer known IDs if already available.
+   - Otherwise resolve names to IDs using `find` or `list`.
+
+2. **Prefer JSON output.**
+   - Use `--output json` for anything the agent needs to read, compare, or pipe.
+
+3. **Resolve names before mutation.**
+   - Find the project, board, list, card, label, or user first.
+   - If multiple candidates match, summarize them and ask the user which one they mean.
+
+4. **Read current state before writing when context is incomplete.**
+   - Inspect the current board/list/card/task state before moving or editing if the target is not fully specified.
+
+5. **Mutate by ID.**
+   - Once a target has been identified, use the returned IDs for `update`, `move`, `archive`, `delete`, `label add/remove`, `assignee add/remove`, and similar operations.
+
+6. **Confirm destructive or broad actions.**
+   - Ask before `delete`, `archive`, bulk edits, or wide-scope moves unless the user was explicit.
+
+7. **Report back with resolved names and IDs when useful.**
+   - Especially after create/move/find operations or when ambiguity was resolved.
+
+## Lists and Workflow
+
+Lists are board-defined and may vary across users, teams, and boards. Do **not** assume canonical columns.
+
+Never assume that a board has any specific list names such as:
+
+- Backlog
+- In Progress
+- Review
+- Done
+- Blocked
+- WontDo
+
+When the user expresses workflow intent such as “move this to in progress”, “send this to review”, “put it in backlog”, or “mark this blocked”:
+
+1. inspect the board's actual lists first
+2. map the user's intent to an existing list
+3. ask for confirmation if multiple lists plausibly match
+
+## Auth and Output
+
+Credential precedence:
+
+1. CLI flags: `--server`, `--token`
+2. Environment: `PLANKA_SERVER`, `PLANKA_TOKEN`
+3. Config: `~/.config/planka/config.toml`
+
+Useful auth checks:
 
 ```bash
-export PLANKA_SERVER=https://planka.example.com
-export PLANKA_TOKEN=your-api-key
+plnk auth status
+plnk auth whoami
 ```
 
-For interactive setup:
+Prefer JSON output for agent work:
 
 ```bash
-plnk auth login --server https://planka.example.com
+plnk board list --project <projectId> --output json
+plnk card find --board <boardId> --title "auth" --output json
 ```
 
-Verify auth with `plnk auth whoami` or `plnk auth status`.
+JSON envelopes are shaped like:
 
-## Output Formats
-
-Three formats controlled by `--output`:
-
-| Flag | Use |
-|------|-----|
-| `--output table` | Default. Human-readable. |
-| `--output json` | Structured envelope for scripting. Always has `success`, `data`, `meta`. |
-| `--output markdown` | For reports and documentation. |
-
-Use `--full` to include all fields (default output is trimmed).
-
-### JSON envelope structure
-
-Success:
 ```json
-{"success": true, "data": [...], "meta": {"count": N}}
+{"success": true, "data": [...], "meta": {"count": 3}}
 ```
 
-Error:
+and errors like:
+
 ```json
 {"success": false, "error": {"type": "ResourceNotFound", "message": "..."}}
 ```
 
-### Capturing IDs from JSON output
+## Important Constraints
+
+- `get` requires an ID. Never use `get` with a name.
+- `find` returns collections, including zero or many matches.
+- There is no standalone `get` for `task`, `comment`, or `label`.
+  - use `task list --card <cardId>`
+  - use `comment list --card <cardId>`
+  - use `label list --board <boardId>`
+  - or use `card snapshot` / `board snapshot`
+- Snapshot commands are best when nested state is needed in one call:
+  - `plnk project snapshot <projectId> --output json`
+  - `plnk board snapshot <boardId> --output json`
+  - `plnk card snapshot <cardId> --output json`
+- Prefer narrow scopes for both correctness and performance.
+- `stdout` is for data. `stderr` is for logs and diagnostics.
+
+## Command Patterns
+
+Browse the hierarchy:
 
 ```bash
-ID=$(plnk card create --list 789 --title "New" --output json | jq -r '.data.id')
+plnk project list --output json
+plnk board list --project <projectId> --output json
+plnk list list --board <boardId> --output json
+plnk card list --list <listId> --output json
 ```
 
-## Common Workflows
-
-### Browse the hierarchy
+Find resources by name/title:
 
 ```bash
-plnk project list
-plnk board list --project <projectId>
-plnk list list --board <boardId>
-plnk card list --list <listId>
+plnk project find --name "Platform" --output json
+plnk board find --project <projectId> --name "Sprint" --output json
+plnk list find --board <boardId> --name "Backlog" --output json
+plnk card find --board <boardId> --title "auth" --output json
 ```
 
-Plural aliases exist for listing: `plnk boards --project X`, `plnk cards --list X`, `plnk tasks --card X`, `plnk comments --card X`, `plnk labels --board X`, `plnk lists --board X`.
-
-### Card lifecycle
+Mutate a card:
 
 ```bash
-plnk card create --list <listId> --title "Fix auth"
-plnk card update <cardId> --description @spec.md
-plnk card move <cardId> --to-list <listId> --position top
-plnk card move <cardId> --to-board <boardId> --to-list <listId>   # across boards
-plnk card archive <cardId>
+plnk card create --list <listId> --title "Fix auth" --output json
+plnk card update <cardId> --description @spec.md --output json
+plnk card move <cardId> --to-list <listId> --position top --output json
 ```
 
-### Find by name/title
-
-Scoped search with three-tier matching (exact > case-insensitive > substring). Always returns a collection; multiple results are normal.
+Work with tasks and comments:
 
 ```bash
-plnk project find --name "Platform"                            # unscoped — projects are root
-plnk board find --project <projectId> --name "Sprint"
-plnk list find --board <boardId> --name "Backlog"
-plnk card find --list <listId> --title "auth"
-plnk card find --board <boardId> --title "auth"
-plnk card find --project <projectId> --title "auth"
-plnk label find --board <boardId> --name "urgent"
+plnk task list --card <cardId> --output json
+plnk task create --card <cardId> --title "Write tests" --output json
+plnk comment create --card <cardId> --text "Starting work" --output json
 ```
 
-### Snapshot (bulk fetch in one call)
+## When Unsure
 
-Return the full `GET /api/<resource>/{id}` response verbatim — `item` plus every related resource Planka includes. Useful when a programmatic consumer needs all nested state in one round trip (e.g. a TUI rendering a full board). Nothing is dropped, including resources the CLI doesn't formally model (custom fields, notification services, stopwatch, etc.).
-
-```bash
-plnk project snapshot <projectId> --output json
-plnk board snapshot <boardId> --output json
-plnk card snapshot <cardId> --output json
-```
-
-JSON only. `--output table` / `--output markdown` fail with exit code 2.
-
-### Tasks (checklists)
+If command syntax, flags, or resource behavior are uncertain, inspect machine-readable help instead of guessing:
 
 ```bash
-plnk task create --card <cardId> --title "Write tests"
-plnk task complete <taskId>
-plnk task reopen <taskId>
-plnk task list --card <cardId>
-```
-
-### Comments
-
-```bash
-plnk comment create --card <cardId> --text "Starting work"
-plnk comment create --card <cardId> --text @notes.md
-echo "status update" | plnk comment create --card <cardId> --text -
-```
-
-### Labels
-
-Create labels on a board, then apply to cards:
-
-```bash
-plnk label create --board <boardId> --name "urgent" --color berry-red
-plnk card label add <cardId> <labelId>
-plnk card label remove <cardId> <labelId>
-```
-
-### Attachments
-
-```bash
-plnk attachment upload --card <cardId> ./file.pdf
-plnk attachment list --card <cardId>
-plnk attachment download <attachmentId> --card <cardId>
-plnk attachment download <attachmentId> --card <cardId> --out ./renamed.pdf
-```
-
-Download uses the real filename from Planka when `--out` is omitted.
-
-### Memberships
-
-```bash
-plnk membership list --project <projectId>
-plnk membership add --board <boardId> --user <userId> --role editor
-plnk membership remove --project <projectId> --user <userId>
-```
-
-## Text Input
-
-For `--description`, `--text`, and similar flags:
-
-| Syntax | Source |
-|--------|--------|
-| `"literal"` | Inline |
-| `-` | stdin |
-| `@file.md` | File |
-
-## Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 2 | Invalid arguments |
-| 3 | Auth failure |
-| 4 | Not found |
-| 5 | Server error |
-
-## Global Flags
-
-`--server`, `--token`, `--output table|json|markdown`, `-v`/`-vv`/`-vvv` (verbosity to stderr), `--quiet`, `--no-color`, `--yes` (skip confirmations), `--full` (all fields).
-
-## Machine-Readable Help
-
-Get structured JSON describing any command's arguments, options, and examples:
-
-```bash
+plnk --help --output json
+plnk card --help --output json
 plnk card create --help --output json
 ```
 
-## Key Rules
+Then read the relevant references.
 
-- **IDs are opaque strings.** Pass them through as-is. Never parse or cast to integers.
-- **`get` requires an ID.** Never pass a name to `get`. Use `find` for name-based search.
-- **`find` requires a scope** — `--list`, `--board`, or `--project` — except `project find`, which has no parent and takes `--name` only.
-- **`find` returns collections.** Multiple results are expected, not errors.
-- **No standalone `get` for task/comment/label.** These live inside a parent; read via `task list --card`, `comment list --card`, `label list --board`, or `card snapshot` / `board snapshot`.
-- **stdout = data, stderr = logs.** Verbose logging (`-v`) never corrupts pipeable output.
+## References
 
-## Additional Resources
+Primary references:
 
-### Reference Files
+- `references/commands.md`
+- `references/api-quirks.md`
 
-For the full command reference with every permutation and flag:
-- **`references/commands.md`** — Complete command listing organized by resource
-- **`references/api-quirks.md`** — Planka API behaviors that affect CLI usage
+Resource docs:
+
+- `../../docs/projects.md`
+- `../../docs/boards.md`
+- `../../docs/lists.md`
+- `../../docs/cards.md`
+- `../../docs/tasks.md`
+- `../../docs/comments.md`
+- `../../docs/labels.md`
+- `../../docs/attachments.md`
+- `../../docs/memberships.md`
+- `../../docs/users.md`
+- `../../docs/transport.md`

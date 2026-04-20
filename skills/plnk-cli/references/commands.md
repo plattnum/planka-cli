@@ -2,6 +2,90 @@
 
 Complete listing of every command, flag, and usage pattern.
 
+This file is optimized for agent lookup. When using it from Pi:
+
+- first identify the resource: project, board, list, card, task, comment, label, attachment, membership, user, or auth
+- then identify the operation: list, get, find, create, update, move, archive, delete, add/remove, snapshot
+- prefer the narrowest scope possible
+- prefer `--output json` for machine work
+- if syntax is still unclear, fall back to `plnk --help --output json` or `plnk <resource> <action> --help --output json`
+
+## Quick Lookup by Intent
+
+| Intent | Command pattern |
+|---|---|
+| list projects | `plnk project list` |
+| find a project by name | `plnk project find --name <name>` |
+| list boards in a project | `plnk board list --project <projectId>` |
+| find a board by name | `plnk board find --project <projectId> --name <name>` |
+| list lists on a board | `plnk list list --board <boardId>` |
+| find a list by name | `plnk list find --board <boardId> --name <name>` |
+| list cards in a list | `plnk card list --list <listId>` |
+| find cards by title | `plnk card find --list <listId> --title <title>` or broader board/project scopes |
+| read one card with nested state | `plnk card snapshot <cardId> --output json` |
+| create a card | `plnk card create --list <listId> --title <title>` |
+| update a card title/description | `plnk card update <cardId> ...` |
+| move a card | `plnk card move <cardId> --to-list <listId>` |
+| archive/unarchive a card | `plnk card archive <cardId>` / `plnk card unarchive <cardId>` |
+| list tasks on a card | `plnk task list --card <cardId>` |
+| add a task to a card | `plnk task create --card <cardId> --title <title>` |
+| list comments on a card | `plnk comment list --card <cardId>` |
+| add a comment to a card | `plnk comment create --card <cardId> --text <text>` |
+| list labels on a board | `plnk label list --board <boardId>` |
+| apply/remove label on card | `plnk card label add <cardId> <labelId>` / `plnk card label remove <cardId> <labelId>` |
+| list assignees on a card | `plnk card assignee list <cardId>` |
+| add/remove assignee | `plnk card assignee add <cardId> <userId>` / `plnk card assignee remove <cardId> <userId>` |
+| list/upload/download attachments | `plnk attachment list --card <cardId>` / `plnk attachment upload --card <cardId> <file>` / `plnk attachment download <attachmentId> --card <cardId>` |
+| inspect everything under a board/project/card | `plnk board snapshot <id> --output json`, `plnk project snapshot <id> --output json`, `plnk card snapshot <id> --output json` |
+
+## Common Resolution Playbooks
+
+### Resolve names to IDs before mutation
+
+Project by name:
+
+```bash
+plnk project find --name "Platform" --output json
+```
+
+Board by name inside a project:
+
+```bash
+plnk board find --project <projectId> --name "Sprint" --output json
+```
+
+List by name inside a board:
+
+```bash
+plnk list find --board <boardId> --name "In Progress" --output json
+```
+
+Card by title inside the narrowest available scope:
+
+```bash
+plnk card find --list <listId> --title "auth" --output json
+plnk card find --board <boardId> --title "auth" --output json
+plnk card find --project <projectId> --title "auth" --output json
+```
+
+Then mutate using returned IDs, not names.
+
+### Use snapshots when nested state matters
+
+Use snapshots when you need related resources in one read:
+
+- `project snapshot` for boards and memberships under a project
+- `board snapshot` for lists, cards, labels, and board memberships
+- `card snapshot` for tasks, comments, attachments, labels, assignees, and related nested state
+
+### Prefer narrow scopes for performance
+
+Use the narrowest scope that can answer the question:
+
+- `card find --list` is fastest
+- `card find --board` is broader
+- `card find --project` is widest and may require multiple board reads
+
 ## Auth
 
 ```bash
@@ -171,7 +255,6 @@ Alias: `plnk labels --board <boardId>`
 
 - Labels are board-scoped. To apply a label to a card, use `plnk card label add`.
 - `list` fetches labels from the board snapshot's included data. There is no standalone `label get` — read via `label list --board` or `board snapshot <boardId>`.
-- `get` uses PATCH with empty body.
 
 ### Planka color tokens
 
