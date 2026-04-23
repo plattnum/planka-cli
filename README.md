@@ -10,428 +10,98 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/plattnum)
 
-A deterministic, scriptable, hierarchy-aware CLI and SDK for [Planka](https://planka.app) kanban project management. Built for humans, shell scripts, CI/CD pipelines, and AI planners.
+A deterministic, scriptable, hierarchy-aware CLI and SDK for [Planka](https://planka.app) kanban project management. Plus a live terminal TUI explorer built on the same stack.
 
 > [!NOTE]
 > Tested against self-hosted [Planka](https://planka.app) only. The cloud-hosted service hasn't been exercised yet — your mileage may vary.
 
-## Features
+## Two tools, one stack
 
-- **Full [Planka](https://planka.app) coverage** -- projects, boards, lists, cards, tasks, comments, labels, attachments, memberships, auth
-- **Strict hierarchy** -- `project > board > list > card > task/comment`. All searches are scoped. No global flat queries.
-- **Three output formats** -- `table` (default), `json` (structured envelope), `markdown`
-- **Machine-readable everything** -- JSON output, structured errors with typed exit codes, machine-readable help (`--help --output json`)
-- **Scriptable** -- stdin/file input (`--description -`, `--text @file.md`), `--yes` for non-interactive use, `--quiet` for silent operation
-- **Two-crate architecture** -- `plnk-core` is a standalone Planka SDK usable by other Rust tools. `plnk-cli` is a thin shell over it.
+| Tool | What it's for |
+|------|---------------|
+| [`plnk`](#plnk-cli) | Scriptable CLI for automation, CI/CD, and AI workflows |
+| [`plnk-tui`](#plnk-tui) | Live terminal explorer with real-time websocket sync |
 
-## Installation
+Both share config and auth — run `plnk init` once and both binaries are ready. Landing page at [plattnum.github.io/planka-cli](https://plattnum.github.io/planka-cli).
 
-### From source
+## Install
 
-```bash
-cargo install --git https://github.com/plattnum/planka-cli plnk-cli
-```
-
-### From binary release
-
-Download the latest release for your platform from [Releases](https://github.com/plattnum/planka-cli/releases).
-
-| Platform | Target | Archive |
-|----------|--------|---------|
-| Linux x64 | `x86_64-unknown-linux-gnu` | `.tar.gz` |
-| Linux ARM64 | `aarch64-unknown-linux-gnu` | `.tar.gz` |
-| macOS Intel | `x86_64-apple-darwin` | `.tar.gz` |
-| macOS Apple Silicon | `aarch64-apple-darwin` | `.tar.gz` |
-| Windows x64 | `x86_64-pc-windows-msvc` | `.zip` |
-
-Extract and place `plnk` in your `$PATH`.
-
-## Authentication
-
-Three ways to authenticate, checked in this order (first match wins):
-
-| Priority | Method | Server | Token |
-|----------|--------|--------|-------|
-| 1 | CLI flags | `--server <url>` | `--token <token>` |
-| 2 | Environment | `PLANKA_SERVER` | `PLANKA_TOKEN` |
-| 3 | Config file | `~/.config/plnk/config.toml` | `~/.config/plnk/config.toml` |
-
-### Interactive login (stores token in config)
-
-```bash
-plnk auth login --server https://planka.example.com
-# Prompts for email and password
-```
-
-### Direct token (for CI or pre-existing API keys)
-
-```bash
-plnk auth token set <token> --server https://planka.example.com
-```
-
-### Environment variables (stateless, for CI)
-
-```bash
-export PLANKA_SERVER=https://planka.example.com
-export PLANKA_TOKEN=your-api-key
-plnk project list
-```
-
-### Auth commands
-
-```bash
-plnk auth login [--server <url>] [--email <email>] [--password <pass>]
-plnk auth token set <token> [--server <url>]
-plnk auth whoami                    # show current user
-plnk auth status                    # show credential source + validity
-plnk auth logout                    # delete stored credentials
-```
-
-## Grammar
-
-```
-plnk <resource> <action> [target] [flags]
-```
-
-Resources: `project`, `board`, `list`, `card`, `task`, `comment`, `label`, `attachment`, `membership`, `user`, `auth`
-
-### Global flags
-
-| Flag | Description |
-|------|-------------|
-| `--server <url>` | [Planka](https://planka.app) server URL |
-| `--token <token>` | API token |
-| `--output table\|json\|markdown` | Output format (default: `table`) |
-| `-v` / `-vv` / `-vvv` | Verbosity: info / debug / trace (logs to stderr) |
-| `--quiet` | Suppress all output |
-| `--no-color` | Disable colored output |
-| `--yes` | Skip confirmation prompts |
-| `--full` | Show all fields (default is trimmed) |
-| `--http-max-in-flight <n>` | Max in-flight HTTP requests per process |
-| `--http-rate-limit <rps>` | Sustained HTTP request rate limit |
-| `--http-burst <n>` | HTTP rate-limit burst size |
-| `--retry-attempts <n>` | Retry attempts after the initial request |
-| `--retry-base-delay-ms <ms>` | Base retry delay |
-| `--retry-max-delay-ms <ms>` | Max retry delay |
-| `--no-retry` | Disable automatic HTTP retries |
-
-### Plural aliases
-
-Shortcuts for listing resources. Hidden from `--help`, identical output to canonical form.
-
-```bash
-plnk boards --project <id>         # plnk board list --project <id>
-plnk lists --board <id>            # plnk list list --board <id>
-plnk cards --list <id>             # plnk card list --list <id>
-plnk cards --board <id>            # plnk card list --board <id>
-plnk tasks --card <id>             # plnk task list --card <id>
-plnk comments --card <id>          # plnk comment list --card <id>
-plnk labels --board <id>           # plnk label list --board <id>
-```
-
-## Quick start
-
-```bash
-# Authenticate
-plnk auth login --server https://planka.example.com
-
-# Browse the hierarchy
-plnk project list
-plnk board list --project <projectId>
-plnk list list --board <boardId>
-plnk card list --list <listId>
-plnk card list --board <boardId>
-plnk card list --board <boardId> --label <labelId|name>
-
-# Create a card
-plnk card create --list <listId> --title "Fix auth bug"
-
-# Add a description from a file
-plnk card update <cardId> --description @spec.md
-
-# Pipe description from stdin
-pbpaste | plnk card update <cardId> --description -
-
-# Find cards across a board
-plnk card find --board <boardId> --title "auth"
-
-# Fetch multiple exact cards in one ordered collection
-plnk card get-many --id <cardIdA> --id <cardIdB> --output json
-plnk card get-many --id <cardIdA> --id <cardIdB> --concurrency 1
-plnk card get-many --id <cardIdA> --id <missingId> --allow-missing --output json
-
-# Find cards on a board by label only
-plnk card find --board <boardId> --label "urgent"
-
-# Label names are board-scoped; if a name is ambiguous, use the label ID instead
-plnk label list --board <boardId>
-plnk card list --board <boardId> --label <labelId>
-
-# Find a project by name (the only unscoped find)
-plnk project find --name "platform"
-
-# Full snapshot (item + everything included) in one call — JSON only
-plnk project snapshot <projectId> --output json
-plnk board snapshot <boardId> --output json
-plnk card snapshot <cardId> --output json
-
-# Move a card (same board)
-plnk card move <cardId> --to-list <listId> --position top
-
-# Move a card across boards
-plnk card move <cardId> --to-board <boardId> --to-list <listId>
-
-# Add a checklist item
-plnk task create --card <cardId> --title "Write tests"
-
-# JSON output for scripting
-plnk project list --output json
-```
-
-## Hierarchy
-
-```
-project
-  board
-    list
-      card
-        task
-        comment
-        attachment
-    label
-  membership
-```
-
-All scoped queries follow this hierarchy. You can't list cards without specifying a list (or board/project for `find`). You can't list tasks without a card. This is by design. Sole exception: `project find` is unscoped because projects are the root.
-
-## Output formats
-
-**Table** (default) -- human-readable, trimmed to essential fields:
-```
-plnk project list
-```
-
-**JSON** -- structured envelope for scripting:
-```
-plnk project list --output json
-```
-```json
-{
-  "success": true,
-  "data": [{"id": "123", "name": "Platform"}],
-  "meta": {"count": 1}
-}
-```
-
-**Markdown** -- for reports and documentation:
-```
-plnk project get <id> --output markdown
-```
-
-### JSON errors
-
-All errors produce structured JSON when `--output json` is set:
-```json
-{
-  "success": false,
-  "error": {
-    "type": "ResourceNotFound",
-    "message": "Resource not found: card 999"
-  }
-}
-```
-
-### Machine-readable help
-
-```bash
-plnk card create --help --output json
-```
-
-Returns structured JSON describing arguments, options, types, required/optional status, and examples.
-
-## Exit codes
-
-| Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 2 | Invalid arguments / validation error |
-| 3 | Authentication failure |
-| 4 | Resource not found |
-| 5 | Remote API / server error |
-
-## Text input
-
-For `--description`, `--text`, and similar text flags:
-
-| Syntax | Meaning |
-|--------|---------|
-| `"literal text"` | Inline text |
-| `-` | Read from stdin |
-| `@file.md` | Read from file |
-
-## Search matching
-
-`find` commands use three-tier matching (stops at first tier with results):
-
-1. Exact case-sensitive match
-2. Exact case-insensitive match
-3. Substring case-insensitive match
-
-`find` always returns a collection, never an error for multiple results.
-
-## Command reference
-
-Full command reference with examples for each resource is in [`docs/cli/`](docs/cli/):
-
-- [Projects](docs/cli/projects.md)
-- [Boards](docs/cli/boards.md)
-- [Lists](docs/cli/lists.md)
-- [Cards](docs/cli/cards.md)
-- [Tasks](docs/cli/tasks.md)
-- [Comments](docs/cli/comments.md)
-- [Labels](docs/cli/labels.md)
-- [Attachments](docs/cli/attachments.md)
-- [Memberships](docs/cli/memberships.md)
-- [Users](docs/cli/users.md)
-- [Transport policy](docs/cli/transport.md)
-
-## `plnk-tui` (experimental)
-
-A terminal explorer for Planka, built in the same workspace. Where `plnk` is scriptable and imperative, `plnk-tui` is a live tree explorer — projects, boards, lists, cards — rendered in two panes with a websocket channel so edits from the browser appear in the terminal in near real time.
-
-### Install
+Requires Rust 1.87+. Prebuilt binaries are on the roadmap.
 
 ```bash
 # From a checkout
+cargo install --path crates/plnk-cli --force
 cargo install --path crates/plnk-tui --force
 
 # Or from git
+cargo install --git https://github.com/plattnum/planka-cli plnk-cli
 cargo install --git https://github.com/plattnum/planka-cli plnk-tui
 ```
 
-### Run
+## Quickstart
+
+```bash
+plnk init                 # interactive: server URL + API token
+plnk auth status          # verify credentials resolve
+plnk project list         # start driving Planka
+plnk-tui                  # launch the TUI explorer
+```
+
+Walkthrough: [`docs/cli/examples.md`](docs/cli/examples.md).
+
+## `plnk` (CLI)
+
+Shape: `plnk <resource> <action> [target] [flags]`. Design principles:
+
+- **Strict hierarchy** — `project → board → list → card → task/comment`. All `find`s are scoped. No global flat queries.
+- **Typed exit codes** — `0` success · `2` validation · `3` auth · `4` not-found · `5` server.
+- **Three outputs** — `table` for humans, `json` for scripts, `markdown` for reports.
+- **Machine-readable help** — `plnk <cmd> --help --output json` returns a stable schema agents can bind to before running.
+- **stdout is data, stderr is logs.**
+
+Reference docs, one per resource:
+
+- [Projects](docs/cli/projects.md) · [Boards](docs/cli/boards.md) · [Lists](docs/cli/lists.md) · [Cards](docs/cli/cards.md)
+- [Tasks](docs/cli/tasks.md) · [Comments](docs/cli/comments.md) · [Labels](docs/cli/labels.md)
+- [Attachments](docs/cli/attachments.md) · [Memberships](docs/cli/memberships.md) · [Users](docs/cli/users.md)
+- [Authentication](docs/cli/auth.md) · [Grammar reference](docs/cli/grammar.md) · [Transport policy](docs/cli/transport.md)
+- [Worked examples](docs/cli/examples.md)
+
+## `plnk-tui`
+
+A terminal-native explorer for the same hierarchy. Single-board websocket subscription means edits from the browser appear in your terminal in near real time.
 
 ```bash
 plnk-tui --server http://your-planka-host --username you
 # prompts for password
 ```
 
-No `--board` required. The TUI lands on the projects view; navigate with `↑/↓/→/Enter`, then press `L` on any board to promote it to the live target and start streaming updates.
+Navigate projects → boards → lists → cards with `↑↓→Enter`. Press `L` on any board to promote it to the live target. Edit titles inline with `e` or descriptions in `$EDITOR` with `E`.
 
-Pre-fill with env vars: `PLANKA_SERVER`, `PLANKA_USERNAME`, `PLANKA_PASSWORD`, `PLNK_TUI_BOARD`.
+Env pre-fills: `PLANKA_SERVER`, `PLANKA_USERNAME`, `PLANKA_PASSWORD`, `PLNK_TUI_BOARD`.
 
-Full docs: [`docs/tui/`](docs/tui/) — [overview](docs/tui/overview.md), [keybindings](docs/tui/keybindings.md), [live-target model](docs/tui/live-target.md), [tree view](docs/tui/tree-view.md).
+Docs: [`docs/tui/`](docs/tui/) — [overview](docs/tui/overview.md) · [keybindings](docs/tui/keybindings.md) · [live-target model](docs/tui/live-target.md) · [tree view reference](docs/tui/tree-view.md).
 
 ## Architecture
 
 Three-crate Rust workspace:
 
-- **`plnk-core`** -- standalone Planka SDK. HTTP client, domain models, API traits (`ProjectApi`, `BoardApi`, `CardApi`, etc.), auth system, typed errors. Usable independently by other Rust tools, MCP servers, or TUI apps.
-- **`plnk-cli`** -- the `plnk` binary. Clap command tree, output rendering, input handling. Thin shell over `plnk-core`.
-- **`plnk-tui`** -- the `plnk-tui` binary. Ratatui explorer with a single-board websocket subscription model. Speaks the Planka REST + Engine.IO/Socket.IO protocols directly.
+- **`plnk-core`** — standalone [Planka](https://planka.app) SDK. HTTP client, domain models, API traits, auth, typed errors. Usable on its own.
+- **`plnk-cli`** — the `plnk` binary. Clap grammar + output rendering over `plnk-core`.
+- **`plnk-tui`** — the `plnk-tui` binary. Ratatui explorer + Engine.IO websocket.
 
-API versioning is handled through traits. If [Planka](https://planka.app) changes its API, only the implementation (`PlankaClientV1`) changes. Domain models and the CLI layer are untouched.
-
-## HTTP transport policy
-
-`plnk-core` now has a shared transport policy model for whole-stack HTTP behavior.
-
-Current status:
-
-- every `HttpClient` carries a shared `TransportPolicy`
-- all requests now flow through one common transport runtime hook
-- shared concurrency caps, rate limiting, and safe-method retries are active now
-- SDK callers can already set an explicit policy
-- CLI, environment variables, and config file can now tune transport settings
-
-Default policy values:
-
-| Field | Default |
-|------|---------|
-| `max_in_flight` | `8` |
-| `rate_limit_per_second` | `Some(10)` |
-| `burst_size` | `Some(10)` |
-| `retry_attempts` | `2` |
-| `retry_base_delay_ms` | `250` |
-| `retry_max_delay_ms` | `2000` |
-| `retry_jitter` | `true` |
-| `retry_safe_methods_only` | `true` |
-
-### How to set transport settings today
-
-**CLI users:** use global flags such as:
-
-```bash
-plnk --http-max-in-flight 4 --http-rate-limit 20 --retry-attempts 1 project list
-plnk --no-retry project list
-```
-
-**Environment variables:**
-
-```bash
-export PLNK_HTTP_MAX_IN_FLIGHT=4
-export PLNK_HTTP_RATE_LIMIT=20
-export PLNK_HTTP_BURST=20
-export PLNK_RETRY_ATTEMPTS=1
-export PLNK_RETRY_BASE_DELAY_MS=250
-export PLNK_RETRY_MAX_DELAY_MS=2000
-```
-
-**Config file:**
-
-```toml
-server = "https://planka.example.com"
-token = "your-api-token"
-
-[http]
-max_in_flight = 8
-rate_limit = 10
-burst = 10
-retry_attempts = 2
-retry_base_delay_ms = 250
-retry_max_delay_ms = 2000
-```
-
-Precedence is:
-- CLI flags
-- environment variables
-- config file
-- built-in defaults
-
-**SDK users:** create `HttpClient` with an explicit policy:
-
-```rust
-use plnk_core::client::HttpClient;
-use plnk_core::transport::TransportPolicy;
-use url::Url;
-
-let server = Url::parse("https://planka.example.com")?;
-let policy = TransportPolicy {
-    max_in_flight: 4,
-    retry_attempts: 1,
-    ..TransportPolicy::default()
-};
-let http = HttpClient::with_policy(server, "api-token", policy)?;
-```
-
-Current retry behavior:
-
-- `GET`/`HEAD`/`OPTIONS` retry automatically by default
-- `429`, `502`, `503`, and `504` are retryable
-- `Retry-After` is honored when present
-- `POST`/`PATCH`/`DELETE` are not retried automatically by default
-
-For the full transport write-up, including validation rules and the current rollout status, see [docs/cli/transport.md](docs/cli/transport.md).
+API versioning lives behind traits. If Planka changes its API, only the `PlankaClientV1` implementation changes — domain models and the CLI layer are untouched.
 
 ## Building
 
 ```bash
-cargo check                       # compile check
-cargo clippy -- -D warnings       # lint (zero warnings policy)
-cargo fmt --check                 # format check
-cargo test                        # all tests
-cargo run -- --help               # run the CLI
+cargo check
+cargo clippy -- -D warnings
+cargo fmt --check
+cargo test
 ```
+
+See [AGENTS.md](AGENTS.md) for the full design rules, API quirks, and contribution guidelines.
 
 ## Support
 
