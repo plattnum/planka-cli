@@ -2773,7 +2773,7 @@ where
                 },
             });
             socket
-                .send(Message::Text("40".to_string()))
+                .send(Message::Text("40".into()))
                 .await
                 .map_err(|err| TuiError::Socket(format!("socket connect packet failed: {err}")))?;
         }
@@ -2784,7 +2784,7 @@ where
         }
         '2' => {
             socket
-                .send(Message::Text("3".to_string()))
+                .send(Message::Text("3".into()))
                 .await
                 .map_err(|err| TuiError::Socket(format!("engine pong failed: {err}")))?;
         }
@@ -2846,7 +2846,7 @@ where
         if !*subscribe_sent {
             let subscribe = build_subscribe_packet(token, board_id)?;
             socket
-                .send(Message::Text(subscribe))
+                .send(Message::Text(subscribe.into()))
                 .await
                 .map_err(|err| TuiError::Socket(format!("board subscribe send failed: {err}")))?;
             *subscribe_sent = true;
@@ -3535,7 +3535,7 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
         .constraints([
             Constraint::Length(4),
             Constraint::Min(12),
-            Constraint::Length(2),
+            Constraint::Length(1),
         ])
         .split(area);
 
@@ -3677,10 +3677,10 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
     } else if app.title_editor.is_some() {
         "TITLE MODE: type text • ←/→ move • Enter save • Esc cancel • Ctrl-c force quit"
     } else {
-        "v toggle explorer view • L make selected board live • e edit title • E edit description in $EDITOR • Ctrl-c quit"
+        "↑/↓ nav • →/Enter expand • v toggle view • L promote to live • e edit title • E edit description ($EDITOR) • D debug log • Ctrl-c quit"
     };
     frame.render_widget(
-        Paragraph::new(key_help).block(panel_block("keys", false)),
+        Paragraph::new(key_help).style(Style::default().fg(Color::DarkGray)),
         chunks[2],
     );
 

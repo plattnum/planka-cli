@@ -25,7 +25,7 @@ url = { workspace = true }
 rpassword = { workspace = true }
 ratatui = "0.30"
 crossterm = "0.29"
-tokio-tungstenite = "0.21"
+tokio-tungstenite = "0.29"
 futures-util = "0.3"
 
 [lints]
