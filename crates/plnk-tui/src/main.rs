@@ -57,9 +57,12 @@ struct Args {
     #[arg(long, env = "PLANKA_PASSWORD")]
     password: Option<String>,
 
-    /// Board ID to subscribe to for live updates
+    /// Board ID to subscribe to for live updates at startup. Optional —
+    /// when omitted, the TUI launches into the projects view with no
+    /// live target, and the user can promote any board to live later
+    /// with the `L` keybinding.
     #[arg(long, env = "PLNK_TUI_BOARD")]
-    board: String,
+    board: Option<String>,
 
     /// Hidden debug mode: print socket events to stdout without the TUI
     #[arg(long, hide = true)]
@@ -705,6 +708,9 @@ enum AppEvent {
 
 #[derive(Debug, Clone)]
 enum ConnectionState {
+    /// No board has been promoted to the live target yet — the TUI is in
+    /// the projects-first explorer state and no websocket is running.
+    Idle,
     Loading,
     Connecting,
     Live,
@@ -714,6 +720,7 @@ enum ConnectionState {
 impl ConnectionState {
     fn label(&self) -> String {
         match self {
+            Self::Idle => "no live target".to_string(),
             Self::Loading => "loading".to_string(),
             Self::Connecting => "connecting raw websocket".to_string(),
             Self::Live => "live websocket connected".to_string(),
@@ -723,6 +730,7 @@ impl ConnectionState {
 
     fn style(&self) -> Style {
         match self {
+            Self::Idle => Style::default().fg(Color::DarkGray),
             Self::Loading => Style::default().fg(Color::Yellow),
             Self::Connecting => Style::default().fg(Color::LightYellow),
             Self::Live => Style::default().fg(Color::LightGreen),
@@ -827,7 +835,9 @@ struct AppState {
     current_user: CurrentUser,
     projects: Vec<ProjectTree>,
     board: Option<BoardSummary>,
-    subscribed_board_id: String,
+    /// Board the websocket is currently subscribed to. `None` when no
+    /// live target has been promoted yet (TUI-012).
+    subscribed_board_id: Option<String>,
     active_socket_session_id: u64,
     status: ConnectionState,
     recent_events: Vec<LiveEventRecord>,
@@ -866,7 +876,7 @@ impl AppState {
         login: String,
         current_user: CurrentUser,
         projects: Vec<ProjectTree>,
-        subscribed_board_id: String,
+        subscribed_board_id: Option<String>,
         active_socket_session_id: u64,
     ) -> Self {
         let mut expanded_projects = HashSet::new();
@@ -885,24 +895,29 @@ impl AppState {
         let pending_save_completion = None;
         let notice = None;
 
-        let selected = projects
-            .iter()
-            .find(|project| {
-                project
-                    .boards
+        let selected = subscribed_board_id
+            .as_deref()
+            .and_then(|target_id| {
+                projects
                     .iter()
-                    .any(|board| board.id == subscribed_board_id)
-            })
-            .map(|project| {
-                expanded_projects.insert(project.id.clone());
-                expanded_boards.insert(subscribed_board_id.clone());
-                TreeKey::Board(subscribed_board_id.clone())
+                    .find(|project| project.boards.iter().any(|board| board.id == target_id))
+                    .map(|project| {
+                        expanded_projects.insert(project.id.clone());
+                        expanded_boards.insert(target_id.to_string());
+                        TreeKey::Board(target_id.to_string())
+                    })
             })
             .or_else(|| {
                 projects
                     .first()
                     .map(|project| TreeKey::Project(project.id.clone()))
             });
+
+        let initial_status = if subscribed_board_id.is_some() {
+            ConnectionState::Loading
+        } else {
+            ConnectionState::Idle
+        };
 
         Self {
             server,
@@ -912,7 +927,7 @@ impl AppState {
             board: None,
             subscribed_board_id,
             active_socket_session_id,
-            status: ConnectionState::Loading,
+            status: initial_status,
             recent_events: Vec::new(),
             expanded_projects,
             expanded_boards,
@@ -944,7 +959,7 @@ impl AppState {
                 board_id,
             } => {
                 if session_id != self.active_socket_session_id
-                    || board_id != self.subscribed_board_id
+                    || Some(&board_id) != self.subscribed_board_id.as_ref()
                 {
                     return;
                 }
@@ -952,7 +967,7 @@ impl AppState {
             }
             AppEvent::SocketLive { session_id, board } => {
                 if session_id != self.active_socket_session_id
-                    || board.id != self.subscribed_board_id
+                    || Some(&board.id) != self.subscribed_board_id.as_ref()
                 {
                     return;
                 }
@@ -1031,7 +1046,7 @@ impl AppState {
                     .sort_by(|left, right| left.position.total_cmp(&right.position));
             }
 
-            if board.id == self.subscribed_board_id {
+            if Some(&board.id) == self.subscribed_board_id.as_ref() {
                 self.expanded_projects.insert(project.id.clone());
                 self.expanded_boards.insert(board.id.clone());
             }
@@ -1351,7 +1366,9 @@ impl AppState {
     }
 
     fn is_live_target(&self, board_id: &str) -> bool {
-        board_id == self.subscribed_board_id
+        self.subscribed_board_id
+            .as_deref()
+            .is_some_and(|id| id == board_id)
     }
 
     fn is_live_connected(&self, board_id: &str) -> bool {
@@ -1362,7 +1379,8 @@ impl AppState {
         let board_name = self
             .board_summary(board_id)
             .map_or_else(|| board_id.to_string(), |board| board.name.clone());
-        self.subscribed_board_id = board_id.to_string();
+        let was_idle = matches!(self.status, ConnectionState::Idle);
+        self.subscribed_board_id = Some(board_id.to_string());
         self.active_socket_session_id = self.active_socket_session_id.saturating_add(1);
         self.status = ConnectionState::Connecting;
         self.board_errors.remove(board_id);
@@ -1374,7 +1392,8 @@ impl AppState {
             self.expanded_projects.insert(project_id.to_string());
         }
         self.expanded_boards.insert(board_id.to_string());
-        self.set_notice(format!("Switching live board to {board_name}…"));
+        let verb = if was_idle { "Promoting" } else { "Switching" };
+        self.set_notice(format!("{verb} live target to {board_name}…"));
     }
 
     fn flush_pending_save_completion(&mut self) {
@@ -1690,7 +1709,7 @@ impl AppState {
                     .find(|board| board.id == *board_id)
                     .is_some_and(BoardSummary::is_loaded);
 
-                if !board_loaded && board_id != &self.subscribed_board_id {
+                if !board_loaded && Some(board_id) != self.subscribed_board_id.as_ref() {
                     self.expanded_boards.insert(board_id.clone());
                     if self.loading_boards.insert(board_id.clone()) {
                         self.board_errors.remove(board_id);
@@ -2208,14 +2227,15 @@ impl AppState {
     }
 
     fn subscribed_board(&self) -> Option<&BoardSummary> {
+        let target = self.subscribed_board_id.as_deref()?;
         self.projects
             .iter()
             .flat_map(|project| project.boards.iter())
-            .find(|board| board.id == self.subscribed_board_id)
+            .find(|board| board.id == target)
     }
 
     fn subscribed_board_mut(&mut self) -> Option<&mut BoardSummary> {
-        let board_id = self.subscribed_board_id.clone();
+        let board_id = self.subscribed_board_id.clone()?;
         self.projects
             .iter_mut()
             .find_map(|project| project.boards.iter_mut().find(|board| board.id == board_id))
@@ -2275,15 +2295,28 @@ async fn main() -> Result<(), TuiError> {
 
     let initial_socket_session_id = 1;
     let (tx, rx) = mpsc::channel();
-    let initial_socket_shutdown = spawn_socket_listener(
-        server.clone(),
-        token.clone(),
-        args.board.clone(),
-        initial_socket_session_id,
-        tx.clone(),
-    );
+    // Only spawn a websocket listener at startup when the user explicitly
+    // passed --board / PLNK_TUI_BOARD. Without that flag the TUI starts
+    // idle and spawns the listener the first time a board is promoted to
+    // the live target (TUI-012).
+    let initial_socket_shutdown = args.board.clone().map(|board_id| {
+        spawn_socket_listener(
+            server.clone(),
+            token.clone(),
+            board_id,
+            initial_socket_session_id,
+            tx.clone(),
+        )
+    });
 
     if args.headless {
+        if args.board.is_none() {
+            println!(
+                "headless probe: no --board supplied; \
+                 nothing to subscribe to. Pass --board <id> or PLNK_TUI_BOARD to probe a board."
+            );
+            return Ok(());
+        }
         run_headless_probe(&current_user, &projects, &rx, args.headless_timeout_secs);
         return Ok(());
     }
@@ -3256,7 +3289,7 @@ fn run_app(
     server: &Url,
     token: &str,
     runtime: &Arc<tokio::runtime::Handle>,
-    mut socket_shutdown: watch::Sender<bool>,
+    mut socket_shutdown: Option<watch::Sender<bool>>,
 ) -> Result<(), TuiError> {
     loop {
         while let Ok(message) = rx.try_recv() {
@@ -3400,15 +3433,17 @@ fn run_app(
                                 if app.is_live_target(&board_id) {
                                     app.set_notice("Selected board is already the live target.");
                                 } else {
-                                    let _ = socket_shutdown.send(true);
+                                    if let Some(previous) = socket_shutdown.as_ref() {
+                                        let _ = previous.send(true);
+                                    }
                                     app.switch_live_board(&board_id);
-                                    socket_shutdown = spawn_socket_listener(
+                                    socket_shutdown = Some(spawn_socket_listener(
                                         server.clone(),
                                         token.to_string(),
                                         board_id,
                                         app.active_socket_session_id,
                                         tx.clone(),
-                                    );
+                                    ));
                                 }
                             } else {
                                 app.set_notice("Select a board to make it live.");
@@ -3542,11 +3577,13 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
             app.server, app.login, app.current_user.name, app.current_user.username
         )),
         Line::from(format!(
-            "visible projects: {} | current user id: {} | explorer view: {} | subscribed board: {}",
+            "visible projects: {} | current user id: {} | explorer view: {} | live target: {}",
             app.projects.len(),
             app.current_user.id,
             app.explorer_view.label(),
             app.subscribed_board_id
+                .as_deref()
+                .unwrap_or("none (press L on a board)")
         )),
     ];
     frame.render_widget(
@@ -3609,9 +3646,14 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
             Span::styled(app.status.label(), app.status.style()),
         ]),
         Line::from(format!(
-            "subscribed board: {}",
+            "live target: {}",
             app.board.as_ref().map_or_else(
-                || format!("{} (waiting for snapshot)", app.subscribed_board_id),
+                || {
+                    app.subscribed_board_id.as_deref().map_or_else(
+                        || "none — select a board and press L to promote it".to_string(),
+                        |id| format!("{id} (waiting for snapshot)"),
+                    )
+                },
                 |board| format!("{} [{}]", board.name, board.id),
             )
         )),
