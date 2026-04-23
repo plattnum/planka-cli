@@ -12,9 +12,12 @@
 
 A deterministic, scriptable, hierarchy-aware CLI and SDK for [Planka](https://planka.app) kanban project management. Built for humans, shell scripts, CI/CD pipelines, and AI planners.
 
+> [!NOTE]
+> Tested against self-hosted [Planka](https://planka.app) only. The cloud-hosted service hasn't been exercised yet — your mileage may vary.
+
 ## Features
 
-- **Full Planka coverage** -- projects, boards, lists, cards, tasks, comments, labels, attachments, memberships, auth
+- **Full [Planka](https://planka.app) coverage** -- projects, boards, lists, cards, tasks, comments, labels, attachments, memberships, auth
 - **Strict hierarchy** -- `project > board > list > card > task/comment`. All searches are scoped. No global flat queries.
 - **Three output formats** -- `table` (default), `json` (structured envelope), `markdown`
 - **Machine-readable everything** -- JSON output, structured errors with typed exit codes, machine-readable help (`--help --output json`)
@@ -96,7 +99,7 @@ Resources: `project`, `board`, `list`, `card`, `task`, `comment`, `label`, `atta
 
 | Flag | Description |
 |------|-------------|
-| `--server <url>` | Planka server URL |
+| `--server <url>` | [Planka](https://planka.app) server URL |
 | `--token <token>` | API token |
 | `--output table\|json\|markdown` | Output format (default: `table`) |
 | `-v` / `-vv` / `-vvv` | Verbosity: info / debug / trace (logs to stderr) |
@@ -327,7 +330,7 @@ Three-crate Rust workspace:
 - **`plnk-cli`** -- the `plnk` binary. Clap command tree, output rendering, input handling. Thin shell over `plnk-core`.
 - **`plnk-tui`** -- the `plnk-tui` binary. Ratatui explorer with a single-board websocket subscription model. Speaks the Planka REST + Engine.IO/Socket.IO protocols directly.
 
-API versioning is handled through traits. If Planka changes its API, only the implementation (`PlankaClientV1`) changes. Domain models and the CLI layer are untouched.
+API versioning is handled through traits. If [Planka](https://planka.app) changes its API, only the implementation (`PlankaClientV1`) changes. Domain models and the CLI layer are untouched.
 
 ## HTTP transport policy
 

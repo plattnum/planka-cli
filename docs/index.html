@@ -119,6 +119,20 @@
             flex-wrap: wrap;
             justify-content: center;
         }
+        .hero-caveat {
+            margin-top: 28px;
+            padding: 10px 16px;
+            max-width: 620px;
+            margin-left: auto;
+            margin-right: auto;
+            font-size: 0.85rem;
+            color: var(--muted);
+            border-left: 3px solid var(--warning);
+            background: rgba(210, 153, 34, 0.06);
+            text-align: left;
+            border-radius: 0 6px 6px 0;
+        }
+        .hero-caveat strong { color: var(--warning); font-weight: 600; }
         .btn {
             display: inline-block;
             padding: 12px 24px;
@@ -422,6 +436,10 @@
             <a href="#install" class="btn btn-primary">Install</a>
             <a href="https://github.com/plattnum/planka-cli" class="btn btn-secondary">View on GitHub</a>
         </div>
+        <p class="hero-caveat">
+            <strong>Heads up:</strong> tested against self-hosted
+            <a href="https://planka.app">Planka</a> only &mdash; the cloud-hosted service hasn't been exercised yet.
+        </p>
     </div>
 </section>
 
@@ -465,7 +483,7 @@
             cargo install --git https://github.com/plattnum/planka-cli plnk-tui
         </div>
         <p class="note">
-            Requires a Rust toolchain (1.87+). Tested against self-hosted Planka.
+            Requires a Rust toolchain (1.87+). Tested against self-hosted <a href="https://planka.app">Planka</a>.
             Release binaries with a <code style="color:var(--success)">curl | sh</code> installer are tracked on the
             <a href="https://github.com/plattnum/planka-cli/issues">roadmap</a>.
         </p>
@@ -475,7 +493,7 @@
 <section class="features">
     <div class="container">
         <h2>Why plnk</h2>
-        <p class="sub">Planka already does kanban well. plnk wraps it in a tight, typed surface agents and scripts can drive.</p>
+        <p class="sub"><a href="https://planka.app">Planka</a> already does kanban well. plnk wraps it in a tight, typed surface agents and scripts can drive.</p>
         <div class="feature-grid">
             <div class="feature">
                 <div class="icon">&#8599;</div>
@@ -505,7 +523,7 @@
             <div class="feature">
                 <div class="icon">&#10697;</div>
                 <h3>Standalone Rust SDK</h3>
-                <p><code>plnk-core</code> is usable on its own. Build your own Planka integration in Rust without depending on the CLI.</p>
+                <p><code>plnk-core</code> is usable on its own. Build your own <a href="https://planka.app">Planka</a> integration in Rust without depending on the CLI.</p>
             </div>
         </div>
     </div>
@@ -516,7 +534,7 @@
         <h2>Three steps to running</h2>
         <p class="sub">
             No account service to sign up for. No config files to hand-edit.
-            You already have a Planka instance &mdash; plnk just talks to it.
+            You already have a <a href="https://planka.app">Planka</a> instance &mdash; plnk just talks to it.
         </p>
         <div class="steps">
             <div class="step">
@@ -532,7 +550,7 @@
             <div class="step">
                 <div class="number">3</div>
                 <h3>Use</h3>
-                <p>Drive Planka from the shell with <code>plnk</code>, or explore the hierarchy live with <code>plnk-tui</code>.</p>
+                <p>Drive <a href="https://planka.app">Planka</a> from the shell with <code>plnk</code>, or explore the hierarchy live with <code>plnk-tui</code>.</p>
             </div>
         </div>
     </div>
@@ -542,13 +560,13 @@
     <div class="container">
         <h2>Why this exists</h2>
         <p>
-            I use a self-hosted Planka for everything &mdash; technical and non-technical.
+            I use a self-hosted <a href="https://planka.app">Planka</a> for everything &mdash; technical and non-technical.
         </p>
         <p>
             What I care about is the artifact. By the time a card hits Done, it contains what I did, the decisions I made, and why.
         </p>
         <p>
-            Many tools in this space are building AI task managers &mdash; AI sub-agent drivers, new kanban boards, TODO.md skills, bolting MCPs onto various products. For me, Planka already solves the fundamentals: UI, hierarchy, self-hosting, and a working API. Replacing that felt unnecessary.
+            Many tools in this space are building AI task managers &mdash; AI sub-agent drivers, new kanban boards, TODO.md skills, bolting MCPs onto various products. For me, <a href="https://planka.app">Planka</a> already solves the fundamentals: UI, hierarchy, self-hosting, and a working API. Replacing that felt unnecessary.
         </p>
         <p>
             I was already driving agent workflows through the REST API. It worked, but it was inefficient &mdash; lots of curling, constructing large JSON payloads, and chaining calls for simple operations like finding a card by name. Hard to read, token-heavy, and noisy in the agent's context.
@@ -557,10 +575,10 @@
             I didn't go the MCP route either. Others are doing it, it inflates context, and I've found it slow.
         </p>
         <p>
-            So <em>plnk</em> doesn't replace Planka &mdash; it wraps it in a strict, predictable interface. It reduces token usage and keeps the agent's context lean: the surface is learned on demand through <code style="background:var(--surface);padding:2px 6px;border-radius:4px;color:var(--success);font-family:'SF Mono','Fira Code',monospace;font-size:0.9em">plnk &lt;cmd&gt; --help --output json</code>, not preloaded at session start.
+            So <em>plnk</em> doesn't replace <a href="https://planka.app">Planka</a> &mdash; it wraps it in a strict, predictable interface. It reduces token usage and keeps the agent's context lean: the surface is learned on demand through <code style="background:var(--surface);padding:2px 6px;border-radius:4px;color:var(--success);font-family:'SF Mono','Fira Code',monospace;font-size:0.9em">plnk &lt;cmd&gt; --help --output json</code>, not preloaded at session start.
         </p>
         <p>
-            It exposes Planka as a disciplined CLI and SDK &mdash; tight grammar, typed exit codes, structured output, strict hierarchy, machine-readable help. Give an agent a rigid surface, and it stays on the rails.
+            It exposes <a href="https://planka.app">Planka</a> as a disciplined CLI and SDK &mdash; tight grammar, typed exit codes, structured output, strict hierarchy, machine-readable help. Give an agent a rigid surface, and it stays on the rails.
         </p>
         <p>
             <em>plnk-tui</em> started as an experiment &mdash; a live terminal explorer for the same hierarchy, sharing <em>plnk</em>'s config and auth. It's fit into my terminal-driven workflow better than I expected, so I'll keep expanding it.
