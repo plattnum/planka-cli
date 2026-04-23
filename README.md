@@ -44,7 +44,7 @@ Three ways to authenticate, checked in this order (first match wins):
 |----------|--------|--------|-------|
 | 1 | CLI flags | `--server <url>` | `--token <token>` |
 | 2 | Environment | `PLANKA_SERVER` | `PLANKA_TOKEN` |
-| 3 | Config file | `~/.config/planka/config.toml` | `~/.config/planka/config.toml` |
+| 3 | Config file | `~/.config/plnk/config.toml` | `~/.config/plnk/config.toml` |
 
 ### Interactive login (stores token in config)
 

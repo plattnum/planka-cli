@@ -6,7 +6,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 fn plnk() -> Command {
     let mut cmd = Command::cargo_bin("plnk").unwrap();
     // Point config to a guaranteed non-existent path so tests
-    // never read the user's real ~/.config/planka/config.toml
+    // never read the user's real ~/.config/plnk/config.toml
     cmd.env("PLANKA_CONFIG", "/tmp/plnk-test-nonexistent/config.toml");
     cmd
 }
@@ -241,6 +241,117 @@ fn status_no_creds_json() {
     let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
     assert_eq!(json["success"], true);
     assert_eq!(json["data"]["authenticated"], false);
+}
+
+// ─── plnk init (CFG-001) ─────────────────────────────────────────────
+
+#[test]
+fn init_shows_up_in_top_level_help() {
+    plnk()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("init"))
+        .stdout(predicate::str::contains("Interactive bootstrap"));
+}
+
+#[test]
+fn init_help_references_pre_fill_flags() {
+    plnk()
+        .args(["init", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--server"))
+        .stdout(predicate::str::contains("--token"));
+}
+
+#[test]
+fn init_refuses_to_run_without_tty() {
+    // stdin is piped by assert_cmd, so IsTerminal returns false.
+    plnk()
+        .args(["init"])
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("interactive"));
+}
+
+// ─── Legacy config migration (planka/ → plnk/) ───────────────────────
+
+/// When no config exists at the new path but one exists at the old
+/// `~/.config/planka/config.toml` location, plnk auto-copies it to the
+/// new `~/.config/plnk/config.toml` and prints a stderr notice.
+#[test]
+fn legacy_planka_dir_is_migrated_on_first_run() {
+    let home = tempfile::tempdir().unwrap();
+    let legacy = home
+        .path()
+        .join(".config")
+        .join("planka")
+        .join("config.toml");
+    let new_path = home.path().join(".config").join("plnk").join("config.toml");
+
+    std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+    std::fs::write(
+        &legacy,
+        "server = \"http://example.com\"\ntoken = \"migrated-token\"\n",
+    )
+    .unwrap();
+
+    Command::cargo_bin("plnk")
+        .unwrap()
+        .env("HOME", home.path())
+        .env_remove("PLANKA_CONFIG")
+        .env_remove("PLANKA_SERVER")
+        .env_remove("PLANKA_TOKEN")
+        .env_remove("XDG_CONFIG_HOME")
+        .args(["auth", "status"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("migrated config from"));
+
+    assert!(
+        new_path.exists(),
+        "expected {} to exist",
+        new_path.display()
+    );
+    assert!(legacy.exists(), "legacy file should be preserved");
+
+    let migrated = std::fs::read_to_string(&new_path).unwrap();
+    assert!(migrated.contains("migrated-token"));
+}
+
+/// Migration is skipped entirely when `PLANKA_CONFIG` is set, even if
+/// legacy files exist — the user has pointed us explicitly elsewhere.
+#[test]
+fn legacy_migration_skipped_when_planka_config_set() {
+    let home = tempfile::tempdir().unwrap();
+    let legacy = home
+        .path()
+        .join(".config")
+        .join("planka")
+        .join("config.toml");
+    let new_path = home.path().join(".config").join("plnk").join("config.toml");
+
+    std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+    std::fs::write(&legacy, "server = \"http://x\"\ntoken = \"t\"\n").unwrap();
+
+    Command::cargo_bin("plnk")
+        .unwrap()
+        .env("HOME", home.path())
+        .env("PLANKA_CONFIG", "/tmp/plnk-test-nonexistent/config.toml")
+        .env_remove("PLANKA_SERVER")
+        .env_remove("PLANKA_TOKEN")
+        .args(["auth", "status"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("migrated").not());
+
+    assert!(
+        !new_path.exists(),
+        "new path should not be populated when PLANKA_CONFIG is set"
+    );
 }
 
 // ─── Logout ──────────────────────────────────────────────────────────

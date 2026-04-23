@@ -112,7 +112,7 @@ Transport settings resolve in this order:
 
 1. CLI flags
 2. environment variables
-3. config file (`~/.config/planka/config.toml`)
+3. config file (`~/.config/plnk/config.toml`, honoring `XDG_CONFIG_HOME`)
 4. built-in defaults
 
 ### CLI flags

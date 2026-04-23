@@ -59,7 +59,7 @@ Credential precedence:
 
 1. CLI flags: `--server`, `--token`
 2. Environment: `PLANKA_SERVER`, `PLANKA_TOKEN`
-3. Config file: `~/.config/planka/config.toml` (mode `0600`)
+3. Config file: `~/.config/plnk/config.toml` — same on every OS, honoring `XDG_CONFIG_HOME` and `PLANKA_CONFIG` overrides (mode `0600`)
 
 Set credentials interactively:
 

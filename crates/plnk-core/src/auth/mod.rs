@@ -38,7 +38,7 @@ impl std::fmt::Display for CredentialSource {
 /// Resolve credentials using the spec's precedence chain:
 /// 1. CLI flags (`--server` + `--token`)
 /// 2. Environment variables (`PLANKA_SERVER` + `PLANKA_TOKEN`)
-/// 3. Config file (`~/.config/planka/config.toml`)
+/// 3. Config file (`~/.config/plnk/config.toml` on every OS, honoring `XDG_CONFIG_HOME`)
 ///
 /// # Errors
 /// Returns `PlankaError::AuthenticationFailed` if no credentials can be resolved.

@@ -224,6 +224,12 @@ async fn main() {
     };
 
     let result = match command {
+        Command::Init(_cmd) => commands::init::execute(
+            app.server.as_deref(),
+            app.token.as_deref(),
+            app.output,
+            app.yes,
+        ),
         Command::Auth(auth) => {
             commands::auth::execute(
                 auth,

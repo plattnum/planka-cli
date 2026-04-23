@@ -84,6 +84,8 @@ pub enum OutputFormat {
 /// Top-level command groups. Each resource gets its own subcommand.
 #[derive(Subcommand)]
 pub enum Command {
+    /// Interactive bootstrap — prompts for server/token and writes the config file
+    Init(InitCommand),
     /// Manage authentication
     Auth(AuthCommand),
     /// Manage users
@@ -158,6 +160,25 @@ pub enum Command {
         board: String,
     },
 }
+
+// ── Init ─────────────────────────────────────────────────────────────────
+
+/// `plnk init` — interactive first-run config bootstrap.
+///
+/// Walks the user through selecting a server URL, API token, and
+/// optional transport tuning, then writes the result to the config file
+/// (see `plnk-core` config path resolution). Re-running is supported;
+/// existing values are shown as defaults and can be kept or replaced.
+///
+/// Scripts and CI should continue to use flags and env vars — this
+/// command is interactive-only and errors out when stdin is not a TTY.
+///
+/// The global `--server`/`--token` flags (and `PLANKA_SERVER` /
+/// `PLANKA_TOKEN`) pre-fill the corresponding prompts, so
+/// `plnk --server URL --token TKN init` still walks through the
+/// remaining questions interactively.
+#[derive(Parser)]
+pub struct InitCommand {}
 
 // ── Auth ─────────────────────────────────────────────────────────────────
 
