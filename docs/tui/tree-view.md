@@ -1,639 +1,149 @@
-# TUI: Tree-view terminal UI for `plnk`
+# TUI tree view — the as-delivered design
 
-Status: exploratory design for an experimental branch.
+This is a reference for `plnk-tui`'s explorer layout and data model as it ships today. For usage docs see [overview.md](overview.md), [keybindings.md](keybindings.md), and [live-target.md](live-target.md).
 
-## 1. Product intent
+## Product intent
 
-Build a terminal UI for Planka that behaves more like a project explorer than a kanban board.
-
-The TUI should help a user:
+`plnk-tui` is a **project explorer**, not a terminal kanban board. Planka's web UI already does kanban well. The TUI focuses on hierarchy, detail, and fast text-heavy workflows:
 
 - browse the Planka hierarchy quickly
-- inspect details without leaving the keyboard
-- edit card content in-place
-- stay in sync with the server without turning the terminal into a second kanban board
+- inspect card detail without leaving the keyboard
+- edit card title inline and description in `$EDITOR`
+- stay loosely in sync with the server via a single-board live subscription
 
-This is explicitly **not** a board-visualization project. Planka's web UI already does kanban well. The TUI should focus on hierarchy, detail, and fast text-heavy workflows.
+Scope is intentionally narrow. Drag-and-drop, permissions management, attachments upload, bulk operations — all still live in the browser.
 
-## 2. Goals
+## Layout
 
-### Primary goals
+Three horizontal regions, laid out top to bottom:
 
-- Show the full hierarchy as a collapsible tree:
-  - Project
-  - Board
-  - List
-  - Card
-- Show details for the selected node in a right-hand pane.
-- Make card inspection fast and pleasant for keyboard-first workflows.
-- Support editing card title + description and saving back to Planka.
-- Reuse `plnk-core` as the data/API layer.
-- Keep the design deterministic and script-friendly in spirit, even though the UI is interactive.
+1. **Session header** (4 rows, rounded border, titled `session`)
+2. **Body** — two-column split, ~44% left / 56% right
+3. **Keys footer** (1 row, dim gray, no border)
 
-### Secondary goals
+The body splits further:
 
-- Show tasks, labels, assignees, comments, and attachments in the detail pane.
-- Allow lightweight card operations from the TUI.
-- Support refresh and eventual live updates.
+```
+┌─ session ─────────────────────────────────────────────────┐
+│ plnk-tui explorer  •  <status>                            │
+│ server: <url> | login: <user> | current user: <name> …    │
+│ visible projects: N | current user id: … | explorer view… │
+└───────────────────────────────────────────────────────────┘
+┌─ explorer • <view> ─────────┐ ┌─ details ────────────────┐
+│                             │ │                          │
+│   (tree rows)               │ │  (selected node detail)  │
+│                             │ │                          │
+│                             │ ├─ live sync ──────────────┤
+│                             │ │  websocket: <state>      │
+│                             │ │  live target: …          │
+│                             │ │  latest event: …         │
+│                             │ │  notice: …               │
+└─────────────────────────────┘ └──────────────────────────┘
+↑/↓ nav • →/Enter expand • v toggle view • L promote to live • …
+```
 
-## 3. Non-goals
+### Session header
 
-- Recreate the kanban board layout in the terminal.
-- Replace the existing CLI for automation.
-- Attempt full parity with every Planka web feature in v1.
-- Build a highly mouse-driven interface.
-- Depend on websocket/live-sync for the first usable release.
+- Row 1: the word `plnk-tui explorer`, a bullet, then one of a small set of status chips: `READ-ONLY`, `DIRTY`, `REMOTE CHANGED`, `SAVING`, or the websocket connection label.
+- Row 2: `server: <url> | login: <user> | current user: <name> (<username>)` — identifies who is connected to where.
+- Row 3: visible project count, current user id, explorer view mode, and the live target board id (or `none (press L on a board)` when idle).
 
-## 4. Recommended experimental shape
+### Explorer pane
 
-For discovery work, use a separate experimental branch and keep the TUI isolated from the stable CLI path.
+Renders a collapsible tree in one of two views, toggled with `v`:
 
-Recommended branch name:
+- **hierarchy** — project → board → list → card. This is the default.
+- **labels** — project → board → list → label group → card. Groups cards by the labels applied to them on a given list.
 
-- `experiment/tui-tree-view`
+See [data model](#data-model) below for the underlying types.
 
-Recommended code shape during the experiment:
+### Details pane
 
-- add a new workspace crate: `crates/plnk-tui`
-- let `plnk-tui` depend on `plnk-core`
-- keep `plnk-cli` stable while the TUI evolves
+Shows the selected node's detail. For cards (the rich case), this includes:
 
-Why this shape:
+- title + status chips (`ACTIVE` / `CLOSED`, due date summary, subscription state)
+- card id (dim, copyable)
+- `— Context —` list, board, project breadcrumb with IDs
+- `— Metadata —` creator, labels, assignees, comment count
+- `— Description —` the card body, rendered as plain text
+- `— Tasks —` when present, a checklist
+- `— Comments —` when loaded, a scrollable thread
 
-- isolates ratatui/crossterm/socket dependencies from the CLI binary
-- lets the TUI move quickly without disturbing existing command grammar
-- keeps the transport/auth/domain logic shared through `plnk-core`
+Projects, boards, and lists get a narrower pane showing their own metadata and counts.
 
-If the experiment succeeds, there are two integration options later:
+### Live-sync pane
 
-1. keep a separate binary during beta (`plnk-tui`)
-2. fold the launcher into the main binary as `plnk tui`
+A fixed 7-row block beneath details:
 
-Current recommendation: **start as a separate crate/binary**. That is the easiest way to ship two artifacts from one GitHub repository while keeping the existing CLI stable.
+- `websocket: <state>` — one of `no live target`, `loading`, `connecting raw websocket`, `live websocket connected`, or `error: <reason>`
+- `live target: <board>` — the currently subscribed board, or `none — select a board and press L to promote it` when idle
+- `latest event: <name>` — short summary of the last `socket.io` event applied
+- `notice: <message>` — transient status messages (save progress, edit outcomes)
 
-## 5. High-level UX
+### Keys footer
 
-### Layout
+A single dim-gray line with the most relevant keybindings for the current mode. Mode-aware:
 
-A three-region terminal layout works well:
+- Default: navigation, view toggle, live promotion, edit, debug, quit.
+- Title edit mode: the title-editing key set.
+- Saving mode: controls paused until the server responds.
 
-1. **Header/status bar**
-   - server
-   - authenticated user
-   - current project/board path
-   - connection state (`loaded`, `refreshing`, `offline`, `live`)
-   - dirty state indicator when editing
+## Data model
 
-2. **Main body**
-   - **Left pane**: hierarchy tree
-   - **Right pane**: detail/editor pane
-
-3. **Footer/help bar**
-   - contextual key hints
-   - transient success/error messages
-
-Suggested split:
-
-- left pane: 30-40%
-- right pane: 60-70%
-
-### Tree pane behavior
-
-The tree should feel like a file explorer.
-
-Each node has:
-
-- type icon/glyph
-- label/name
-- expand/collapse affordance
-- selected state
-- loading state
-- optional badge counts
-
-Example:
+Every tree row carries a `TreeKey` identifying the node and a `TreeKind` marking its kind:
 
 ```text
-▾ Project: planka-cli
-  ▾ Board: Work
-    ▸ List: Backlog (2)
-    ▾ List: InProgress (1)
-      • Card: TUI: Tree-view terminal UI for plnk
-  ▸ Board: Design
+TreeKey::Project(String)
+TreeKey::Board(String)
+TreeKey::List(String)
+TreeKey::LabelGroup { board_id, list_id, label_id: Option<String> }
+TreeKey::Card(String)
+TreeKey::GroupedCard { group_key, card_id }
 ```
 
-### Detail pane behavior
+`ExplorerView::Hierarchy` uses Project/Board/List/Card keys. `ExplorerView::Labels` uses Project/Board/List/LabelGroup/GroupedCard keys. The explorer renders the subset of rows whose ancestors are in the expanded set.
 
-The detail pane should change based on the selected node type.
+## Data loading
 
-#### Project selected
+Two tiers:
 
-Show:
-- name
-- description
-- board count
-- managers
-- created/updated timestamps
+1. **Projects + boards** are fetched eagerly at startup via `GET /api/projects` and `GET /api/projects/{id}` so the top levels of the tree are always navigable.
+2. **Board snapshots** (`GET /api/boards/{id}`) are lazy. A board row renders as `unloaded • press → to hydrate` until the user expands it. Hydration loads lists, cards, tasks, labels, memberships, and users in one round trip.
 
-#### Board selected
+The live subscription streams deltas against the snapshot for whichever board is the live target. See [live-target.md](live-target.md) for the subscription model.
 
-Show:
-- name
-- project
-- list count
-- card count
-- labels
-- members
+## Editing model
 
-#### List selected
+- **Title** — `e` enters an inline editor in the details pane. `Enter` saves via `PATCH /api/cards/{id}`; `Esc` discards.
+- **Description** — `E` shells out to `$EDITOR` with the current description in a temp file. On editor exit, the TUI saves if the content changed.
 
-Show:
-- name
-- board
-- card count
-- list position
-- quick card preview table
+The save is optimistic in the UI sense (the edit is sent immediately) but pessimistic in the UX sense (the whole TUI freezes into a `SAVING` mode until the server responds, with only `Ctrl-c` honored).
 
-#### Card selected
+## Architecture
 
-This is the main use case.
+`plnk-tui` is its own workspace crate. It depends on `plnk-core` for domain types and nothing from `plnk-cli`. Its additional runtime dependencies:
 
-Show:
-- title
-- description
-- board/list path
-- labels
-- assignees
-- due date / closed state
-- tasks with completion state
-- comments
-- attachments
-- created/updated metadata
+- `ratatui` + `crossterm` — terminal rendering
+- `tokio-tungstenite` — raw websocket for the Planka Engine.IO / Socket.IO protocol
+- `rpassword` — password prompt during REST login
 
-For cards, the RHS should support **view mode** and **edit mode**.
+State lives in a single `AppState` struct, mutated on the event loop by `apply(event)`. Events come from two sources:
 
-## 6. Editing model
+1. **Keyboard** via `crossterm`, producing app-local actions.
+2. **Websocket** via a background `tokio::spawn`'d listener that pushes `AppEvent` values through a `std::sync::mpsc::Sender`.
 
-### v1 editable fields
+Rendering is pure: `fn draw(frame, &AppState)` reads state, produces widgets, returns. No mutation during draw.
 
-Recommend v1 edit scope:
+## What the TUI deliberately does not do
 
-- card title
-- card description
+- No kanban board layout. Cards are listed vertically under their list, not arranged in columns.
+- No drag-and-drop card moves. Move cards via the CLI (`plnk card move`) or the web UI.
+- No full parity with every Planka web feature — attachments upload, permissions UI, etc. remain browser-only.
+- No multi-board live subscriptions. One board live at a time; see [live-target.md](live-target.md).
+- No second persistent-state layer. The TUI's auth token and config come from `plnk-core` via the shared `~/.config/plnk/config.toml`.
 
-Optional v1.1:
+## Related
 
-- task complete/reopen
-- add task
-- add comment
-
-Defer until later:
-
-- drag-like reordering semantics
-- attachment upload from inside the TUI
-- label creation workflows
-- cross-board move workflows
-
-### Edit UX
-
-Best hybrid model:
-
-- short fields edited inline
-- long description edited via a dedicated editor mode or `$EDITOR`
-
-Recommended behavior:
-
-- `e` on title -> inline edit widget
-- `e` on description -> open multiline editor view
-- `E` on description -> open external `$EDITOR` temp file flow
-- `Ctrl-s` -> save dirty fields
-- `Esc` -> cancel current edit
-- `q` -> quit only when no unsaved changes, otherwise prompt
-
-### Save semantics
-
-Use explicit save, not auto-save.
-
-Reason:
-
-- safer in terminal UI
-- easier to reason about dirty state
-- avoids accidental updates from navigation
-- simpler conflict handling
-
-When saving:
-
-- compute changed fields only
-- call `UpdateCard` with just those fields
-- refresh card snapshot after success
-- clear dirty state
-- show toast/status message
-
-### Conflict handling
-
-Minimum viable strategy:
-
-- save local edits
-- on success, re-fetch server snapshot
-- if save fails due to remote conflict or validation, keep local buffer and show error
-
-A better later strategy:
-
-- track `updated_at` from the last fetch
-- warn if remote `updated_at` changed before save
-- offer reload/discard/overwrite flow
-
-## 7. Navigation and key bindings
-
-Suggested initial keymap:
-
-### Global
-
-- `q` quit
-- `?` toggle help overlay
-- `r` refresh selected scope
-- `R` full refresh
-- `/` filter/search within current tree scope
-- `Tab` switch focus between tree and detail
-- `Shift-Tab` reverse focus
-
-### Tree pane
-
-- `j` / `k` move selection
-- `g` top
-- `G` bottom
-- `h` collapse node or move to parent
-- `l` expand node or move to first child
-- `Enter` select / expand / collapse
-- `Space` toggle expand/collapse
-
-### Detail pane
-
-- `e` edit focused field
-- `Ctrl-s` save
-- `Esc` cancel edit
-- `n` create item in context (later phase)
-- `d` delete/archive in context (later phase, prompt required)
-- `m` move card (later phase)
-
-## 8. Data-loading strategy
-
-The existing `plnk-core` snapshot methods are a strong fit for this UI.
-
-### Initial load
-
-At startup:
-
-- `list_projects`
-
-This populates root nodes only.
-
-### Expand project
-
-On first project expansion:
-
-- `list_boards(project_id)`
-- or directly `get_project_snapshot(project_id)` if project-level included data becomes useful
-
-Current `plnk-core` already gets boards from the project snapshot, so project expansion can stay efficient.
-
-### Expand board
-
-On first board expansion:
-
-- `get_board_snapshot(board_id)`
-
-This is the key optimization. A single board snapshot can populate:
-
-- lists
-- cards
-- labels
-- memberships
-- users
-
-The TUI should cache the board snapshot and derive list/card nodes from it rather than making separate `list_lists` + `list_cards` calls.
-
-### Select card
-
-On first card selection or explicit refresh:
-
-- `get_card_snapshot(card_id)`
-
-This can populate the detail pane in one fetch:
-
-- card item
-- task lists
-- tasks
-- comments
-- attachments
-- labels/assignees via included relationships
-
-### Cache policy
-
-Use lazy loading with in-memory caches.
-
-Recommended caches:
-
-- project cache
-- board snapshot cache
-- card snapshot cache
-- user lookup cache
-
-Each cache entry should track:
-
-- `loaded`
-- `loading`
-- `error`
-- `fetched_at`
-- raw snapshot/domain data
-
-## 9. Internal architecture
-
-## 9.1 Suggested crate structure
-
-```text
-crates/plnk-tui/
-└── src/
-    ├── main.rs          # runtime/bootstrap
-    ├── app.rs           # event loop + top-level App struct
-    ├── state.rs         # AppState / reducer-ish transitions
-    ├── events.rs        # keyboard, resize, tick, network events
-    ├── tree.rs          # tree node model + expansion/selection
-    ├── data.rs          # async loaders over plnk-core
-    ├── detail.rs        # detail-pane state + field focus
-    ├── editor.rs        # inline/multiline/external editor flows
-    ├── render/
-    │   ├── mod.rs
-    │   ├── tree.rs
-    │   ├── detail.rs
-    │   ├── status.rs
-    │   └── help.rs
-    └── live.rs          # optional websocket/polling adapter
-```
-
-## 9.2 State model
-
-At minimum:
-
-```text
-AppState
-- session/auth context
-- focus (tree/detail/modal)
-- tree state
-- caches
-- selected node id
-- detail pane state
-- dirty edit buffer
-- background job status
-- notifications/toasts
-- live-sync state
-```
-
-### Tree node identity
-
-Use stable typed node ids, not display text.
-
-Example:
-
-```rust
-enum NodeId {
-    Project(String),
-    Board(String),
-    List(String),
-    Card(String),
-}
-```
-
-This keeps selection stable across refreshes.
-
-### Async event flow
-
-Use a central event loop that merges:
-
-- keyboard events
-- terminal resize events
-- periodic tick events
-- async loader completions
-- optional live-update events
-
-A message-passing architecture is preferable to letting widgets call the network directly.
-
-## 10. Reuse of `plnk-core`
-
-The TUI should depend on `plnk-core` traits and models, not raw HTTP calls spread through the UI.
-
-Good reuse points already present:
-
-- auth resolution
-- typed errors
-- transport policy
-- project/board/card snapshot methods
-- update methods for cards/tasks/comments
-
-One likely refactor worth doing before or during TUI work:
-
-- extract shared client/bootstrap helpers so both `plnk-cli` and `plnk-tui` can construct a client the same way
-
-That avoids duplicating:
-
-- credential resolution
-- transport override handling
-- tracing init shape
-
-## 11. Live updates: feasibility and risk
-
-## 11.1 What looks promising
-
-Planka's frontend bundle clearly uses Sails + Socket.IO and subscribes to events such as:
-
-- `projectUpdate`
-- `boardUpdate`
-- `listCreate`
-- `listUpdate`
-- `cardCreate`
-- `cardUpdate`
-- `cardDelete`
-- `taskCreate`
-- `taskUpdate`
-- `commentCreate`
-- `attachmentCreate`
-- and related membership/label events
-
-So the product does appear to have a real-time event system that a TUI could potentially consume.
-
-## 11.2 Main risk
-
-The frontend also appears to use a cookie-backed access-token flow for the socket path:
-
-- `/access-tokens?withHttpOnlyToken=true`
-- socket path at `${BASE_PATH}/socket.io`
-
-That matters because the current CLI/TUI auth model is API-key based via `X-API-Key`.
-
-So the big unanswered question is not whether Planka has live events.
-It does.
-
-The real question was:
-
-**Can a non-browser client authenticate to the socket channel using username/password login and then subscribe to live events?**
-
-### Current spike result
-
-Yes — this now looks **feasible**.
-
-The working shape is:
-
-1. log in with `POST /api/access-tokens` using `emailOrUsername + password`
-2. if the instance requires terms acceptance, fetch `/api/terms` and complete `POST /api/access-tokens/accept-terms`
-3. use the returned **Bearer access token** for API and socket request headers
-4. connect to `/socket.io/` with Sails SDK query params:
-   - `__sails_io_sdk_version=1.2.1`
-   - `__sails_io_sdk_platform=node|rust`
-   - `__sails_io_sdk_language=javascript|rust`
-5. force **websocket transport** for the spike
-6. include an `Origin` header for the opening websocket handshake
-7. emit Sails-style socket requests like `get` with a request context payload and `Authorization: Bearer ...`
-8. subscribe with `GET /api/boards/{id}?subscribe=true`
-
-That is enough to receive events like `cardUpdate` from live board activity.
-
-## 11.3 Recommendation
-
-Because live sync is a **hard requirement**, websocket proof should be the **first implementation milestone**, not a later nice-to-have.
-
-Recommended order now:
-
-- prove username/password login + websocket board subscription first
-- build a minimal TUI shell that renders something observable
-- only then invest in the full tree/detail architecture
-
-## 11.4 Practical fallback
-
-A fallback still exists if some server environments behave differently:
-
-- keep websocket as the target path
-- use manual refresh only as a temporary debugging aid during development
-- do not treat polling/manual refresh as an acceptable product substitute for v1
-
-## 12. Suggested milestones
-
-### Milestone 0: websocket-first spike
-
-- scaffold `plnk-tui`
-- log in with username/password
-- complete terms-acceptance flow if required
-- connect to `/socket.io/`
-- subscribe to one board with `?subscribe=true`
-- render visible projects + live event feed in a minimal TUI shell
-
-Exit criteria:
-- user can log in interactively
-- TUI renders something meaningful
-- remote board/card edits show up live in the terminal
-
-### Milestone 1: hierarchy explorer shell
-
-- root shows **all projects visible to the authenticated user**
-- lazy loading for projects -> boards -> lists -> cards
-- tree selection state
-- archive lists hidden
-- loading/errors surfaced in the UI
-
-Exit criteria:
-- usable read-only hierarchy browser with live updates still attached
-
-### Milestone 2: RHS detail pane
-
-- detail pane for project/board/list/card
-- card is the primary focus
-- read-only card detail first, still with live updates applied
-
-Exit criteria:
-- card inspection is comfortable enough for daily use
-
-### Milestone 3: card editing v1
-
-- edit card title
-- edit card description
-- long-form description editing defaults to `$EDITOR`
-- explicit save/discard flow
-- live-update/conflict behavior defined
-
-Exit criteria:
-- can replace common title/description edits without leaving terminal
-
-### Milestone 4: richer workflows / v2 surface
-
-- task toggle/add
-- comment add
-- labels/assignees work
-- move card
-- later: create/rename project, board, list, card
-
-Exit criteria:
-- supports broader maintenance workflows beyond simple card editing
-
-## 13. Testing strategy
-
-### Unit tests
-
-- tree expansion/collapse logic
-- selection movement
-- reducer/state transitions
-- dirty buffer behavior
-- save/cancel/conflict flows
-
-### Integration tests
-
-- HTTP-backed loading with `wiremock` where practical
-- snapshot parsing from realistic board/card payloads
-- error rendering and retry states
-
-### UI tests
-
-- ratatui rendering snapshots for key screens
-- keyboard interaction tests around navigation/editing
-
-### Manual/live tests
-
-- real Planka server against the `planka-cli` project
-- verify large board/card behavior
-- verify save correctness and refresh semantics
-- later: verify socket reconnect behavior
-
-## 14. Recommendation on v1 scope
-
-Based on clarified product decisions, v1 should be:
-
-- hierarchy tree on the left
-- detail pane on the right
-- root shows **all projects visible to the logged-in user**
-- card title/description editing only
-- long description editing defaults to **`$EDITOR`**
-- archive lists hidden
-- no kanban layout
-- **websocket live sync proven early and kept in-scope for v1**
-
-## 15. Product decisions captured so far
-
-1. Root shows **all projects the authenticated user can see**.
-2. V1 card editing is limited to **title + description**.
-3. Long description editing should default to **`$EDITOR`**, ideally dropping the user into a familiar editor flow.
-4. V1 does **not** include project/board/list editing.
-5. V1 hides the archived list.
-6. During the experiment, a separate **`plnk-tui`** binary is preferred because it is the easiest path.
-7. **Manual refresh is not acceptable as the primary v1 model** — websocket sync must be proven early.
-
-## 16. Bottom line
-
-Yes, this looks very buildable.
-
-The strongest fit is now:
-
-- `ratatui` + `crossterm`
-- separate experimental binary (`plnk-tui`)
-- tree explorer rooted at all visible projects
-- snapshot-driven loading via `plnk-core`
-- `$EDITOR`-first description editing for v1
-- websocket board subscriptions proven early via username/password login + Bearer token + Sails socket requests
-
-The architecture already in `plnk-core` is still a good fit for the eventual explorer/editor, but the websocket/session-login spike justifies some early experimental code in `plnk-tui` first.
+- [overview.md](overview.md) — install and run
+- [keybindings.md](keybindings.md) — complete key map
+- [live-target.md](live-target.md) — websocket subscription model
