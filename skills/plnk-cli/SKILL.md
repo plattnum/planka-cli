@@ -209,14 +209,14 @@ Primary references:
 
 Resource docs:
 
-- `../../docs/projects.md`
-- `../../docs/boards.md`
-- `../../docs/lists.md`
-- `../../docs/cards.md`
-- `../../docs/tasks.md`
-- `../../docs/comments.md`
-- `../../docs/labels.md`
-- `../../docs/attachments.md`
-- `../../docs/memberships.md`
-- `../../docs/users.md`
-- `../../docs/transport.md`
+- `../../docs/cli/projects.md`
+- `../../docs/cli/boards.md`
+- `../../docs/cli/lists.md`
+- `../../docs/cli/cards.md`
+- `../../docs/cli/tasks.md`
+- `../../docs/cli/comments.md`
+- `../../docs/cli/labels.md`
+- `../../docs/cli/attachments.md`
+- `../../docs/cli/memberships.md`
+- `../../docs/cli/users.md`
+- `../../docs/cli/transport.md`

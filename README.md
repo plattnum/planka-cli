@@ -271,26 +271,54 @@ For `--description`, `--text`, and similar text flags:
 
 ## Command reference
 
-Full command reference with examples for each resource is in [`docs/`](docs/):
+Full command reference with examples for each resource is in [`docs/cli/`](docs/cli/):
 
-- [Projects](docs/projects.md)
-- [Boards](docs/boards.md)
-- [Lists](docs/lists.md)
-- [Cards](docs/cards.md)
-- [Tasks](docs/tasks.md)
-- [Comments](docs/comments.md)
-- [Labels](docs/labels.md)
-- [Attachments](docs/attachments.md)
-- [Memberships](docs/memberships.md)
-- [Users](docs/users.md)
-- [Transport policy](docs/transport.md)
+- [Projects](docs/cli/projects.md)
+- [Boards](docs/cli/boards.md)
+- [Lists](docs/cli/lists.md)
+- [Cards](docs/cli/cards.md)
+- [Tasks](docs/cli/tasks.md)
+- [Comments](docs/cli/comments.md)
+- [Labels](docs/cli/labels.md)
+- [Attachments](docs/cli/attachments.md)
+- [Memberships](docs/cli/memberships.md)
+- [Users](docs/cli/users.md)
+- [Transport policy](docs/cli/transport.md)
+
+## `plnk-tui` (experimental)
+
+A terminal explorer for Planka, built in the same workspace. Where `plnk` is scriptable and imperative, `plnk-tui` is a live tree explorer — projects, boards, lists, cards — rendered in two panes with a websocket channel so edits from the browser appear in the terminal in near real time.
+
+### Install
+
+```bash
+# From a checkout
+cargo install --path crates/plnk-tui --force
+
+# Or from git
+cargo install --git https://github.com/plattnum/planka-cli plnk-tui
+```
+
+### Run
+
+```bash
+plnk-tui --server http://your-planka-host --username you
+# prompts for password
+```
+
+No `--board` required. The TUI lands on the projects view; navigate with `↑/↓/→/Enter`, then press `L` on any board to promote it to the live target and start streaming updates.
+
+Pre-fill with env vars: `PLANKA_SERVER`, `PLANKA_USERNAME`, `PLANKA_PASSWORD`, `PLNK_TUI_BOARD`.
+
+Full docs: [`docs/tui/`](docs/tui/) — [overview](docs/tui/overview.md), [keybindings](docs/tui/keybindings.md), [live-target model](docs/tui/live-target.md), [tree view](docs/tui/tree-view.md).
 
 ## Architecture
 
-Two-crate Rust workspace:
+Three-crate Rust workspace:
 
 - **`plnk-core`** -- standalone Planka SDK. HTTP client, domain models, API traits (`ProjectApi`, `BoardApi`, `CardApi`, etc.), auth system, typed errors. Usable independently by other Rust tools, MCP servers, or TUI apps.
 - **`plnk-cli`** -- the `plnk` binary. Clap command tree, output rendering, input handling. Thin shell over `plnk-core`.
+- **`plnk-tui`** -- the `plnk-tui` binary. Ratatui explorer with a single-board websocket subscription model. Speaks the Planka REST + Engine.IO/Socket.IO protocols directly.
 
 API versioning is handled through traits. If Planka changes its API, only the implementation (`PlankaClientV1`) changes. Domain models and the CLI layer are untouched.
 
@@ -383,7 +411,7 @@ Current retry behavior:
 - `Retry-After` is honored when present
 - `POST`/`PATCH`/`DELETE` are not retried automatically by default
 
-For the full transport write-up, including validation rules and the current rollout status, see [docs/transport.md](docs/transport.md).
+For the full transport write-up, including validation rules and the current rollout status, see [docs/cli/transport.md](docs/cli/transport.md).
 
 ## Building
 
