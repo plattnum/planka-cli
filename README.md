@@ -430,6 +430,12 @@ cargo test                        # all tests
 cargo run -- --help               # run the CLI
 ```
 
+## Support
+
+If this is useful to you, consider buying me a coffee.
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/plattnum)
+
 ## License
 
 MIT
