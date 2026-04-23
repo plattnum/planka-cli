@@ -3369,11 +3369,12 @@ fn run_app(
                                 );
                             }
                         }
-                        KeyCode::Char('x') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            if app.has_dirty_card_draft() {
-                                app.discard_card_draft();
-                                app.set_notice("Discarded local card edits.");
-                            }
+                        KeyCode::Char('x')
+                            if key.modifiers.contains(KeyModifiers::CONTROL)
+                                && app.has_dirty_card_draft() =>
+                        {
+                            app.discard_card_draft();
+                            app.set_notice("Discarded local card edits.");
                         }
                         KeyCode::Char('v') if app.has_dirty_card_draft() => {
                             app.set_notice(

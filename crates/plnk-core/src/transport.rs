@@ -505,14 +505,8 @@ mod tests {
             runtime.retry_delay_for_attempt(1),
             Duration::from_millis(500)
         );
-        assert_eq!(
-            runtime.retry_delay_for_attempt(2),
-            Duration::from_millis(1_000)
-        );
-        assert_eq!(
-            runtime.retry_delay_for_attempt(3),
-            Duration::from_millis(1_000)
-        );
+        assert_eq!(runtime.retry_delay_for_attempt(2), Duration::from_secs(1));
+        assert_eq!(runtime.retry_delay_for_attempt(3), Duration::from_secs(1));
     }
 
     #[test]
