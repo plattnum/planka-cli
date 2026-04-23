@@ -542,13 +542,28 @@
     <div class="container">
         <h2>Why this exists</h2>
         <p>
-            I use Planka like a notebook. A card gets created the moment I have an idea, a question, or something to figure out. Later I come back with an agent and we work through it &mdash; sometimes one card at a time, sometimes a handful in parallel. What I care about is the artifact: by the time a card hits Done, it has what I did, the decisions I made, and why.
+            I use a self-hosted Planka for everything &mdash; technical and non-technical.
         </p>
         <p>
-            Everyone else in this space seems to want to build the task manager. People are reinventing kanban boards, writing yet another todo MCP, bolting YAML schemas onto note apps. Planka already has the UI, the hierarchy, the self-hosted option, and a working API. Reinventing it felt like a waste.
+            What I care about is the artifact. By the time a card hits Done, it contains what I did, the decisions I made, and why.
         </p>
         <p>
-            So <em>plnk</em> doesn't. It just exposes Planka as a disciplined CLI and SDK &mdash; tight grammar, typed exit codes, structured output, strict hierarchy, machine-readable help. Give an agent a rigid surface, and it stays on the rails.
+            Many tools in this space are building AI task managers &mdash; AI sub-agent drivers, new kanban boards, TODO.md skills, bolting MCPs onto various products. For me, Planka already solves the fundamentals: UI, hierarchy, self-hosting, and a working API. Replacing that felt unnecessary.
+        </p>
+        <p>
+            I was already driving agent workflows through the REST API. It worked, but it was inefficient &mdash; lots of curling, constructing large JSON payloads, and chaining calls for simple operations like finding a card by name. Hard to read, token-heavy, and noisy in the agent's context.
+        </p>
+        <p>
+            I didn't go the MCP route either. Others are doing it, it inflates context, and I've found it slow.
+        </p>
+        <p>
+            So <em>plnk</em> doesn't replace Planka &mdash; it wraps it in a strict, predictable interface. It reduces token usage and keeps the agent's context lean: the surface is learned on demand through <code style="background:var(--surface);padding:2px 6px;border-radius:4px;color:var(--success);font-family:'SF Mono','Fira Code',monospace;font-size:0.9em">plnk &lt;cmd&gt; --help --output json</code>, not preloaded at session start.
+        </p>
+        <p>
+            It exposes Planka as a disciplined CLI and SDK &mdash; tight grammar, typed exit codes, structured output, strict hierarchy, machine-readable help. Give an agent a rigid surface, and it stays on the rails.
+        </p>
+        <p>
+            <em>plnk-tui</em> started as an experiment &mdash; a live terminal explorer for the same hierarchy, sharing <em>plnk</em>'s config and auth. It's fit into my terminal-driven workflow better than I expected, so I'll keep expanding it.
         </p>
     </div>
 </section>
