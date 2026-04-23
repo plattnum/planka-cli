@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>plnk &mdash; CLI &amp; TUI for Planka</title>
+    <meta name="description" content="A deterministic, scriptable, hierarchy-aware CLI and SDK for Planka kanban project management. Plus a live terminal TUI explorer. Built for humans, shell scripts, CI/CD pipelines, and AI agents.">
+    <meta name="keywords" content="planka, kanban, cli, tui, rust, project management, scriptable, ai agents, automation, cargo">
+    <meta name="author" content="plattnum">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="plnk &mdash; CLI &amp; TUI for Planka">
+    <meta property="og:description" content="A deterministic, scriptable, hierarchy-aware CLI and SDK for Planka kanban. Plus a live terminal TUI explorer.">
+    <meta property="og:image" content="https://raw.githubusercontent.com/plattnum/planka-cli/main/docs/images/hero.png">
+    <meta property="og:url" content="https://plattnum.github.io/planka-cli">
+    <meta property="og:type" content="website">
+
+    <link rel="icon" type="image/png" href="images/logo.png">
+
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface-2: #1c2128;
+            --border: #30363d;
+            --fg: #e6edf3;
+            --muted: #8b949e;
+            --accent: #2bd9d9;
+            --accent-dim: #1aa5a5;
+            --accent-glow: rgba(43, 217, 217, 0.12);
+            --success: #3fb950;
+            --purple: #bc8cff;
+            --warning: #d29922;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.6;
+        }
+
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .container {
+            max-width: 1040px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Nav */
+        nav {
+            padding: 16px 0;
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            background: rgba(13, 17, 23, 0.92);
+            backdrop-filter: blur(8px);
+            z-index: 10;
+        }
+        nav .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        nav .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--fg);
+            font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, monospace;
+        }
+        nav .logo img { width: 28px; height: 28px; }
+        nav .logo span { color: var(--accent); }
+        nav .links { display: flex; gap: 24px; flex-wrap: wrap; }
+        nav .links a { color: var(--muted); font-size: 0.9rem; }
+        nav .links a:hover { color: var(--fg); text-decoration: none; }
+
+        /* Hero */
+        .hero {
+            padding: 72px 0 24px;
+            text-align: center;
+        }
+        .hero h1 {
+            font-size: 3.4rem;
+            font-weight: 800;
+            margin-bottom: 16px;
+            letter-spacing: -0.02em;
+            font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, monospace;
+        }
+        .hero h1 .accent { color: var(--accent); }
+        .hero h1 .cursor {
+            color: var(--accent);
+            animation: blink 1s steps(1) infinite;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+        .hero .tagline {
+            font-size: 1.2rem;
+            color: var(--muted);
+            max-width: 680px;
+            margin: 0 auto 16px;
+        }
+        .hero .pullquote {
+            font-size: 0.95rem;
+            color: var(--muted);
+            letter-spacing: 0.08em;
+            margin-bottom: 32px;
+            font-variant: small-caps;
+        }
+        .hero .pullquote .dot { color: var(--purple); margin: 0 8px; }
+        .hero .cta {
+            display: inline-flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+        .btn:hover { text-decoration: none; opacity: 0.9; }
+        .btn:active { transform: translateY(1px); }
+        .btn-primary {
+            background: var(--accent-dim);
+            color: var(--bg);
+        }
+        .btn-secondary {
+            background: var(--surface);
+            color: var(--fg);
+            border: 1px solid var(--border);
+        }
+
+        /* Hero banner image */
+        .banner {
+            padding: 24px 0 32px;
+        }
+        .banner img {
+            max-width: 100%;
+            display: block;
+            margin: 0 auto;
+            border-radius: 14px;
+            border: 1px solid var(--border);
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--accent-glow);
+        }
+
+        /* Two-tool section */
+        .tools {
+            padding: 48px 0;
+        }
+        .tools h2 {
+            font-size: 1.9rem;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .tools .sub {
+            text-align: center;
+            color: var(--muted);
+            margin-bottom: 40px;
+            max-width: 640px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .tool-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 20px;
+        }
+        .tool {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 28px;
+            transition: border-color 0.2s, transform 0.1s;
+        }
+        .tool:hover {
+            border-color: var(--accent-dim);
+        }
+        .tool h3 {
+            font-size: 1.3rem;
+            margin-bottom: 6px;
+            font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, monospace;
+            color: var(--accent);
+        }
+        .tool .role {
+            font-size: 0.85rem;
+            color: var(--muted);
+            margin-bottom: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+        .tool p {
+            color: var(--fg);
+            margin-bottom: 16px;
+        }
+        .tool code {
+            display: block;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px 14px;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.85rem;
+            color: var(--success);
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+
+        /* Install */
+        .install {
+            padding: 48px 0;
+            border-top: 1px solid var(--border);
+        }
+        .install h2 {
+            font-size: 1.9rem;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .install .sub {
+            text-align: center;
+            color: var(--muted);
+            margin-bottom: 28px;
+        }
+        .code-block {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 20px;
+            font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, monospace;
+            font-size: 0.9rem;
+            color: var(--success);
+            margin: 0 auto 14px;
+            max-width: 760px;
+            overflow-x: auto;
+        }
+        .code-block .comment { color: var(--muted); }
+        .install .note {
+            color: var(--muted);
+            font-size: 0.85rem;
+            text-align: center;
+            max-width: 720px;
+            margin: 16px auto 0;
+        }
+
+        /* Features */
+        .features {
+            padding: 64px 0;
+            border-top: 1px solid var(--border);
+        }
+        .features h2 {
+            font-size: 2rem;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .features .sub {
+            text-align: center;
+            color: var(--muted);
+            margin-bottom: 40px;
+        }
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 20px;
+        }
+        .feature {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 22px;
+        }
+        .feature .icon {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            color: var(--accent);
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-weight: 700;
+        }
+        .feature h3 {
+            font-size: 1.05rem;
+            margin-bottom: 6px;
+        }
+        .feature p {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        /* How it works */
+        .how-it-works {
+            padding: 60px 0;
+            border-top: 1px solid var(--border);
+        }
+        .how-it-works h2 {
+            font-size: 2rem;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .how-it-works .sub {
+            text-align: center;
+            color: var(--muted);
+            max-width: 640px;
+            margin: 0 auto 40px;
+        }
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 28px;
+        }
+        .step {
+            text-align: center;
+        }
+        .step .number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            background: var(--accent-dim);
+            color: var(--bg);
+            font-weight: 700;
+            margin-bottom: 14px;
+        }
+        .step h3 {
+            margin-bottom: 8px;
+        }
+        .step p {
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+        .step code {
+            background: var(--surface);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            color: var(--success);
+            font-family: 'SF Mono', 'Fira Code', monospace;
+        }
+
+        /* Rationale section */
+        .rationale {
+            padding: 60px 0;
+            border-top: 1px solid var(--border);
+        }
+        .rationale h2 {
+            font-size: 1.8rem;
+            text-align: center;
+            margin-bottom: 28px;
+        }
+        .rationale p {
+            color: var(--fg);
+            max-width: 720px;
+            margin: 0 auto 18px;
+            font-size: 1rem;
+            line-height: 1.75;
+        }
+        .rationale p em {
+            color: var(--accent);
+            font-style: normal;
+        }
+
+        /* Footer */
+        footer {
+            padding: 40px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.85rem;
+        }
+        footer .links {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+
+        @media (max-width: 640px) {
+            .hero { padding: 48px 0 16px; }
+            .hero h1 { font-size: 2.2rem; }
+            .hero .tagline { font-size: 1rem; }
+            .tools h2, .install h2, .features h2, .how-it-works h2 { font-size: 1.5rem; }
+            .banner img { border-radius: 10px; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <div class="container">
+        <div class="logo">
+            <img src="images/logo.png" alt="plnk logo">
+            <span>plnk</span>_
+        </div>
+        <div class="links">
+            <a href="#install">Install</a>
+            <a href="#tools">Tools</a>
+            <a href="#how">Quickstart</a>
+            <a href="https://github.com/plattnum/planka-cli">GitHub</a>
+            <a href="https://www.buymeacoffee.com/plattnum">Support</a>
+        </div>
+    </div>
+</nav>
+
+<section class="hero">
+    <div class="container">
+        <h1><span class="accent">plnk</span><span class="cursor">_</span></h1>
+        <p class="tagline">
+            A deterministic, scriptable, hierarchy-aware CLI and SDK for
+            <a href="https://planka.app">Planka</a> kanban project management &mdash;
+            plus a live terminal TUI explorer built on the same stack.
+        </p>
+        <p class="pullquote">scriptable<span class="dot">&bull;</span>live<span class="dot">&bull;</span>hierarchical</p>
+        <div class="cta">
+            <a href="#install" class="btn btn-primary">Install</a>
+            <a href="https://github.com/plattnum/planka-cli" class="btn btn-secondary">View on GitHub</a>
+        </div>
+    </div>
+</section>
+
+<section class="banner">
+    <div class="container">
+        <img src="images/hero.png" alt="plnk &mdash; CLI &amp; TUI for Planka, showing the TUI explorer with projects, boards, lists, and card details">
+    </div>
+</section>
+
+<section class="tools" id="tools">
+    <div class="container">
+        <h2>Two tools, one stack</h2>
+        <p class="sub">Share the same auth, config, and domain types. Reach for whichever matches the task.</p>
+        <div class="tool-grid">
+            <div class="tool">
+                <h3>plnk</h3>
+                <div class="role">Command-line interface</div>
+                <p>Scriptable CLI for automation, CI/CD, and AI workflows. Strict grammar, typed exit codes, structured JSON / markdown output, machine-readable help.</p>
+                <code>plnk card find --title "bug" --board $BOARD --output json</code>
+            </div>
+            <div class="tool">
+                <h3>plnk-tui</h3>
+                <div class="role">Terminal explorer</div>
+                <p>Live tree explorer for projects, boards, lists, and cards. Single-board websocket subscription for real-time updates. Edit titles inline, descriptions in <code style="display:inline;padding:0;background:none;border:none;color:var(--purple)">$EDITOR</code>.</p>
+                <code>plnk-tui --server $PLANKA_SERVER --username you</code>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="install" id="install">
+    <div class="container">
+        <h2>Install</h2>
+        <p class="sub">Build from source today. Prebuilt binaries are on the roadmap.</p>
+        <div class="code-block">
+            <span class="comment"># CLI</span><br>
+            cargo install --git https://github.com/plattnum/planka-cli plnk-cli
+        </div>
+        <div class="code-block">
+            <span class="comment"># TUI</span><br>
+            cargo install --git https://github.com/plattnum/planka-cli plnk-tui
+        </div>
+        <p class="note">
+            Requires a Rust toolchain (1.87+). Tested against self-hosted Planka.
+            Release binaries with a <code style="color:var(--success)">curl | sh</code> installer are tracked on the
+            <a href="https://github.com/plattnum/planka-cli/issues">roadmap</a>.
+        </p>
+    </div>
+</section>
+
+<section class="features">
+    <div class="container">
+        <h2>Why plnk</h2>
+        <p class="sub">Planka already does kanban well. plnk wraps it in a tight, typed surface agents and scripts can drive.</p>
+        <div class="feature-grid">
+            <div class="feature">
+                <div class="icon">&#8599;</div>
+                <h3>Strict hierarchy</h3>
+                <p><code>project &rarr; board &rarr; list &rarr; card</code>. Every <code>find</code> demands a scope. No global flat queries, no surprising results.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">{ }</div>
+                <h3>Three outputs</h3>
+                <p><code>table</code> for humans, <code>json</code> for scripts and agents, <code>markdown</code> for reports. JSON is a strict projection of the serde model.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">0&middot;2&middot;3&middot;4&middot;5</div>
+                <h3>Typed exit codes</h3>
+                <p>Scripts branch on <code>0</code> success, <code>2</code> validation, <code>3</code> auth, <code>4</code> not-found, <code>5</code> server. No stderr parsing.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">?</div>
+                <h3>Machine-readable help</h3>
+                <p><code>plnk &lt;cmd&gt; --help --output json</code> emits a schema agents can bind to before ever running a command.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">&#9679;</div>
+                <h3>Live websocket TUI</h3>
+                <p>One board live at a time. Edits from the browser appear in the terminal in near real time. No polling, no drift.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">&#10697;</div>
+                <h3>Standalone Rust SDK</h3>
+                <p><code>plnk-core</code> is usable on its own. Build your own Planka integration in Rust without depending on the CLI.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="how-it-works" id="how">
+    <div class="container">
+        <h2>Three steps to running</h2>
+        <p class="sub">
+            No account service to sign up for. No config files to hand-edit.
+            You already have a Planka instance &mdash; plnk just talks to it.
+        </p>
+        <div class="steps">
+            <div class="step">
+                <div class="number">1</div>
+                <h3>Install</h3>
+                <p>Grab <code>plnk</code> and optionally <code>plnk-tui</code> with <code>cargo install</code>.</p>
+            </div>
+            <div class="step">
+                <div class="number">2</div>
+                <h3>Bootstrap</h3>
+                <p>Run <code>plnk init</code>. Prompts walk you through server URL, API token, and optional HTTP tuning. Both binaries share the same config.</p>
+            </div>
+            <div class="step">
+                <div class="number">3</div>
+                <h3>Use</h3>
+                <p>Drive Planka from the shell with <code>plnk</code>, or explore the hierarchy live with <code>plnk-tui</code>.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="rationale">
+    <div class="container">
+        <h2>Why this exists</h2>
+        <p>
+            I use Planka like a notebook. A card gets created the moment I have an idea, a question, or something to figure out. Later I come back with an agent and we work through it &mdash; sometimes one card at a time, sometimes a handful in parallel. What I care about is the artifact: by the time a card hits Done, it has what I did, the decisions I made, and why.
+        </p>
+        <p>
+            Everyone else in this space seems to want to build the task manager. People are reinventing kanban boards, writing yet another todo MCP, bolting YAML schemas onto note apps. Planka already has the UI, the hierarchy, the self-hosted option, and a working API. Reinventing it felt like a waste.
+        </p>
+        <p>
+            So <em>plnk</em> doesn't. It just exposes Planka as a disciplined CLI and SDK &mdash; tight grammar, typed exit codes, structured output, strict hierarchy, machine-readable help. Give an agent a rigid surface, and it stays on the rails.
+        </p>
+    </div>
+</section>
+
+<footer>
+    <div class="container">
+        <div class="links">
+            <a href="https://github.com/plattnum/planka-cli">GitHub</a>
+            <a href="https://github.com/plattnum/planka-cli/releases">Releases</a>
+            <a href="https://github.com/plattnum/planka-cli/issues">Issues</a>
+            <a href="https://www.buymeacoffee.com/plattnum">Buy Me a Coffee</a>
+        </div>
+        <p>MIT License &middot; Made by <a href="https://github.com/plattnum">plattnum</a></p>
+    </div>
+</footer>
+
+</body>
+</html>

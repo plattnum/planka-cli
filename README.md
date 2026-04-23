@@ -1,7 +1,14 @@
+<p align="center">
+  <img src="docs/images/hero.png" alt="plnk — CLI & TUI for Planka" width="100%">
+</p>
+
+<p align="center"><em>scriptable • live • hierarchical</em></p>
+
 # plnk
 
 [![CI](https://github.com/plattnum/planka-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/plattnum/planka-cli/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/plattnum)
 
 A deterministic, scriptable, hierarchy-aware CLI and SDK for [Planka](https://planka.app) kanban project management. Built for humans, shell scripts, CI/CD pipelines, and AI planners.
 
