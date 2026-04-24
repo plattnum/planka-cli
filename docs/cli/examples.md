@@ -10,7 +10,7 @@ The grammar is always `plnk <resource> <action> [target] [flags]` — see the [R
 
 ```console
 $ plnk auth status
-Server: http://storm-front:3002/
+Server: http://planka.example.com/
 Source: config file
 User: Admin (admin)
 ```
