@@ -39,7 +39,7 @@ The body splits further:
 │                             │ │  latest event: …         │
 │                             │ │  notice: …               │
 └─────────────────────────────┘ └──────────────────────────┘
-↑/↓ nav • →/Enter expand • v toggle view • L promote to live • …
+↑/↓ nav • →/Enter expand • r refresh • v toggle view • L live on/off • …
 ```
 
 ### Session header
@@ -77,6 +77,7 @@ A fixed 7-row block beneath details:
 
 - `websocket: <state>` — one of `no live target`, `loading`, `connecting raw websocket`, `live websocket connected`, or `error: <reason>`
 - `live target: <board>` — the currently subscribed board, or `none — select a board and press L to promote it` when idle
+- project rows may temporarily show `refreshing hierarchy…` while a manual refresh is in flight
 - `latest event: <name>` — short summary of the last `socket.io` event applied
 - `notice: <message>` — transient status messages (save progress, edit outcomes)
 
@@ -84,7 +85,7 @@ A fixed 7-row block beneath details:
 
 A single dim-gray line with the most relevant keybindings for the current mode. Mode-aware:
 
-- Default: navigation, view toggle, live promotion, edit, debug, quit.
+- Default: navigation, manual refresh, view toggle, live on/off, edit, debug, quit.
 - Title edit mode: the title-editing key set.
 - Saving mode: controls paused until the server responds.
 

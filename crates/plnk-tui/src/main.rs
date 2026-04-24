@@ -675,6 +675,14 @@ enum AppEvent {
         session_id: u64,
         board: BoardSummary,
     },
+    ProjectRefreshed {
+        project: ProjectTree,
+        board_errors: Vec<(String, String)>,
+    },
+    ProjectRefreshFailed {
+        project_id: String,
+        message: String,
+    },
     BoardHydrated(BoardSummary),
     BoardLoadFailed {
         board_id: String,
@@ -846,6 +854,7 @@ struct AppState {
     expanded_lists: HashSet<String>,
     expanded_label_groups: HashSet<String>,
     loading_boards: HashSet<String>,
+    loading_projects: HashSet<String>,
     board_errors: HashMap<String, String>,
     selected: Option<TreeKey>,
     explorer_view: ExplorerView,
@@ -870,6 +879,18 @@ struct SocketSessionState {
     subscribe_sent: bool,
 }
 
+#[derive(Debug, Clone)]
+enum HierarchyRefreshTarget {
+    Project {
+        project_id: String,
+        loaded_board_ids: HashSet<String>,
+    },
+    Board {
+        board_id: String,
+        comment_card_id: Option<String>,
+    },
+}
+
 impl AppState {
     fn new(
         server: String,
@@ -884,6 +905,7 @@ impl AppState {
         let expanded_lists = HashSet::new();
         let expanded_label_groups = HashSet::new();
         let loading_boards = HashSet::new();
+        let loading_projects = HashSet::new();
         let board_errors = HashMap::new();
         let card_comments = HashMap::new();
         let loading_card_comments = HashSet::new();
@@ -934,6 +956,7 @@ impl AppState {
             expanded_lists,
             expanded_label_groups,
             loading_boards,
+            loading_projects,
             board_errors,
             selected,
             explorer_view: ExplorerView::Hierarchy,
@@ -952,6 +975,7 @@ impl AppState {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn apply(&mut self, event: AppEvent) {
         match event {
             AppEvent::SocketConnecting {
@@ -977,6 +1001,40 @@ impl AppState {
                 self.board = Some(board);
                 self.status = ConnectionState::Live;
             }
+            AppEvent::ProjectRefreshed {
+                project,
+                board_errors,
+            } => {
+                self.loading_projects.remove(&project.id);
+                for board in &project.boards {
+                    self.loading_boards.remove(&board.id);
+                    self.board_errors.remove(&board.id);
+                }
+                for (board_id, message) in board_errors {
+                    self.board_errors.insert(board_id, message);
+                }
+                self.merge_project(project);
+                self.refresh_subscribed_board_cache();
+            }
+            AppEvent::ProjectRefreshFailed {
+                project_id,
+                message,
+            } => {
+                self.loading_projects.remove(&project_id);
+                self.recent_events.insert(
+                    0,
+                    LiveEventRecord {
+                        name: "projectRefreshError".to_string(),
+                        summary: format!("{project_id} :: {message}"),
+                        payload: None,
+                    },
+                );
+                self.recent_events.truncate(24);
+                self.set_notice(format!(
+                    "Project refresh failed: {}",
+                    truncate(&message, 80)
+                ));
+            }
             AppEvent::BoardHydrated(board) => {
                 self.loading_boards.remove(&board.id);
                 self.board_errors.remove(&board.id);
@@ -995,6 +1053,7 @@ impl AppState {
                     },
                 );
                 self.recent_events.truncate(24);
+                self.set_notice(format!("Board refresh failed: {}", truncate(&message, 80)));
             }
             AppEvent::CardCommentsLoaded { card_id, comments } => {
                 self.loading_card_comments.remove(&card_id);
@@ -1053,6 +1112,14 @@ impl AppState {
         }
     }
 
+    fn merge_project(&mut self, project: ProjectTree) {
+        if let Some(existing) = self.projects.iter_mut().find(|item| item.id == project.id) {
+            *existing = project;
+        } else {
+            self.projects.push(project);
+        }
+    }
+
     #[allow(clippy::too_many_lines)]
     fn visible_rows(&self) -> Vec<TreeRow> {
         let mut rows = Vec::new();
@@ -1065,7 +1132,11 @@ impl AppState {
                 depth: 0,
                 kind: TreeKind::Project,
                 label: project.name.clone(),
-                meta: Some(format!("{} boards", project.boards.len())),
+                meta: if self.loading_projects.contains(&project.id) {
+                    Some("refreshing hierarchy…".to_string())
+                } else {
+                    Some(format!("{} boards", project.boards.len()))
+                },
                 has_children: !project.boards.is_empty(),
                 expanded: project_expanded,
                 live: false,
@@ -1278,6 +1349,120 @@ impl AppState {
         match self.selected.as_ref() {
             Some(TreeKey::Board(board_id)) => Some(board_id.as_str()),
             _ => None,
+        }
+    }
+
+    fn board_id_for_list(&self, list_id: &str) -> Option<&str> {
+        self.projects.iter().find_map(|project| {
+            project.boards.iter().find_map(|board| {
+                board
+                    .active_lists
+                    .iter()
+                    .any(|list| list.id == list_id)
+                    .then_some(board.id.as_str())
+            })
+        })
+    }
+
+    fn board_id_for_card(&self, card_id: &str) -> Option<&str> {
+        self.projects.iter().find_map(|project| {
+            project.boards.iter().find_map(|board| {
+                board
+                    .active_lists
+                    .iter()
+                    .any(|list| list.cards.iter().any(|card| card.id == card_id))
+                    .then_some(board.id.as_str())
+            })
+        })
+    }
+
+    fn loaded_board_ids_for_project(&self, project_id: &str) -> HashSet<String> {
+        self.projects
+            .iter()
+            .find(|project| project.id == project_id)
+            .map(|project| {
+                project
+                    .boards
+                    .iter()
+                    .filter(|board| board.is_loaded() || self.is_live_target(&board.id))
+                    .map(|board| board.id.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn force_card_comments_reload(&mut self, card_id: &str) -> Option<String> {
+        self.card_comments.remove(card_id);
+        self.card_comment_errors.remove(card_id);
+        if self.loading_card_comments.contains(card_id) {
+            return None;
+        }
+        self.loading_card_comments.insert(card_id.to_string());
+        Some(card_id.to_string())
+    }
+
+    fn queue_hierarchy_refresh(&mut self) -> Option<HierarchyRefreshTarget> {
+        let Some(selected) = self.selected.as_ref() else {
+            self.set_notice("Select a node to refresh its hierarchy.");
+            return None;
+        };
+
+        let target = match selected {
+            TreeKey::Project(project_id) => HierarchyRefreshTarget::Project {
+                project_id: project_id.clone(),
+                loaded_board_ids: self.loaded_board_ids_for_project(project_id),
+            },
+            TreeKey::Board(board_id) => HierarchyRefreshTarget::Board {
+                board_id: board_id.clone(),
+                comment_card_id: None,
+            },
+            TreeKey::List(list_id) | TreeKey::LabelGroup { list_id, .. } => {
+                HierarchyRefreshTarget::Board {
+                    board_id: self.board_id_for_list(list_id)?.to_string(),
+                    comment_card_id: None,
+                }
+            }
+            TreeKey::Card(card_id) | TreeKey::GroupedCard { card_id, .. } => {
+                HierarchyRefreshTarget::Board {
+                    board_id: self.board_id_for_card(card_id)?.to_string(),
+                    comment_card_id: Some(card_id.clone()),
+                }
+            }
+        };
+
+        match target {
+            HierarchyRefreshTarget::Project {
+                project_id,
+                loaded_board_ids,
+            } => {
+                if !self.loading_projects.insert(project_id.clone()) {
+                    self.set_notice("Project hierarchy refresh already in progress.");
+                    return None;
+                }
+                self.set_notice("Refreshing project hierarchy…");
+                Some(HierarchyRefreshTarget::Project {
+                    project_id,
+                    loaded_board_ids,
+                })
+            }
+            HierarchyRefreshTarget::Board {
+                board_id,
+                comment_card_id,
+            } => {
+                if !self.loading_boards.insert(board_id.clone()) {
+                    self.set_notice("Board hierarchy refresh already in progress.");
+                    return None;
+                }
+                self.board_errors.remove(&board_id);
+                let comment_card_id = comment_card_id
+                    .as_deref()
+                    .and_then(|card_id| self.force_card_comments_reload(card_id));
+                self.set_notice("Refreshing board hierarchy…");
+                Some(HierarchyRefreshTarget::Board {
+                    board_id,
+                    comment_card_id,
+                })
+            }
         }
     }
 
@@ -2440,44 +2625,52 @@ async fn fetch_projects(server: &Url, token: &str) -> Result<Vec<ProjectSummary>
     Ok(response.json::<ProjectsResponse>().await?.items)
 }
 
+async fn fetch_project_tree(
+    server: &Url,
+    token: &str,
+    project_id: &str,
+) -> Result<ProjectTree, TuiError> {
+    let client = reqwest::Client::new();
+    let response = client
+        .get(server.join(&format!("api/projects/{project_id}"))?)
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()?;
+
+    let snapshot = response.json::<ProjectSnapshot>().await?;
+    let mut boards = snapshot
+        .included
+        .boards
+        .into_iter()
+        .map(|board| {
+            BoardSummary::stub(
+                snapshot.item.id.clone(),
+                board.id,
+                board.name,
+                board.position,
+            )
+        })
+        .collect::<Vec<_>>();
+    boards.sort_by(|left, right| left.position.total_cmp(&right.position));
+
+    Ok(ProjectTree {
+        id: snapshot.item.id,
+        name: snapshot.item.name,
+        description: snapshot.item.description,
+        boards,
+    })
+}
+
 async fn fetch_project_trees(
     server: &Url,
     token: &str,
     projects: &[ProjectSummary],
 ) -> Result<Vec<ProjectTree>, TuiError> {
-    let client = reqwest::Client::new();
     let mut trees = Vec::with_capacity(projects.len());
 
     for project in projects {
-        let response = client
-            .get(server.join(&format!("api/projects/{}", project.id))?)
-            .bearer_auth(token)
-            .send()
-            .await?
-            .error_for_status()?;
-
-        let snapshot = response.json::<ProjectSnapshot>().await?;
-        let mut boards = snapshot
-            .included
-            .boards
-            .into_iter()
-            .map(|board| {
-                BoardSummary::stub(
-                    snapshot.item.id.clone(),
-                    board.id,
-                    board.name,
-                    board.position,
-                )
-            })
-            .collect::<Vec<_>>();
-        boards.sort_by(|left, right| left.position.total_cmp(&right.position));
-
-        trees.push(ProjectTree {
-            id: snapshot.item.id,
-            name: snapshot.item.name,
-            description: snapshot.item.description,
-            boards,
-        });
+        trees.push(fetch_project_tree(server, token, &project.id).await?);
     }
 
     Ok(trees)
@@ -2573,6 +2766,46 @@ async fn update_card_fields(
         .await?
         .error_for_status()?;
     Ok(response.json::<ItemResponse<Value>>().await?.item)
+}
+
+fn spawn_project_refresh(
+    runtime: &Arc<tokio::runtime::Handle>,
+    server: &Url,
+    token: &str,
+    project_id: String,
+    loaded_board_ids: HashSet<String>,
+    tx: &Sender<AppEvent>,
+) {
+    let runtime = Arc::clone(runtime);
+    let server = server.clone();
+    let token = token.to_string();
+    let tx = tx.clone();
+    runtime.spawn(async move {
+        match fetch_project_tree(&server, &token, &project_id).await {
+            Ok(mut project) => {
+                let mut board_errors = Vec::new();
+                for board in &mut project.boards {
+                    if !loaded_board_ids.contains(&board.id) {
+                        continue;
+                    }
+                    match fetch_board_summary(&server, &token, &board.id).await {
+                        Ok(summary) => *board = summary,
+                        Err(err) => board_errors.push((board.id.clone(), err.to_string())),
+                    }
+                }
+                let _ = tx.send(AppEvent::ProjectRefreshed {
+                    project,
+                    board_errors,
+                });
+            }
+            Err(err) => {
+                let _ = tx.send(AppEvent::ProjectRefreshFailed {
+                    project_id,
+                    message: err.to_string(),
+                });
+            }
+        }
+    });
 }
 
 fn spawn_board_loader(
@@ -3257,6 +3490,18 @@ fn run_headless_probe(
             Ok(AppEvent::SocketConnecting { board_id, .. }) => {
                 println!("event: socket connecting: {board_id}");
             }
+            Ok(AppEvent::ProjectRefreshed { project, .. }) => println!(
+                "event: project refreshed: {} ({}) :: {} boards",
+                project.name,
+                project.id,
+                project.boards.len()
+            ),
+            Ok(AppEvent::ProjectRefreshFailed {
+                project_id,
+                message,
+            }) => {
+                println!("event: project refresh failed: {project_id} :: {message}");
+            }
             Ok(AppEvent::SocketLive { board, .. } | AppEvent::BoardHydrated(board)) => println!(
                 "event: board live: {} [{}] cards={} lists={}",
                 board.name,
@@ -3394,6 +3639,46 @@ fn run_app(
                         }
                         KeyCode::Char('v') => {
                             app.toggle_explorer_view();
+                        }
+                        KeyCode::Char('r' | 'R')
+                            if !key.modifiers.contains(KeyModifiers::CONTROL)
+                                && app.has_dirty_card_draft() =>
+                        {
+                            app.set_notice(
+                                "Save or discard dirty card before refreshing hierarchy.",
+                            );
+                        }
+                        KeyCode::Char('r' | 'R')
+                            if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+                        {
+                            if let Some(target) = app.queue_hierarchy_refresh() {
+                                match target {
+                                    HierarchyRefreshTarget::Project {
+                                        project_id,
+                                        loaded_board_ids,
+                                    } => {
+                                        spawn_project_refresh(
+                                            runtime,
+                                            server,
+                                            token,
+                                            project_id,
+                                            loaded_board_ids,
+                                            tx,
+                                        );
+                                    }
+                                    HierarchyRefreshTarget::Board {
+                                        board_id,
+                                        comment_card_id,
+                                    } => {
+                                        spawn_board_loader(runtime, server, token, board_id, tx);
+                                        if let Some(card_id) = comment_card_id {
+                                            spawn_comment_loader(
+                                                runtime, server, token, card_id, tx,
+                                            );
+                                        }
+                                    }
+                                }
+                            }
                         }
                         KeyCode::Char('e') => {
                             if app.selected_card_id().is_some() {
@@ -3692,7 +3977,7 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
     } else if app.title_editor.is_some() {
         "TITLE MODE: type text • ←/→ move • Enter save • Esc cancel • Ctrl-c force quit"
     } else {
-        "↑/↓ nav • →/Enter expand • v toggle view • L live on/off • e edit title • E edit description ($EDITOR) • D debug log • Ctrl-c quit"
+        "↑/↓ nav • →/Enter expand • r refresh • v toggle view • L live on/off • e edit title • E edit description ($EDITOR) • D debug log • Ctrl-c quit"
     };
     frame.render_widget(
         Paragraph::new(key_help).style(Style::default().fg(Color::DarkGray)),
