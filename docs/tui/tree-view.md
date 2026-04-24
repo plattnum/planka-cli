@@ -39,14 +39,14 @@ The body splits further:
 │                             │ │  latest event: …         │
 │                             │ │  notice: …               │
 └─────────────────────────────┘ └──────────────────────────┘
-↑/↓ nav • →/Enter expand • r refresh • v toggle view • L live on/off • …
+↑/↓ nav • / filter • →/Enter expand • r refresh • v toggle view • L live on/off • …
 ```
 
 ### Session header
 
 - Row 1: the word `plnk-tui explorer`, a bullet, then one of a small set of status chips: `READ-ONLY`, `DIRTY`, `REMOTE CHANGED`, `SAVING`, or the websocket connection label.
 - Row 2: `server: <url> | login: <user> | current user: <name> (<username>)` — identifies who is connected to where.
-- Row 3: visible project count, current user id, explorer view mode, and the live target board id (or `none (press L on a board)` when idle).
+- Row 3: visible project count, current user id, explorer view mode, current filter text (`none` when inactive), and the live target board id (or `none (press L on a board)` when idle).
 
 ### Explorer pane
 
@@ -54,6 +54,8 @@ Renders a collapsible tree in one of two views, toggled with `v`:
 
 - **hierarchy** — project → board → list → card. This is the default.
 - **labels** — project → board → list → label group → card. Groups cards by the labels applied to them on a given list.
+
+Press `/` to enter a client-side filter mode for the current explorer view. Plain text uses case-insensitive substring matching; queries containing `*` or `?` use case-insensitive glob matching. Matching descendants keep their ancestor context visible.
 
 See [data model](#data-model) below for the underlying types.
 
@@ -78,6 +80,7 @@ A fixed 7-row block beneath details:
 - `websocket: <state>` — one of `no live target`, `loading`, `connecting raw websocket`, `live websocket connected`, or `error: <reason>`
 - `live target: <board>` — the currently subscribed board, or `none — select a board and press L to promote it` when idle
 - project rows may temporarily show `refreshing hierarchy…` while a manual refresh is in flight
+- when a filter is active, the explorer title and session header show the active query
 - `latest event: <name>` — short summary of the last `socket.io` event applied
 - `notice: <message>` — transient status messages (save progress, edit outcomes)
 
@@ -85,7 +88,7 @@ A fixed 7-row block beneath details:
 
 A single dim-gray line with the most relevant keybindings for the current mode. Mode-aware:
 
-- Default: navigation, manual refresh, view toggle, live on/off, edit, debug, quit.
+- Default: navigation, filter, manual refresh, view toggle, live on/off, edit, debug, quit.
 - Title edit mode: the title-editing key set.
 - Saving mode: controls paused until the server responds.
 
