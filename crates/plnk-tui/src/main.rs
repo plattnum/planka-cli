@@ -1396,6 +1396,17 @@ impl AppState {
         self.set_notice(format!("{verb} live target to {board_name}…"));
     }
 
+    fn clear_live_board(&mut self) {
+        let board_name = self
+            .subscribed_board()
+            .map_or_else(|| "current board".to_string(), |board| board.name.clone());
+        self.subscribed_board_id = None;
+        self.active_socket_session_id = self.active_socket_session_id.saturating_add(1);
+        self.status = ConnectionState::Idle;
+        self.board = None;
+        self.set_notice(format!("Stopped live sync for {board_name}."));
+    }
+
     fn flush_pending_save_completion(&mut self) {
         if self
             .pending_save_completion
@@ -3432,9 +3443,12 @@ fn run_app(
                         KeyCode::Char('L') => {
                             if let Some(board_id) = app.selected_board_id().map(ToOwned::to_owned) {
                                 if app.is_live_target(&board_id) {
-                                    app.set_notice("Selected board is already the live target.");
+                                    if let Some(previous) = socket_shutdown.take() {
+                                        let _ = previous.send(true);
+                                    }
+                                    app.clear_live_board();
                                 } else {
-                                    if let Some(previous) = socket_shutdown.as_ref() {
+                                    if let Some(previous) = socket_shutdown.take() {
                                         let _ = previous.send(true);
                                     }
                                     app.switch_live_board(&board_id);
@@ -3678,7 +3692,7 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
     } else if app.title_editor.is_some() {
         "TITLE MODE: type text • ←/→ move • Enter save • Esc cancel • Ctrl-c force quit"
     } else {
-        "↑/↓ nav • →/Enter expand • v toggle view • L promote to live • e edit title • E edit description ($EDITOR) • D debug log • Ctrl-c quit"
+        "↑/↓ nav • →/Enter expand • v toggle view • L live on/off • e edit title • E edit description ($EDITOR) • D debug log • Ctrl-c quit"
     };
     frame.render_widget(
         Paragraph::new(key_help).style(Style::default().fg(Color::DarkGray)),
@@ -3902,7 +3916,7 @@ fn build_board_detail(app: &AppState, board_id: &str) -> Vec<Line<'static>> {
                     "Press → or Enter to lazy-load this board snapshot over HTTP.",
                 ));
                 lines.push(muted_line(
-                    "Press L on a board node to make that board the websocket live target.",
+                    "Press L on a board node to toggle websocket live sync for that board.",
                 ));
             }
 

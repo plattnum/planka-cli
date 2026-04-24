@@ -18,7 +18,7 @@ A flat reference. The footer at the bottom of the TUI shows a short subset of th
 | `→` / `Enter` | Expand the selected node. For unloaded boards, this triggers a lazy snapshot load. |
 | `←` | Collapse the selected node, or move to its parent if already collapsed. |
 | `v` | Toggle the explorer view between **hierarchy** (project → board → list → card) and **labels** (board → label groups). |
-| `L` | Promote the selected board to the live target. See [live-target.md](live-target.md). |
+| `L` | Toggle the selected board as the live target. Press once to subscribe, press again on the same board to unsubscribe and return to idle. See [live-target.md](live-target.md). |
 
 ## Details pane
 

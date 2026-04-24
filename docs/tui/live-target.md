@@ -16,15 +16,14 @@ The session line and live-sync panel show one of these:
 | **live websocket connected** | Subscribed and receiving events. |
 | **error: …** | The socket died. A short reason follows. Press `L` on any board to re-establish on that board. |
 
-## Promoting a board to live
+## Toggling a board live
 
-Select any board in the tree and press `L`. Three things happen:
+Select any board in the tree and press `L`.
 
-1. If a previous live target existed, its websocket is shut down.
-2. `subscribed_board_id` is updated and `active_socket_session_id` is incremented — this lets the new listener discard any late-arriving events from the previous session.
-3. A fresh listener is spawned for the new target.
+- If that board is **not** already the live target, the TUI shuts down any previous websocket, updates `subscribed_board_id`, increments `active_socket_session_id`, and spawns a fresh listener for the new target.
+- If that board **is** already the live target, pressing `L` again shuts the websocket down, clears `subscribed_board_id`, and returns the session to `no live target` / idle.
 
-Status flows `Idle | Live → Connecting → Live`. The selection in the tree can move freely afterward without affecting the subscription.
+Status flows `Idle | Live → Connecting → Live` when subscribing, and `Live | Connecting | Error → Idle` when toggling the current board off. The selection in the tree can move freely afterward without affecting the subscription.
 
 ## Starting with a preselected board
 
@@ -50,4 +49,4 @@ Press `D` to toggle the websocket debug overlay. It shows recent engine-level ev
 
 - **"socket connect failed"** — typically wrong server URL, no network, or the server is rejecting the Engine.IO upgrade. Verify `plnk auth status` works first.
 - **Events flowing but tree doesn't update** — toggle `D`, look for unrecognized event names. The applier is intentionally narrow; new Planka event types may need code changes.
-- **"already the live target"** notice when pressing `L`** — the current selection's board is the live one. Move selection to a different board first (pressing `L` on the same board is currently a no-op; a future pass may turn it into an unsubscribe toggle).
+- **Need to stop live sync for the current board** — select that same board and press `L` again. This shuts the websocket down and returns the TUI to idle.

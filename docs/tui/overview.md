@@ -56,7 +56,7 @@ Environment variables (clap honors them automatically):
 
 ## First-run experience
 
-The TUI lands on the projects view with no live subscription active. Expand a project with `→` or `Enter`, pick a board, and either explore it read-only or press `L` to promote it to the live target — from that point on, edits on that board stream in.
+The TUI lands on the projects view with no live subscription active. Expand a project with `→` or `Enter`, pick a board, and either explore it read-only or press `L` to make it the live target — from that point on, edits on that board stream in. Press `L` again on the same board to unsubscribe and return to idle.
 
 For the detailed live-sync model, see [live-target.md](live-target.md). For the full key map, see [keybindings.md](keybindings.md). For the tree view's data-model and rendering contract, see [tree-view.md](tree-view.md).
 
