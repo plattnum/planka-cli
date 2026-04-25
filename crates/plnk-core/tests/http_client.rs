@@ -436,7 +436,10 @@ async fn user_agent_header_set() {
 
     Mock::given(method("GET"))
         .and(path("/api/test"))
-        .and(header("User-Agent", "plnk/0.1.0"))
+        .and(header(
+            "User-Agent",
+            format!("plnk/{}", env!("CARGO_PKG_VERSION")).as_str(),
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
         .expect(1)
         .mount(&server)
