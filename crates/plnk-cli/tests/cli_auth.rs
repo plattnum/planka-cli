@@ -571,5 +571,8 @@ fn version_output() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("plnk 0.1.0"));
+        .stdout(predicate::str::contains(format!(
+            "plnk {}",
+            env!("CARGO_PKG_VERSION")
+        )));
 }
