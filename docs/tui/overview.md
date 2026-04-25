@@ -56,7 +56,7 @@ Environment variables (clap honors them automatically):
 
 ## First-run experience
 
-The TUI lands on the projects view with no live subscription active. Expand a project with `→` or `Enter`, pick a board, and either explore it read-only or press `L` to make it the live target — from that point on, edits on that board stream in. Press `L` again on the same board to unsubscribe and return to idle. Press `r` on the selected node when you want to refetch that slice of the hierarchy on demand.
+The TUI lands on the projects view with no live subscription active. Expand a project with `→` or `Enter`, pick a board, and either explore it read-only or press `L` to make it the live target — from that point on, edits on that board stream in. Press `L` again on the same board to unsubscribe and return to idle. Press `r` on the selected node when you want to refetch that slice of the hierarchy on demand, or `/` to filter the current explorer view client-side by substring or glob pattern.
 
 For the detailed live-sync model, see [live-target.md](live-target.md). For the full key map, see [keybindings.md](keybindings.md). For the tree view's data-model and rendering contract, see [tree-view.md](tree-view.md).
 

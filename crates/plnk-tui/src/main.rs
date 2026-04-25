@@ -375,6 +375,12 @@ struct InlineEditorState {
 }
 
 #[derive(Debug, Clone)]
+struct FilterEditorState {
+    buffer: String,
+    cursor: usize,
+}
+
+#[derive(Debug, Clone)]
 enum DraftFieldUpdate<T> {
     Unchanged,
     Set(T),
@@ -858,6 +864,8 @@ struct AppState {
     board_errors: HashMap<String, String>,
     selected: Option<TreeKey>,
     explorer_view: ExplorerView,
+    filter_query: String,
+    filter_editor: Option<FilterEditorState>,
     focus: PaneFocus,
     detail_scroll: usize,
     card_comments: HashMap<String, Vec<CommentSummary>>,
@@ -916,6 +924,8 @@ impl AppState {
         let save_started_at = None;
         let pending_save_completion = None;
         let notice = None;
+        let filter_query = String::new();
+        let filter_editor = None;
 
         let selected = subscribed_board_id
             .as_deref()
@@ -960,6 +970,8 @@ impl AppState {
             board_errors,
             selected,
             explorer_view: ExplorerView::Hierarchy,
+            filter_query,
+            filter_editor,
             focus: PaneFocus::Explorer,
             detail_scroll: 0,
             card_comments,
@@ -1120,12 +1132,21 @@ impl AppState {
         }
     }
 
+    fn active_filter_query(&self) -> &str {
+        self.filter_editor
+            .as_ref()
+            .map_or(self.filter_query.as_str(), |editor| editor.buffer.as_str())
+    }
+
+    fn has_active_filter(&self) -> bool {
+        !self.active_filter_query().trim().is_empty()
+    }
+
     #[allow(clippy::too_many_lines)]
-    fn visible_rows(&self) -> Vec<TreeRow> {
+    fn all_rows(&self) -> Vec<TreeRow> {
         let mut rows = Vec::new();
 
         for project in &self.projects {
-            let project_expanded = self.expanded_projects.contains(&project.id);
             rows.push(TreeRow {
                 key: TreeKey::Project(project.id.clone()),
                 parent: None,
@@ -1138,16 +1159,11 @@ impl AppState {
                     Some(format!("{} boards", project.boards.len()))
                 },
                 has_children: !project.boards.is_empty(),
-                expanded: project_expanded,
+                expanded: self.expanded_projects.contains(&project.id),
                 live: false,
             });
 
-            if !project_expanded {
-                continue;
-            }
-
             for board in &project.boards {
-                let board_expanded = self.expanded_boards.contains(&board.id);
                 let board_loaded = board.is_loaded();
                 let board_loading = self.loading_boards.contains(&board.id);
                 let board_meta = if self.is_live_target(&board.id)
@@ -1177,18 +1193,17 @@ impl AppState {
                     label: board.name.clone(),
                     meta: board_meta,
                     has_children: !board_loaded || !board.active_lists.is_empty(),
-                    expanded: board_expanded,
+                    expanded: self.expanded_boards.contains(&board.id),
                     live: self.is_live_connected(&board.id),
                 });
 
-                if !(board_expanded && board_loaded) {
+                if !board_loaded {
                     continue;
                 }
 
                 match self.explorer_view {
                     ExplorerView::Hierarchy => {
                         for list in &board.active_lists {
-                            let list_expanded = self.expanded_lists.contains(&list.id);
                             rows.push(TreeRow {
                                 key: TreeKey::List(list.id.clone()),
                                 parent: Some(TreeKey::Board(board.id.clone())),
@@ -1200,13 +1215,9 @@ impl AppState {
                                     list.active_card_count, list.closed_card_count
                                 )),
                                 has_children: !list.cards.is_empty(),
-                                expanded: list_expanded,
+                                expanded: self.expanded_lists.contains(&list.id),
                                 live: false,
                             });
-
-                            if !list_expanded {
-                                continue;
-                            }
 
                             for card in &list.cards {
                                 rows.push(TreeRow {
@@ -1229,7 +1240,6 @@ impl AppState {
                     }
                     ExplorerView::Labels => {
                         for list in &board.active_lists {
-                            let list_expanded = self.expanded_lists.contains(&list.id);
                             let label_groups = label_groups_for_list(board, list);
                             rows.push(TreeRow {
                                 key: TreeKey::List(list.id.clone()),
@@ -1244,13 +1254,9 @@ impl AppState {
                                     list.closed_card_count
                                 )),
                                 has_children: !label_groups.is_empty(),
-                                expanded: list_expanded,
+                                expanded: self.expanded_lists.contains(&list.id),
                                 live: false,
                             });
-
-                            if !list_expanded {
-                                continue;
-                            }
 
                             for group in label_groups {
                                 let group_key = label_group_key(
@@ -1258,8 +1264,6 @@ impl AppState {
                                     &group.list_id,
                                     group.label_id.as_deref(),
                                 );
-                                let group_expanded =
-                                    self.expanded_label_groups.contains(&group_key);
                                 rows.push(TreeRow {
                                     key: TreeKey::LabelGroup {
                                         board_id: group.board_id.clone(),
@@ -1275,13 +1279,9 @@ impl AppState {
                                         group.active_card_count, group.closed_card_count
                                     )),
                                     has_children: !group.cards.is_empty(),
-                                    expanded: group_expanded,
+                                    expanded: self.expanded_label_groups.contains(&group_key),
                                     live: false,
                                 });
-
-                                if !group_expanded {
-                                    continue;
-                                }
 
                                 for card in group.cards {
                                     let card_meta = if card.is_closed {
@@ -1316,6 +1316,74 @@ impl AppState {
         }
 
         rows
+    }
+
+    fn apply_expansion_visibility(rows: Vec<TreeRow>) -> Vec<TreeRow> {
+        let mut visible = Vec::new();
+        let mut expanded_visible = HashSet::new();
+
+        for row in rows {
+            let parent_visible = row
+                .parent
+                .as_ref()
+                .is_none_or(|parent| expanded_visible.contains(parent));
+            if !parent_visible {
+                continue;
+            }
+            if row.expanded {
+                expanded_visible.insert(row.key.clone());
+            }
+            visible.push(row);
+        }
+
+        visible
+    }
+
+    fn filter_visible_rows(&self, rows: Vec<TreeRow>) -> Vec<TreeRow> {
+        let query = self.active_filter_query().trim();
+        if query.is_empty() {
+            return Self::apply_expansion_visibility(rows);
+        }
+
+        let parent_by_key = rows
+            .iter()
+            .map(|row| (row.key.clone(), row.parent.clone()))
+            .collect::<HashMap<_, _>>();
+        let matched_keys = rows
+            .iter()
+            .filter(|row| filter_matches(query, &row.label))
+            .map(|row| row.key.clone())
+            .collect::<Vec<_>>();
+
+        if matched_keys.is_empty() {
+            return Vec::new();
+        }
+
+        let mut included = HashSet::new();
+        let mut force_expanded = HashSet::new();
+        for key in matched_keys {
+            included.insert(key.clone());
+            let mut current = parent_by_key.get(&key).cloned().flatten();
+            while let Some(parent) = current {
+                force_expanded.insert(parent.clone());
+                included.insert(parent.clone());
+                current = parent_by_key.get(&parent).cloned().flatten();
+            }
+        }
+
+        rows.into_iter()
+            .filter_map(|mut row| {
+                if !included.contains(&row.key) {
+                    return None;
+                }
+                row.expanded = force_expanded.contains(&row.key);
+                Some(row)
+            })
+            .collect()
+    }
+
+    fn visible_rows(&self) -> Vec<TreeRow> {
+        self.filter_visible_rows(self.all_rows())
     }
 
     fn selected_index(&self, rows: &[TreeRow]) -> usize {
@@ -1818,6 +1886,117 @@ impl AppState {
         }
     }
 
+    fn start_filter_editor(&mut self) {
+        self.focus_explorer();
+        self.filter_editor = Some(FilterEditorState {
+            buffer: self.filter_query.clone(),
+            cursor: self.filter_query.chars().count(),
+        });
+        self.set_notice("Filter explorer rows by text or glob (*, ?).");
+    }
+
+    fn sync_filter_editor(&mut self) {
+        let Some(editor) = self.filter_editor.as_ref() else {
+            return;
+        };
+        self.filter_query.clone_from(&editor.buffer);
+        self.ensure_selected_visible();
+    }
+
+    fn finish_filter_editor(&mut self) {
+        self.sync_filter_editor();
+        self.filter_editor = None;
+        if self.has_active_filter() {
+            self.set_notice(format!(
+                "Explorer filter active: {}",
+                truncate(self.active_filter_query(), 60)
+            ));
+        } else {
+            self.set_notice("Explorer filter cleared.");
+        }
+    }
+
+    fn clear_or_close_filter_editor(&mut self) {
+        let Some(editor) = self.filter_editor.as_mut() else {
+            return;
+        };
+        if editor.buffer.is_empty() {
+            self.filter_editor = None;
+            self.set_notice("Exited filter mode.");
+        } else {
+            editor.buffer.clear();
+            editor.cursor = 0;
+            self.sync_filter_editor();
+            self.set_notice("Explorer filter cleared. Esc again to close filter mode.");
+        }
+    }
+
+    fn edit_filter_insert(&mut self, ch: char) {
+        if let Some(editor) = self.filter_editor.as_mut() {
+            let mut chars = editor.buffer.chars().collect::<Vec<_>>();
+            let cursor = editor.cursor.min(chars.len());
+            chars.insert(cursor, ch);
+            editor.buffer = chars.into_iter().collect();
+            editor.cursor = cursor.saturating_add(1);
+        }
+        self.sync_filter_editor();
+    }
+
+    fn edit_filter_backspace(&mut self) {
+        let Some(editor) = self.filter_editor.as_mut() else {
+            return;
+        };
+        if editor.cursor == 0 {
+            return;
+        }
+        let mut chars = editor.buffer.chars().collect::<Vec<_>>();
+        let index = editor.cursor.saturating_sub(1);
+        let _ = chars.remove(index);
+        editor.buffer = chars.into_iter().collect();
+        editor.cursor = index;
+        self.sync_filter_editor();
+    }
+
+    fn edit_filter_delete(&mut self) {
+        let Some(editor) = self.filter_editor.as_mut() else {
+            return;
+        };
+        let mut chars = editor.buffer.chars().collect::<Vec<_>>();
+        if editor.cursor >= chars.len() {
+            return;
+        }
+        let _ = chars.remove(editor.cursor);
+        editor.buffer = chars.into_iter().collect();
+        self.sync_filter_editor();
+    }
+
+    fn edit_filter_move_left(&mut self) {
+        if let Some(editor) = self.filter_editor.as_mut() {
+            editor.cursor = editor.cursor.saturating_sub(1);
+        }
+    }
+
+    fn edit_filter_move_right(&mut self) {
+        if let Some(editor) = self.filter_editor.as_mut() {
+            editor.cursor = editor
+                .cursor
+                .saturating_add(1)
+                .min(editor.buffer.chars().count());
+        }
+    }
+
+    fn edit_filter_move_home(&mut self) {
+        if let Some(editor) = self.filter_editor.as_mut() {
+            editor.cursor = 0;
+        }
+    }
+
+    fn edit_filter_move_end(&mut self) {
+        if let Some(editor) = self.filter_editor.as_mut() {
+            editor.cursor = editor.buffer.chars().count();
+        }
+    }
+
     fn mark_selected_card_comments_loading(&mut self) -> Option<String> {
         let card_id = self.selected_card_id()?.to_string();
         if self.card_comments.contains_key(&card_id)
@@ -1950,6 +2129,13 @@ impl AppState {
 
         let index = self.selected_index(&rows);
         let row = &rows[index];
+
+        if self.has_active_filter() {
+            if let Some(parent) = &row.parent {
+                self.set_selected(parent.clone());
+            }
+            return;
+        }
 
         match &row.key {
             TreeKey::Project(project_id) => {
@@ -3405,6 +3591,46 @@ fn truncate(text: &str, max: usize) -> String {
     }
 }
 
+fn filter_matches(query: &str, label: &str) -> bool {
+    let query = query.to_lowercase();
+    let label = label.to_lowercase();
+    if query.contains(['*', '?']) {
+        glob_matches(&query, &label)
+    } else {
+        label.contains(&query)
+    }
+}
+
+fn glob_matches(pattern: &str, text: &str) -> bool {
+    let pattern = pattern.chars().collect::<Vec<_>>();
+    let text = text.chars().collect::<Vec<_>>();
+    let mut dp = vec![vec![false; text.len() + 1]; pattern.len() + 1];
+    dp[0][0] = true;
+
+    for i in 0..pattern.len() {
+        match pattern[i] {
+            '*' => {
+                dp[i + 1][0] = dp[i][0];
+                for j in 0..text.len() {
+                    dp[i + 1][j + 1] = dp[i][j + 1] || dp[i + 1][j];
+                }
+            }
+            '?' => {
+                for j in 0..text.len() {
+                    dp[i + 1][j + 1] = dp[i][j];
+                }
+            }
+            ch => {
+                for j in 0..text.len() {
+                    dp[i + 1][j + 1] = dp[i][j] && ch == text[j];
+                }
+            }
+        }
+    }
+
+    dp[pattern.len()][text.len()]
+}
+
 fn init_terminal() -> Result<Terminal<CrosstermBackend<io::Stdout>>, TuiError> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -3606,6 +3832,24 @@ fn run_app(
                         continue;
                     }
 
+                    if app.filter_editor.is_some() {
+                        match key.code {
+                            KeyCode::Esc => app.clear_or_close_filter_editor(),
+                            KeyCode::Enter => app.finish_filter_editor(),
+                            KeyCode::Left => app.edit_filter_move_left(),
+                            KeyCode::Right => app.edit_filter_move_right(),
+                            KeyCode::Home => app.edit_filter_move_home(),
+                            KeyCode::End => app.edit_filter_move_end(),
+                            KeyCode::Backspace => app.edit_filter_backspace(),
+                            KeyCode::Delete => app.edit_filter_delete(),
+                            KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                app.edit_filter_insert(ch);
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     match key.code {
                         KeyCode::Char('q') | KeyCode::Esc if app.has_dirty_card_draft() => {
                             app.set_notice("Unsaved card changes. Ctrl-s save • Ctrl-x discard.");
@@ -3631,6 +3875,9 @@ fn run_app(
                         {
                             app.discard_card_draft();
                             app.set_notice("Discarded local card edits.");
+                        }
+                        KeyCode::Char('/') => {
+                            app.start_filter_editor();
                         }
                         KeyCode::Char('v') if app.has_dirty_card_draft() => {
                             app.set_notice(
@@ -3853,6 +4100,13 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
         header_title.push(Span::raw("  •  "));
         header_title.push(chip_span("EDITING TITLE", Color::LightYellow));
     }
+    if app.filter_editor.is_some() {
+        header_title.push(Span::raw("  •  "));
+        header_title.push(chip_span("FILTER MODE", Color::Magenta));
+    } else if app.has_active_filter() {
+        header_title.push(Span::raw("  •  "));
+        header_title.push(chip_span("FILTER", Color::Magenta));
+    }
     if app.has_dirty_card_draft() {
         header_title.push(Span::raw("  •  "));
         header_title.push(chip_span("DIRTY", Color::Yellow));
@@ -3877,10 +4131,15 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
             app.server, app.login, app.current_user.name, app.current_user.username
         )),
         Line::from(format!(
-            "visible projects: {} | current user id: {} | explorer view: {} | live target: {}",
+            "visible projects: {} | current user id: {} | explorer view: {} | filter: {} | live target: {}",
             app.projects.len(),
             app.current_user.id,
             app.explorer_view.label(),
+            if app.has_active_filter() {
+                truncate(app.active_filter_query(), 30)
+            } else {
+                "none".to_string()
+            },
             app.subscribed_board_id
                 .as_deref()
                 .unwrap_or("none (press L on a board)")
@@ -3902,7 +4161,14 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
     let selected_index = app.selected_index(&rows);
 
     let tree_items = if rows.is_empty() {
-        vec![ListItem::new("No projects visible for this user.")]
+        vec![ListItem::new(if app.has_active_filter() {
+            format!(
+                "No nodes match filter '{}'",
+                truncate(app.active_filter_query(), 60)
+            )
+        } else {
+            "No projects visible for this user.".to_string()
+        })]
     } else {
         rows.iter().map(render_tree_row).collect::<Vec<_>>()
     };
@@ -3914,7 +4180,15 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
 
     let tree = List::new(tree_items)
         .block(panel_block(
-            &format!("explorer • {}", app.explorer_view.label()),
+            &if app.has_active_filter() {
+                format!(
+                    "explorer • {} • filter: {}",
+                    app.explorer_view.label(),
+                    truncate(app.active_filter_query(), 24)
+                )
+            } else {
+                format!("explorer • {}", app.explorer_view.label())
+            },
             app.focus == PaneFocus::Explorer,
         ))
         .highlight_style(
@@ -3976,8 +4250,10 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
         "SAVING: waiting for server response • controls paused • Ctrl-c force quit"
     } else if app.title_editor.is_some() {
         "TITLE MODE: type text • ←/→ move • Enter save • Esc cancel • Ctrl-c force quit"
+    } else if app.filter_editor.is_some() {
+        "FILTER MODE: type text • * and ? globs • Enter keep • Esc clear/close • Ctrl-c force quit"
     } else {
-        "↑/↓ nav • →/Enter expand • r refresh • v toggle view • L live on/off • e edit title • E edit description ($EDITOR) • D debug log • Ctrl-c quit"
+        "↑/↓ nav • / filter • →/Enter expand • r refresh • v toggle view • L live on/off • e edit title • E edit description ($EDITOR) • D debug log • Ctrl-c quit"
     };
     frame.render_widget(
         Paragraph::new(key_help).style(Style::default().fg(Color::DarkGray)),
@@ -3986,6 +4262,9 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
 
     if app.show_debug_log {
         draw_debug_overlay(frame, area, app);
+    }
+    if app.filter_editor.is_some() {
+        draw_filter_editor_overlay(frame, area, app);
     }
     if app.title_editor.is_some() {
         draw_title_editor_overlay(frame, area, app);
@@ -4814,6 +5093,58 @@ fn draw_debug_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &AppState
     frame.render_widget(Clear, popup);
     frame.render_widget(
         List::new(debug_items).block(panel_block("websocket debug log • press D to close", false)),
+        popup,
+    );
+}
+
+fn draw_filter_editor_overlay(frame: &mut ratatui::Frame<'_>, area: Rect, app: &AppState) {
+    let Some(editor) = app.filter_editor.as_ref() else {
+        return;
+    };
+
+    let popup = centered_rect(72, 22, area);
+    let chars = editor.buffer.chars().collect::<Vec<_>>();
+    let cursor = editor.cursor.min(chars.len());
+    let before = chars[..cursor].iter().collect::<String>();
+    let at = chars
+        .get(cursor)
+        .map_or(" ".to_string(), ToString::to_string);
+    let after = if cursor < chars.len() {
+        chars[cursor + 1..].iter().collect::<String>()
+    } else {
+        String::new()
+    };
+
+    let lines = vec![
+        Line::from(Span::styled(
+            "Filter explorer",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(dim_span(
+            "Live client-side filter • substring or glob (*, ?)",
+        )),
+        Line::from(dim_span("Enter keep • Esc clear/close • Ctrl-c force quit")),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(before, Style::default().fg(Color::White)),
+            Span::styled(
+                at,
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(after, Style::default().fg(Color::White)),
+        ]),
+    ];
+
+    frame.render_widget(Clear, popup);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(panel_block("filter", true))
+            .wrap(Wrap { trim: false }),
         popup,
     );
 }

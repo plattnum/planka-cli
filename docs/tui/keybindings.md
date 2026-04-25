@@ -17,6 +17,7 @@ A flat reference. The footer at the bottom of the TUI shows a short subset of th
 | `↑` / `↓` | Move selection up/down through visible tree rows. |
 | `→` / `Enter` | Expand the selected node. For unloaded boards, this triggers a lazy snapshot load. |
 | `←` | Collapse the selected node, or move to its parent if already collapsed. |
+| `/` | Enter explorer filter mode. Type a case-insensitive substring, or use `*` / `?` as glob wildcards. `Enter` keeps the filter active; `Esc` clears/closes. |
 | `v` | Toggle the explorer view between **hierarchy** (project → board → list → card) and **labels** (board → label groups). |
 | `r` / `R` | Refresh the hierarchy below the selected node. On a project, this refetches the project tree and any already-loaded boards under it. On a board/list/card, this refetches that board snapshot; card refresh also reloads comments. |
 | `L` | Toggle the selected board as the live target. Press once to subscribe, press again on the same board to unsubscribe and return to idle. See [live-target.md](live-target.md). |
