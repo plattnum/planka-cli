@@ -10,6 +10,7 @@ Experimental. Tested against a self-hosted Planka instance. Scope is intentional
 - Inspect cards (metadata, description, comments)
 - Edit card title inline and description in `$EDITOR`
 - Watch a single board live over the websocket
+- Copy the selected node's ID hierarchy to the system clipboard for handing off to an AI agent (`y` / `Y`)
 
 It is not a replacement for the web UI — drag-and-drop, permission management, attachments upload, and the like all still live in the browser. `plnk-tui` is for the read-heavy / quick-edit case.
 
@@ -58,7 +59,7 @@ Environment variables (clap honors them automatically):
 
 The TUI lands on the projects view with no live subscription active. Expand a project with `→` or `Enter`, pick a board, and either explore it read-only or press `L` to make it the live target — from that point on, edits on that board stream in. Press `L` again on the same board to unsubscribe and return to idle. Press `r` on the selected node when you want to refetch that slice of the hierarchy on demand, or `/` to filter the current explorer view client-side by substring or glob pattern.
 
-For the detailed live-sync model, see [live-target.md](live-target.md). For the full key map, see [keybindings.md](keybindings.md). For the tree view's data-model and rendering contract, see [tree-view.md](tree-view.md).
+For the detailed live-sync model, see [live-target.md](live-target.md). For the full key map, see [keybindings.md](keybindings.md). For the tree view's data-model and rendering contract, see [tree-view.md](tree-view.md). For the agent-handoff clipboard feature, see [fast-copy.md](fast-copy.md).
 
 ## Related
 

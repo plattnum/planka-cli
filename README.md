@@ -76,11 +76,11 @@ plnk-tui --server http://your-planka-host --username you
 # prompts for password
 ```
 
-Navigate projects → boards → lists → cards with `↑↓→Enter`. Press `L` on any board to promote it to the live target. Edit titles inline with `e` or descriptions in `$EDITOR` with `E`.
+Navigate projects → boards → lists → cards with `↑↓→Enter`. Press `L` on any board to promote it to the live target. Edit titles inline with `e` or descriptions in `$EDITOR` with `E`. Press `y` to copy the selected node's ID hierarchy as JSON to the clipboard (or `Y` for a paste-ready `plnk` snapshot command) — built for handing context off to an AI agent in one keystroke.
 
 Env pre-fills: `PLANKA_SERVER`, `PLANKA_USERNAME`, `PLANKA_PASSWORD`, `PLNK_TUI_BOARD`.
 
-Docs: [`docs/tui/`](docs/tui/) — [overview](docs/tui/overview.md) · [keybindings](docs/tui/keybindings.md) · [live-target model](docs/tui/live-target.md) · [tree view reference](docs/tui/tree-view.md).
+Docs: [`docs/tui/`](docs/tui/) — [overview](docs/tui/overview.md) · [keybindings](docs/tui/keybindings.md) · [live-target model](docs/tui/live-target.md) · [tree view reference](docs/tui/tree-view.md) · [fast copy](docs/tui/fast-copy.md).
 
 ## Architecture
 
