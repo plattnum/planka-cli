@@ -3,7 +3,7 @@ members = ["crates/plnk-core", "crates/plnk-cli", "crates/plnk-tui"]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 rust-version = "1.87"
 license = "MIT"
@@ -40,7 +40,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dirs = "6"
 
 # Internal
-plnk-core = { path = "crates/plnk-core", version = "0.1.2" }
+plnk-core = { path = "crates/plnk-core", version = "0.1.3" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
