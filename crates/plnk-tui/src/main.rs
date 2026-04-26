@@ -38,6 +38,53 @@ const SAILS_IO_SDK_VERSION: &str = "1.2.1";
 const SUBSCRIBE_ACK_ID: u64 = 1;
 const MIN_SAVE_FEEDBACK_DURATION: Duration = Duration::from_millis(900);
 
+const BASE64_TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+fn base64_encode(input: &[u8]) -> String {
+    let mut out = Vec::with_capacity(input.len().div_ceil(3) * 4);
+    let mut chunks = input.chunks_exact(3);
+    for chunk in chunks.by_ref() {
+        let b0 = chunk[0];
+        let b1 = chunk[1];
+        let b2 = chunk[2];
+        out.push(BASE64_TABLE[((b0 >> 2) & 0x3F) as usize]);
+        out.push(BASE64_TABLE[(((b0 << 4) | (b1 >> 4)) & 0x3F) as usize]);
+        out.push(BASE64_TABLE[(((b1 << 2) | (b2 >> 6)) & 0x3F) as usize]);
+        out.push(BASE64_TABLE[(b2 & 0x3F) as usize]);
+    }
+    let rem = chunks.remainder();
+    match rem.len() {
+        0 => {}
+        1 => {
+            let b0 = rem[0];
+            out.push(BASE64_TABLE[((b0 >> 2) & 0x3F) as usize]);
+            out.push(BASE64_TABLE[((b0 << 4) & 0x3F) as usize]);
+            out.push(b'=');
+            out.push(b'=');
+        }
+        2 => {
+            let b0 = rem[0];
+            let b1 = rem[1];
+            out.push(BASE64_TABLE[((b0 >> 2) & 0x3F) as usize]);
+            out.push(BASE64_TABLE[(((b0 << 4) | (b1 >> 4)) & 0x3F) as usize]);
+            out.push(BASE64_TABLE[((b1 << 2) & 0x3F) as usize]);
+            out.push(b'=');
+        }
+        _ => unreachable!(),
+    }
+    String::from_utf8(out).expect("base64 alphabet is ASCII")
+}
+
+fn write_osc52_clipboard(text: &str) -> io::Result<()> {
+    use std::io::Write;
+    let encoded = base64_encode(text.as_bytes());
+    let mut out = io::stdout().lock();
+    out.write_all(b"\x1b]52;c;")?;
+    out.write_all(encoded.as_bytes())?;
+    out.write_all(b"\x07")?;
+    out.flush()
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "plnk-tui",
@@ -447,6 +494,116 @@ struct ProjectTree {
     name: String,
     description: Option<String>,
     boards: Vec<BoardSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FastCopy {
+    breadcrumb: String,
+    json: String,
+    command: String,
+}
+
+fn fast_copy_for(projects: &[ProjectTree], selected: &TreeKey) -> Option<FastCopy> {
+    let target_card_id = match selected {
+        TreeKey::Card(id) | TreeKey::GroupedCard { card_id: id, .. } => Some(id.as_str()),
+        _ => None,
+    };
+    let target_list_id = match selected {
+        TreeKey::List(id) | TreeKey::LabelGroup { list_id: id, .. } => Some(id.as_str()),
+        _ => None,
+    };
+    let target_board_id = match selected {
+        TreeKey::Board(id) => Some(id.as_str()),
+        _ => None,
+    };
+    let target_project_id = match selected {
+        TreeKey::Project(id) => Some(id.as_str()),
+        _ => None,
+    };
+
+    for project in projects {
+        if Some(project.id.as_str()) == target_project_id {
+            return Some(build_payload(project, None, None, None));
+        }
+        for board in &project.boards {
+            if Some(board.id.as_str()) == target_board_id {
+                return Some(build_payload(project, Some(board), None, None));
+            }
+            for list in &board.active_lists {
+                if Some(list.id.as_str()) == target_list_id {
+                    return Some(build_payload(project, Some(board), Some(list), None));
+                }
+                if let Some(card_id) = target_card_id {
+                    if let Some(card) = list.cards.iter().find(|card| card.id == card_id) {
+                        return Some(build_payload(project, Some(board), Some(list), Some(card)));
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn build_payload(
+    project: &ProjectTree,
+    board: Option<&BoardSummary>,
+    list: Option<&ListSummary>,
+    card: Option<&CardSummary>,
+) -> FastCopy {
+    let mut breadcrumb_parts = vec![project.name.as_str()];
+    let mut json_text = format!(
+        r#"{{"project":{}"#,
+        id_name_object(&project.id, &project.name)
+    );
+
+    if let Some(board) = board {
+        breadcrumb_parts.push(&board.name);
+        json_text.push_str(r#","board":"#);
+        json_text.push_str(&id_name_object(&board.id, &board.name));
+    }
+    if let Some(list) = list {
+        breadcrumb_parts.push(&list.name);
+        json_text.push_str(r#","list":"#);
+        json_text.push_str(&id_name_object(&list.id, &list.name));
+    }
+    if let Some(card) = card {
+        breadcrumb_parts.push(&card.name);
+        json_text.push_str(r#","card":"#);
+        json_text.push_str(&id_name_object(&card.id, &card.name));
+    }
+    json_text.push('}');
+
+    let breadcrumb = breadcrumb_parts.join(" > ");
+
+    let snapshot_cmd = match (board, list, card) {
+        (_, _, Some(card)) => format!("plnk card snapshot {} --output json", card.id),
+        (_, Some(list), None) => format!("plnk list get {} --output json", list.id),
+        (Some(board), None, None) => format!("plnk board snapshot {} --output json", board.id),
+        (None, None, None) => format!("plnk project snapshot {} --output json", project.id),
+    };
+    // Names are user-controlled on the Planka server. A newline in a name would
+    // break out of the `#` comment line and put attacker-controlled text on its
+    // own line, which the user's shell would execute on paste. Strip control
+    // characters before embedding the breadcrumb in shell-pasted output.
+    let safe_breadcrumb = sanitize_shell_comment(&breadcrumb);
+    let command = format!("# {safe_breadcrumb}\n{snapshot_cmd}\n");
+
+    FastCopy {
+        breadcrumb,
+        json: json_text,
+        command,
+    }
+}
+
+fn id_name_object(id: &str, name: &str) -> String {
+    serde_json::to_string(&json!({ "id": id, "name": name }))
+        .expect("id/name object is JSON-serializable")
+}
+
+fn sanitize_shell_comment(text: &str) -> String {
+    text.chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .collect()
 }
 
 impl BoardSummary {
@@ -1593,6 +1750,10 @@ impl AppState {
             .iter()
             .flat_map(|project| project.boards.iter())
             .find(|board| board.id == board_id)
+    }
+
+    fn fast_copy(&self) -> Option<FastCopy> {
+        fast_copy_for(&self.projects, self.selected.as_ref()?)
     }
 
     fn card_list_id(&self, card_id: &str) -> Option<&str> {
@@ -4025,6 +4186,36 @@ fn run_app(
                         {
                             app.toggle_debug_log();
                         }
+                        KeyCode::Char('y') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            if let Some(payload) = app.fast_copy() {
+                                match write_osc52_clipboard(&payload.json) {
+                                    Ok(()) => app.set_notice(format!(
+                                        "Copied JSON → clipboard: {}",
+                                        payload.breadcrumb
+                                    )),
+                                    Err(err) => {
+                                        app.set_notice(format!("Copy failed: {err}"));
+                                    }
+                                }
+                            } else {
+                                app.set_notice("Select a node to copy its ID hierarchy.");
+                            }
+                        }
+                        KeyCode::Char('Y') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                            if let Some(payload) = app.fast_copy() {
+                                match write_osc52_clipboard(&payload.command) {
+                                    Ok(()) => app.set_notice(format!(
+                                        "Copied snapshot command → clipboard: {}",
+                                        payload.breadcrumb
+                                    )),
+                                    Err(err) => {
+                                        app.set_notice(format!("Copy failed: {err}"));
+                                    }
+                                }
+                            } else {
+                                app.set_notice("Select a node to copy its ID hierarchy.");
+                            }
+                        }
                         KeyCode::Down | KeyCode::Char('j') => match app.focus {
                             PaneFocus::Explorer if app.has_dirty_card_draft() => {
                                 app.set_notice(
@@ -4253,7 +4444,7 @@ fn draw(frame: &mut ratatui::Frame<'_>, app: &AppState) {
     } else if app.filter_editor.is_some() {
         "FILTER MODE: type text • * and ? globs • Enter keep • Esc clear/close • Ctrl-c force quit"
     } else {
-        "↑/↓ nav • / filter • →/Enter expand • r refresh • v toggle view • L live on/off • e edit title • E edit description ($EDITOR) • D debug log • Ctrl-c quit"
+        "↑/↓ nav • / filter • →/Enter expand • r refresh • v toggle view • L live on/off • e edit title • E edit description ($EDITOR) • y copy JSON • Y copy cmd • D debug log • Ctrl-c quit"
     };
     frame.render_widget(
         Paragraph::new(key_help).style(Style::default().fg(Color::DarkGray)),
@@ -5266,4 +5457,229 @@ fn centered_rect(width_percent: u16, height_percent: u16, area: Rect) -> Rect {
             Constraint::Percentage((100 - width_percent) / 2),
         ])
         .split(vertical[1])[1]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn base64_rfc4648_vectors() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
+        assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn base64_high_bits() {
+        assert_eq!(base64_encode(&[0xff, 0xff, 0xff]), "////");
+        assert_eq!(base64_encode(&[0x00, 0x00, 0x00]), "AAAA");
+    }
+
+    fn fixture_card() -> CardSummary {
+        CardSummary {
+            id: "card-1".into(),
+            name: "Fast COPY".into(),
+            description: None,
+            position: 0.0,
+            is_closed: false,
+            comments_total: 0,
+            due_date: None,
+            creator: None,
+            labels: vec![],
+            assignees: vec![],
+            attachments: vec![],
+            task_lists: vec![],
+            is_subscribed: false,
+        }
+    }
+
+    fn fixture_list(cards: Vec<CardSummary>) -> ListSummary {
+        ListSummary {
+            id: "list-1".into(),
+            name: "Backlog".into(),
+            position: 0.0,
+            card_count: cards.len(),
+            active_card_count: cards.len(),
+            closed_card_count: 0,
+            cards,
+        }
+    }
+
+    fn fixture_board(lists: Vec<ListSummary>) -> BoardSummary {
+        BoardSummary {
+            id: "board-1".into(),
+            name: "Work".into(),
+            project_id: "proj-1".into(),
+            position: 0.0,
+            total_cards: 0,
+            active_card_count: 0,
+            closed_card_count: 0,
+            active_lists: lists,
+            labels: vec![],
+            members: vec![],
+        }
+    }
+
+    fn fixture_project(boards: Vec<BoardSummary>) -> ProjectTree {
+        ProjectTree {
+            id: "proj-1".into(),
+            name: "planka-cli".into(),
+            description: None,
+            boards,
+        }
+    }
+
+    fn fixture_tree() -> Vec<ProjectTree> {
+        vec![fixture_project(vec![fixture_board(vec![fixture_list(
+            vec![fixture_card()],
+        )])])]
+    }
+
+    #[test]
+    fn fast_copy_card() {
+        let projects = fixture_tree();
+        let payload = fast_copy_for(&projects, &TreeKey::Card("card-1".into())).unwrap();
+        assert_eq!(
+            payload.breadcrumb,
+            "planka-cli > Work > Backlog > Fast COPY"
+        );
+        assert_eq!(
+            payload.json,
+            r#"{"project":{"id":"proj-1","name":"planka-cli"},"board":{"id":"board-1","name":"Work"},"list":{"id":"list-1","name":"Backlog"},"card":{"id":"card-1","name":"Fast COPY"}}"#
+        );
+        assert_eq!(
+            payload.command,
+            "# planka-cli > Work > Backlog > Fast COPY\nplnk card snapshot card-1 --output json\n"
+        );
+    }
+
+    #[test]
+    fn fast_copy_list() {
+        let projects = fixture_tree();
+        let payload = fast_copy_for(&projects, &TreeKey::List("list-1".into())).unwrap();
+        assert_eq!(payload.breadcrumb, "planka-cli > Work > Backlog");
+        assert_eq!(
+            payload.json,
+            r#"{"project":{"id":"proj-1","name":"planka-cli"},"board":{"id":"board-1","name":"Work"},"list":{"id":"list-1","name":"Backlog"}}"#
+        );
+        assert_eq!(
+            payload.command,
+            "# planka-cli > Work > Backlog\nplnk list get list-1 --output json\n"
+        );
+    }
+
+    #[test]
+    fn fast_copy_board() {
+        let projects = fixture_tree();
+        let payload = fast_copy_for(&projects, &TreeKey::Board("board-1".into())).unwrap();
+        assert_eq!(payload.breadcrumb, "planka-cli > Work");
+        assert_eq!(
+            payload.command,
+            "# planka-cli > Work\nplnk board snapshot board-1 --output json\n"
+        );
+    }
+
+    #[test]
+    fn fast_copy_project() {
+        let projects = fixture_tree();
+        let payload = fast_copy_for(&projects, &TreeKey::Project("proj-1".into())).unwrap();
+        assert_eq!(payload.breadcrumb, "planka-cli");
+        assert_eq!(
+            payload.command,
+            "# planka-cli\nplnk project snapshot proj-1 --output json\n"
+        );
+    }
+
+    #[test]
+    fn fast_copy_grouped_card_resolves() {
+        let projects = fixture_tree();
+        let payload = fast_copy_for(
+            &projects,
+            &TreeKey::GroupedCard {
+                group_key: "any".into(),
+                card_id: "card-1".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            payload.breadcrumb,
+            "planka-cli > Work > Backlog > Fast COPY"
+        );
+    }
+
+    #[test]
+    fn fast_copy_label_group_resolves_to_list() {
+        let projects = fixture_tree();
+        let payload = fast_copy_for(
+            &projects,
+            &TreeKey::LabelGroup {
+                board_id: "board-1".into(),
+                list_id: "list-1".into(),
+                label_id: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(payload.breadcrumb, "planka-cli > Work > Backlog");
+    }
+
+    #[test]
+    fn fast_copy_unknown_returns_none() {
+        let projects = fixture_tree();
+        assert!(fast_copy_for(&projects, &TreeKey::Card("missing".into())).is_none());
+    }
+
+    #[test]
+    fn fast_copy_escapes_special_chars_in_json() {
+        let mut projects = fixture_tree();
+        projects[0].boards[0].active_lists[0].cards[0].name = "weird \"name\" \\ \n".into();
+        let payload = fast_copy_for(&projects, &TreeKey::Card("card-1".into())).unwrap();
+        assert!(payload.json.contains(r#""name":"weird \"name\" \\ \n""#));
+    }
+
+    #[test]
+    fn fast_copy_command_blocks_newline_breakout_in_name() {
+        let mut projects = fixture_tree();
+        projects[0].boards[0].active_lists[0].cards[0].name = "evil\nrm -rf ~".into();
+        let payload = fast_copy_for(&projects, &TreeKey::Card("card-1".into())).unwrap();
+
+        let lines: Vec<&str> = payload.command.lines().collect();
+        assert_eq!(
+            lines.len(),
+            2,
+            "exactly 2 lines (1 comment + 1 plnk command); attacker name produced extra line: {:?}",
+            payload.command
+        );
+        assert!(lines[0].starts_with("# "));
+        assert!(lines[0].contains("evil rm -rf ~"));
+        assert!(lines[1].starts_with("plnk card snapshot"));
+    }
+
+    #[test]
+    fn fast_copy_command_strips_cr_and_escape_sequences() {
+        let mut projects = fixture_tree();
+        projects[0].boards[0].active_lists[0].cards[0].name = "a\rb\x1b[2Jc".into();
+        let payload = fast_copy_for(&projects, &TreeKey::Card("card-1".into())).unwrap();
+
+        let comment_line = payload.command.lines().next().unwrap();
+        assert!(!comment_line.contains('\r'));
+        assert!(!comment_line.contains('\x1b'));
+        assert!(!comment_line.contains('\x00'));
+    }
+
+    #[test]
+    fn fast_copy_command_replaces_controls_with_space() {
+        let mut projects = fixture_tree();
+        projects[0].boards[0].active_lists[0].cards[0].name = "a\nb".into();
+        let payload = fast_copy_for(&projects, &TreeKey::Card("card-1".into())).unwrap();
+        assert!(
+            payload.command.contains("> a b\n"),
+            "expected control char replaced with space, got: {:?}",
+            payload.command
+        );
+    }
 }

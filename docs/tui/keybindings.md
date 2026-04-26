@@ -8,6 +8,8 @@ A flat reference. The footer at the bottom of the TUI shows a short subset of th
 |-----|--------|
 | `Ctrl-c` | Quit immediately. Works in every mode, including while saving. |
 | `Tab` | Cycle focus between the explorer pane and the details pane. |
+| `y` | Copy the selected node's hierarchy as compact JSON to the system clipboard via OSC 52. See [fast-copy.md](fast-copy.md). |
+| `Y` | Copy the selected node's hierarchy as a paste-ready `plnk` snapshot command (with breadcrumb comment) to the system clipboard. |
 | `D` | Toggle the websocket debug log overlay. |
 
 ## Explorer pane
