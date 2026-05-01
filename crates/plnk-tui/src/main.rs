@@ -523,19 +523,40 @@ fn fast_copy_for(projects: &[ProjectTree], selected: &TreeKey) -> Option<FastCop
 
     for project in projects {
         if Some(project.id.as_str()) == target_project_id {
-            return Some(build_payload(project, None, None, None));
+            return Some(build_payload(project, None, None, None, None));
         }
         for board in &project.boards {
             if Some(board.id.as_str()) == target_board_id {
-                return Some(build_payload(project, Some(board), None, None));
+                return Some(build_payload(project, Some(board), None, None, None));
             }
             for list in &board.active_lists {
                 if Some(list.id.as_str()) == target_list_id {
-                    return Some(build_payload(project, Some(board), Some(list), None));
+                    if let TreeKey::LabelGroup {
+                        label_id: Some(label_id),
+                        ..
+                    } = selected
+                    {
+                        if let Some(label) = board.labels.iter().find(|l| l.id == *label_id) {
+                            return Some(build_payload(
+                                project,
+                                Some(board),
+                                Some(list),
+                                None,
+                                Some(label),
+                            ));
+                        }
+                    }
+                    return Some(build_payload(project, Some(board), Some(list), None, None));
                 }
                 if let Some(card_id) = target_card_id {
                     if let Some(card) = list.cards.iter().find(|card| card.id == card_id) {
-                        return Some(build_payload(project, Some(board), Some(list), Some(card)));
+                        return Some(build_payload(
+                            project,
+                            Some(board),
+                            Some(list),
+                            Some(card),
+                            None,
+                        ));
                     }
                 }
             }
@@ -549,6 +570,7 @@ fn build_payload(
     board: Option<&BoardSummary>,
     list: Option<&ListSummary>,
     card: Option<&CardSummary>,
+    label: Option<&LabelSummary>,
 ) -> FastCopy {
     let mut breadcrumb_parts = vec![project.name.as_str()];
     let mut json_text = format!(
@@ -566,6 +588,11 @@ fn build_payload(
         json_text.push_str(r#","list":"#);
         json_text.push_str(&id_name_object(&list.id, &list.name));
     }
+    if let Some(label) = label {
+        breadcrumb_parts.push(&label.name);
+        json_text.push_str(r#","label":"#);
+        json_text.push_str(&id_name_object(&label.id, &label.name));
+    }
     if let Some(card) = card {
         breadcrumb_parts.push(&card.name);
         json_text.push_str(r#","card":"#);
@@ -575,11 +602,15 @@ fn build_payload(
 
     let breadcrumb = breadcrumb_parts.join(" > ");
 
-    let snapshot_cmd = match (board, list, card) {
-        (_, _, Some(card)) => format!("plnk card snapshot {} --output json", card.id),
-        (_, Some(list), None) => format!("plnk list get {} --output json", list.id),
-        (Some(board), None, None) => format!("plnk board snapshot {} --output json", board.id),
-        (None, None, None) => format!("plnk project snapshot {} --output json", project.id),
+    let snapshot_cmd = match (board, list, card, label) {
+        (_, _, Some(card), _) => format!("plnk card snapshot {} --output json", card.id),
+        (_, Some(list), None, Some(label)) => format!(
+            "plnk card find --list {} --label {} --output json",
+            list.id, label.id,
+        ),
+        (_, Some(list), None, None) => format!("plnk list get {} --output json", list.id),
+        (Some(board), None, None, _) => format!("plnk board snapshot {} --output json", board.id),
+        (None, None, None, _) => format!("plnk project snapshot {} --output json", project.id),
     };
     // Names are user-controlled on the Planka server. A newline in a name would
     // break out of the `#` comment line and put attacker-controlled text on its
@@ -5510,6 +5541,32 @@ mod tests {
         }
     }
 
+    fn fixture_label() -> LabelSummary {
+        LabelSummary {
+            id: "label-1".into(),
+            name: "urgent".into(),
+            color: Some("#ff0000".into()),
+        }
+    }
+
+    fn fixture_card_with_label(label: &LabelSummary) -> CardSummary {
+        CardSummary {
+            id: "card-1".into(),
+            name: "Fast COPY".into(),
+            description: None,
+            position: 0.0,
+            is_closed: false,
+            comments_total: 0,
+            due_date: None,
+            creator: None,
+            labels: vec![label.clone()],
+            assignees: vec![],
+            attachments: vec![],
+            task_lists: vec![],
+            is_subscribed: false,
+        }
+    }
+
     fn fixture_board(lists: Vec<ListSummary>) -> BoardSummary {
         BoardSummary {
             id: "board-1".into(),
@@ -5521,6 +5578,24 @@ mod tests {
             closed_card_count: 0,
             active_lists: lists,
             labels: vec![],
+            members: vec![],
+        }
+    }
+
+    fn fixture_board_with_labels(
+        lists: Vec<ListSummary>,
+        labels: Vec<LabelSummary>,
+    ) -> BoardSummary {
+        BoardSummary {
+            id: "board-1".into(),
+            name: "Work".into(),
+            project_id: "proj-1".into(),
+            position: 0.0,
+            total_cards: 0,
+            active_card_count: 0,
+            closed_card_count: 0,
+            active_lists: lists,
+            labels,
             members: vec![],
         }
     }
@@ -5538,6 +5613,14 @@ mod tests {
         vec![fixture_project(vec![fixture_board(vec![fixture_list(
             vec![fixture_card()],
         )])])]
+    }
+
+    fn fixture_tree_with_label() -> Vec<ProjectTree> {
+        let label = fixture_label();
+        let card = fixture_card_with_label(&label);
+        let list = fixture_list(vec![card]);
+        let board = fixture_board_with_labels(vec![list], vec![label]);
+        vec![fixture_project(vec![board])]
     }
 
     #[test]
@@ -5613,7 +5696,7 @@ mod tests {
     }
 
     #[test]
-    fn fast_copy_label_group_resolves_to_list() {
+    fn fast_copy_label_group_unlabeled_resolves_to_list() {
         let projects = fixture_tree();
         let payload = fast_copy_for(
             &projects,
@@ -5625,6 +5708,37 @@ mod tests {
         )
         .unwrap();
         assert_eq!(payload.breadcrumb, "planka-cli > Work > Backlog");
+        assert_eq!(
+            payload.json,
+            r#"{"project":{"id":"proj-1","name":"planka-cli"},"board":{"id":"board-1","name":"Work"},"list":{"id":"list-1","name":"Backlog"}}"#
+        );
+        assert_eq!(
+            payload.command,
+            "# planka-cli > Work > Backlog\nplnk list get list-1 --output json\n"
+        );
+    }
+
+    #[test]
+    fn fast_copy_label_group_with_label_includes_label() {
+        let projects = fixture_tree_with_label();
+        let payload = fast_copy_for(
+            &projects,
+            &TreeKey::LabelGroup {
+                board_id: "board-1".into(),
+                list_id: "list-1".into(),
+                label_id: Some("label-1".into()),
+            },
+        )
+        .unwrap();
+        assert_eq!(payload.breadcrumb, "planka-cli > Work > Backlog > urgent");
+        assert_eq!(
+            payload.json,
+            r#"{"project":{"id":"proj-1","name":"planka-cli"},"board":{"id":"board-1","name":"Work"},"list":{"id":"list-1","name":"Backlog"},"label":{"id":"label-1","name":"urgent"}}"#
+        );
+        assert_eq!(
+            payload.command,
+            "# planka-cli > Work > Backlog > urgent\nplnk card find --list list-1 --label label-1 --output json\n"
+        );
     }
 
     #[test]
