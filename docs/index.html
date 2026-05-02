@@ -552,19 +552,24 @@
 <section class="install" id="install">
     <div class="container">
         <h2>Install</h2>
-        <p class="sub">Build from source today. Prebuilt binaries are on the roadmap.</p>
+        <p class="sub">Prebuilt binaries for macOS, Linux, and Windows ship on every <a href="https://github.com/plattnum/planka-cli/releases/latest">release</a>, or build from source with cargo.</p>
         <div class="code-block">
-            <span class="comment"># CLI</span><br>
-            cargo install --git https://github.com/plattnum/planka-cli plnk-cli
+            <span class="comment"># CLI &mdash; latest prebuilt binary</span><br>
+            curl --proto '=https' --tlsv1.2 -LsSf https://github.com/plattnum/planka-cli/releases/latest/download/plnk-cli-installer.sh | sh
         </div>
         <div class="code-block">
-            <span class="comment"># TUI</span><br>
+            <span class="comment"># TUI &mdash; latest prebuilt binary</span><br>
+            curl --proto '=https' --tlsv1.2 -LsSf https://github.com/plattnum/planka-cli/releases/latest/download/plnk-tui-installer.sh | sh
+        </div>
+        <div class="code-block">
+            <span class="comment"># Or build from source (requires Rust 1.87+)</span><br>
+            cargo install --git https://github.com/plattnum/planka-cli plnk-cli<br>
             cargo install --git https://github.com/plattnum/planka-cli plnk-tui
         </div>
         <p class="note">
-            Requires a Rust toolchain (1.87+). Tested against self-hosted <a href="https://planka.app">Planka</a>.
-            Release binaries with a <code style="color:var(--success)">curl | sh</code> installer are tracked on the
-            <a href="https://github.com/plattnum/planka-cli/issues">roadmap</a>.
+            Tested against self-hosted <a href="https://planka.app">Planka</a>. Each release also publishes
+            per-platform tarballs/zips with SHA-256 checksums on the
+            <a href="https://github.com/plattnum/planka-cli/releases/latest">releases page</a>.
         </p>
     </div>
 </section>

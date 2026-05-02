@@ -26,9 +26,13 @@ They keep auth separate by default: `plnk` is automation/AI-oriented, while `pln
 
 ## Install
 
-Requires Rust 1.87+. Prebuilt binaries are on the roadmap.
+Prebuilt binaries for macOS (Apple Silicon + Intel), Linux (arm64 + x64), and Windows (x64) ship on every [GitHub Release](https://github.com/plattnum/planka-cli/releases/latest), with shell installers and SHA-256 checksums. Building from source requires Rust 1.87+.
 
 ```bash
+# Easiest — shell installer pulls the latest prebuilt binary
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/plattnum/planka-cli/releases/latest/download/plnk-cli-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/plattnum/planka-cli/releases/latest/download/plnk-tui-installer.sh | sh
+
 # From a checkout
 cargo install --path crates/plnk-cli --force
 cargo install --path crates/plnk-tui --force
