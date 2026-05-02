@@ -525,7 +525,7 @@
                 <h3>plnk-tui</h3>
                 <div class="role">Terminal explorer</div>
                 <p>Live tree explorer for projects, boards, lists, and cards. Single-board websocket subscription for real-time updates. Edit titles inline, descriptions in <code style="display:inline;padding:0;background:none;border:none;color:var(--purple)">$EDITOR</code>.</p>
-                <code>plnk-tui --server $PLANKA_SERVER --username you</code>
+                <code>plnk-tui  # prompts for server, username, password on first run</code>
             </div>
         </div>
     </div>
@@ -533,15 +533,15 @@
 
 <section class="whats-new" id="whats-new">
     <div class="container">
-        <h2>What&rsquo;s new<span class="version-pill">v0.1.3</span></h2>
-        <p class="sub">Released 2026-04-26.</p>
+        <h2>What&rsquo;s new<span class="version-pill">v0.2.0</span></h2>
+        <p class="sub">Released 2026-05-02.</p>
         <div class="whats-new-card">
-            <h3>plnk-tui &mdash; fast copy</h3>
-            <p>Press <kbd>y</kbd> on any selected node to copy its full ID hierarchy to your system clipboard as compact JSON. Press <kbd>Y</kbd> for a paste-ready <code>plnk &lt;resource&gt; snapshot --output json</code> command with a breadcrumb comment. Built for handing context off to an AI agent in one keystroke &mdash; works locally, in tmux, and over SSH via OSC 52 with no native clipboard dependency.</p>
+            <h3>plnk-tui &mdash; standalone auth + first-run prompts</h3>
+            <p><strong>Breaking change.</strong> The TUI no longer shares <code>plnk</code>'s config or environment variables. Launch <code>plnk-tui</code> with no flags and it prompts for server, username, and password on first run, then offers to save the non-secret server + username to <code>~/.config/plnk-tui/config.toml</code>. Passwords are never persisted. The TUI's environment variables were renamed from <code>PLANKA_*</code> to <code>PLNK_TUI_*</code>; <code>plnk</code>'s own <code>PLANKA_SERVER</code> / <code>PLANKA_TOKEN</code> are unchanged. Rationale: <code>plnk</code> is automation/AI/API-token oriented, while <code>plnk-tui</code> is for an interactive human session &mdash; sharing one credential store for two very different access patterns was a footgun.</p>
             <p class="meta">
-                <a href="https://github.com/plattnum/planka-cli/releases/tag/v0.1.3">Release notes &rarr;</a>
+                <a href="https://github.com/plattnum/planka-cli/releases/tag/v0.2.0">Release notes &rarr;</a>
                 &nbsp;&middot;&nbsp;
-                <a href="https://github.com/plattnum/planka-cli/blob/main/docs/tui/fast-copy.md">Feature docs &rarr;</a>
+                <a href="https://github.com/plattnum/planka-cli/blob/main/docs/tui/overview.md">TUI overview &amp; migration &rarr;</a>
                 &nbsp;&middot;&nbsp;
                 <a href="https://github.com/plattnum/planka-cli/blob/main/CHANGELOG.md">Changelog</a>
             </p>
@@ -665,7 +665,7 @@
             It exposes <a href="https://planka.app">Planka</a> as a disciplined CLI and SDK &mdash; tight grammar, typed exit codes, structured output, strict hierarchy, machine-readable help. Give an agent a rigid surface, and it stays on the rails.
         </p>
         <p>
-            <em>plnk-tui</em> started as an experiment &mdash; a live terminal explorer for the same hierarchy, sharing <em>plnk</em>'s config and auth. It's fit into my terminal-driven workflow better than I expected, so I'll keep expanding it.
+            <em>plnk-tui</em> started as an experiment &mdash; a live terminal explorer for the same hierarchy, with its own human-oriented login flow distinct from <em>plnk</em>'s automation/API-token config. It's fit into my terminal-driven workflow better than I expected, so I'll keep expanding it.
         </p>
     </div>
 </section>
