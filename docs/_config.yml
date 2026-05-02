@@ -1,0 +1,14 @@
+title: plnk
+description: A deterministic, scriptable, hierarchy-aware CLI and SDK for Planka kanban project management.
+url: https://plattnum.github.io
+baseurl: /planka-cli
+
+# Only render files that explicitly opt in via YAML frontmatter.
+# Existing .md files without frontmatter (docs/cli/*, docs/tui/*) stay
+# served as raw markdown — same URLs as before, no breakage.
+markdown: kramdown
+kramdown:
+  syntax_highlighter: rouge
+
+exclude:
+  - README.md

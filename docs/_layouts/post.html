@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page.title }} &mdash; plnk</title>
+    <meta name="description" content="{{ page.description | default: site.description }}">
+    <meta name="author" content="plattnum">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="{{ page.title }}">
+    <meta property="og:description" content="{{ page.description | default: site.description }}">
+    <meta property="og:image" content="https://raw.githubusercontent.com/plattnum/planka-cli/main/docs/images/hero.png">
+    <meta property="og:url" content="{{ site.url }}{{ site.baseurl }}{{ page.url }}">
+    <meta property="og:type" content="article">
+
+    <link rel="icon" type="image/png" href="{{ site.baseurl }}/images/logo.png">
+
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --border: #30363d;
+            --fg: #e6edf3;
+            --muted: #8b949e;
+            --accent: #2bd9d9;
+            --accent-dim: #1aa5a5;
+            --accent-glow: rgba(43, 217, 217, 0.12);
+            --purple: #bc8cff;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.7;
+        }
+
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .container { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+
+        nav {
+            padding: 16px 0;
+            border-bottom: 1px solid var(--border);
+            position: sticky; top: 0;
+            background: rgba(13, 17, 23, 0.92);
+            backdrop-filter: blur(8px);
+            z-index: 10;
+        }
+        nav .container { display: flex; justify-content: space-between; align-items: center; }
+        nav .logo {
+            display: flex; align-items: center; gap: 10px;
+            font-size: 1.2rem; font-weight: 700; color: var(--fg);
+            font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, monospace;
+        }
+        nav .logo img { width: 28px; height: 28px; }
+        nav .logo span { color: var(--accent); }
+        nav .links { display: flex; gap: 24px; flex-wrap: wrap; }
+        nav .links a { color: var(--muted); font-size: 0.9rem; }
+        nav .links a:hover { color: var(--fg); text-decoration: none; }
+
+        article {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 56px 24px 80px;
+        }
+        article .meta {
+            color: var(--muted);
+            font-size: 0.85rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+        article h1 {
+            font-size: 2.4rem; font-weight: 800;
+            letter-spacing: -0.02em; line-height: 1.2;
+            margin-bottom: 32px;
+        }
+        article h2 {
+            font-size: 1.55rem; font-weight: 700;
+            margin: 48px 0 16px; letter-spacing: -0.01em;
+        }
+        article h3 {
+            font-size: 1.2rem; font-weight: 700;
+            margin: 32px 0 12px;
+        }
+        article p { margin: 0 0 18px; }
+        article ul { margin: 0 0 18px 24px; }
+        article li { margin-bottom: 6px; }
+
+        article blockquote {
+            border-left: 3px solid var(--accent-dim);
+            background: var(--accent-glow);
+            padding: 12px 18px; margin: 18px 0;
+            border-radius: 0 6px 6px 0;
+        }
+        article blockquote p:last-child { margin-bottom: 0; }
+
+        article code {
+            font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, monospace;
+            font-size: 0.92em;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1px 6px;
+            color: var(--fg);
+        }
+        article pre {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px 18px;
+            margin: 18px 0;
+            overflow-x: auto;
+            line-height: 1.55;
+        }
+        article pre code {
+            background: none; border: none; padding: 0;
+            font-size: 0.9rem;
+        }
+
+        article hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 40px 0;
+        }
+
+        article em { color: var(--muted); }
+
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 32px 0; margin-top: 48px;
+            color: var(--muted); font-size: 0.9rem;
+        }
+        footer .container {
+            display: flex; flex-direction: column;
+            align-items: center; gap: 12px; text-align: center;
+        }
+        footer .links { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+        footer .links a { color: var(--muted); }
+        footer .links a:hover { color: var(--accent); text-decoration: none; }
+
+        @media (max-width: 640px) {
+            article h1 { font-size: 1.9rem; }
+            article h2 { font-size: 1.3rem; }
+            article { padding: 32px 20px 56px; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <div class="container">
+        <a href="{{ site.baseurl }}/" class="logo" style="text-decoration: none;">
+            <img src="{{ site.baseurl }}/images/logo.png" alt="plnk logo">
+            <span>plnk</span>_
+        </a>
+        <div class="links">
+            <a href="{{ site.baseurl }}/#install">Install</a>
+            <a href="{{ site.baseurl }}/#tools">Tools</a>
+            <a href="{{ site.baseurl }}/#how">Quickstart</a>
+            <a href="https://github.com/plattnum/planka-cli">GitHub</a>
+            <a href="https://www.buymeacoffee.com/plattnum">Support</a>
+        </div>
+    </div>
+</nav>
+
+<article>
+    <div class="meta">{% if page.date %}{{ page.date | date: "%B %-d, %Y" }} &middot; {% endif %}Blog</div>
+    {{ content }}
+</article>
+
+<footer>
+    <div class="container">
+        <div class="links">
+            <a href="{{ site.baseurl }}/">Home</a>
+            <a href="https://github.com/plattnum/planka-cli">GitHub</a>
+            <a href="https://github.com/plattnum/planka-cli/releases">Releases</a>
+            <a href="https://www.buymeacoffee.com/plattnum">Buy Me a Coffee</a>
+        </div>
+        <p>MIT License &middot; Made by <a href="https://github.com/plattnum">plattnum</a></p>
+    </div>
+</footer>
+
+</body>
+</html>
