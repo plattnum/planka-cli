@@ -22,7 +22,7 @@ A deterministic, scriptable, hierarchy-aware CLI and SDK for [Planka](https://pl
 | [`plnk`](#plnk-cli) | Scriptable CLI for automation, CI/CD, and AI workflows |
 | [`plnk-tui`](#plnk-tui) | Live terminal explorer with real-time websocket sync |
 
-Both share config and auth — run `plnk init` once and both binaries are ready. Landing page at [plattnum.github.io/planka-cli](https://plattnum.github.io/planka-cli).
+They keep auth separate by default: `plnk` is automation/AI-oriented, while `plnk-tui` has its own human login config. Landing page at [plattnum.github.io/planka-cli](https://plattnum.github.io/planka-cli).
 
 ## Install
 
@@ -41,10 +41,10 @@ cargo install --git https://github.com/plattnum/planka-cli plnk-tui
 ## Quickstart
 
 ```bash
-plnk init                 # interactive: server URL + API token
-plnk auth status          # verify credentials resolve
-plnk project list         # start driving Planka
-plnk-tui                  # launch the TUI explorer
+plnk init                 # optional: configure CLI/automation credentials
+plnk auth status          # verify CLI credentials resolve
+plnk project list         # start driving Planka from scripts/agents
+plnk-tui                  # launch the human TUI; prompts on first run
 ```
 
 Walkthrough: [`docs/cli/examples.md`](docs/cli/examples.md).
@@ -72,13 +72,16 @@ Reference docs, one per resource:
 A terminal-native explorer for the same hierarchy. Single-board websocket subscription means edits from the browser appear in your terminal in near real time.
 
 ```bash
-plnk-tui --server http://your-planka-host --username you
-# prompts for password
+plnk-tui
+# first run prompts for server, username, and password
+# then offers to save server + username for next time
 ```
 
 Navigate projects → boards → lists → cards with `↑↓→Enter`. Press `L` on any board to promote it to the live target. Edit titles inline with `e` or descriptions in `$EDITOR` with `E`. Press `y` to copy the selected node's ID hierarchy as JSON to the clipboard (or `Y` for a paste-ready `plnk` snapshot command) — built for handing context off to an AI agent in one keystroke.
 
-Env pre-fills: `PLANKA_SERVER`, `PLANKA_USERNAME`, `PLANKA_PASSWORD`, `PLNK_TUI_BOARD`.
+Env pre-fills: `PLNK_TUI_SERVER`, `PLNK_TUI_USERNAME`, `PLNK_TUI_PASSWORD`, `PLNK_TUI_BOARD`.
+
+> **Upgrading from 0.1.3?** These vars were `PLANKA_*` before, and the TUI used to share `plnk`'s `~/.config/plnk/config.toml`. Both are now separate — `plnk-tui` has its own `~/.config/plnk-tui/config.toml` and reads `PLNK_TUI_*` env vars only. The CLI's `PLANKA_SERVER` / `PLANKA_TOKEN` are unaffected. See [CHANGELOG.md](CHANGELOG.md) for the full migration note.
 
 Docs: [`docs/tui/`](docs/tui/) — [overview](docs/tui/overview.md) · [keybindings](docs/tui/keybindings.md) · [live-target model](docs/tui/live-target.md) · [tree view reference](docs/tui/tree-view.md) · [fast copy](docs/tui/fast-copy.md).
 

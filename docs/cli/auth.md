@@ -1,6 +1,6 @@
 # Authentication
 
-`plnk` and `plnk-tui` share the same auth config. Running `plnk init` once and both binaries are ready.
+`plnk` stores automation/AI-oriented CLI credentials separately from `plnk-tui`'s human login hints. Running `plnk init` configures the CLI only; `plnk-tui` has its own first-run prompt and config.
 
 ## Precedence
 
@@ -14,7 +14,7 @@ Credentials are resolved in this order — first match wins:
 
 The config file location honors `XDG_CONFIG_HOME` on every OS and can be overridden with `PLANKA_CONFIG=<path>`. On Unix, the file is written with `0600` permissions.
 
-Planka uses an `X-API-Key` header under the hood — not `Bearer`, not `Authorization`.
+Planka uses an `X-API-Key` header under the hood for `plnk` API-token calls — not `Bearer`, not `Authorization`.
 
 ## Interactive bootstrap
 
@@ -58,3 +58,7 @@ plnk auth logout                    # delete stored credentials
 ```
 
 `status` always exits `0` (informational). `whoami` exits `3` on auth failure, making it useful for scripts that need to verify credentials before proceeding.
+
+## `plnk-tui` auth is separate
+
+`plnk-tui` is for an interactive human session and does not implicitly read this CLI config. On first run it prompts for server, username, and password, then can save only the non-secret server + username to `~/.config/plnk-tui/config.toml`. It never saves the password.

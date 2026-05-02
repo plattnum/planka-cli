@@ -30,7 +30,7 @@ Status flows `Idle | Live → Connecting → Live` when subscribing, and `Live |
 Pass `--board <id>` (or set `PLNK_TUI_BOARD`) at startup. The listener spawns immediately and status begins at `loading` → `connecting` → `live`, bypassing the idle-on-startup path.
 
 ```bash
-plnk-tui --server http://host --username me --board 1755733092435231757
+plnk-tui --board 1755733092435231757
 ```
 
 This mode is the historical default, preserved for scripts and power users who already know which board they care about.

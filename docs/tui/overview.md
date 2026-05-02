@@ -33,27 +33,31 @@ cargo install --git https://github.com/plattnum/planka-cli plnk-tui
 ### Build-only (dev)
 
 ```bash
-cargo run -p plnk-tui -- --server http://your-planka-host --username you
+cargo run -p plnk-tui
 ```
 
 ## Run
 
-Minimum flags:
+Launch:
 
 ```bash
-plnk-tui --server http://your-planka-host --username you
+plnk-tui
 ```
 
-You will be prompted for a password. The TUI authenticates over the REST API (same endpoint as `plnk auth login`) and then opens the explorer.
+On first run, the TUI prompts for server, username/email, and password. After successful login, it offers to save only server + username to `~/.config/plnk-tui/config.toml` so later launches only need the password. Passwords are never saved.
 
 Environment variables (clap honors them automatically):
 
 | Env var | What it fills |
 |---------|---------------|
-| `PLANKA_SERVER` | `--server` |
-| `PLANKA_USERNAME` | `--username` |
-| `PLANKA_PASSWORD` | `--password` (skip the prompt) |
+| `PLNK_TUI_SERVER` | `--server` |
+| `PLNK_TUI_USERNAME` | `--username` |
+| `PLNK_TUI_PASSWORD` | `--password` (skip the prompt) |
 | `PLNK_TUI_BOARD` | `--board` (optional, see [live-target.md](live-target.md)) |
+
+The TUI config is intentionally separate from `plnk`'s `~/.config/plnk/config.toml`, which is aimed at automation/AI/API-token use cases.
+
+> **Breaking change since 0.1.3.** The TUI used to read `PLANKA_SERVER` / `PLANKA_USERNAME` / `PLANKA_PASSWORD` and share `plnk`'s config file. It no longer does either. If you're upgrading, rename your env vars to `PLNK_TUI_*` or accept the first-run save prompt. The `PLANKA_SERVER` / `PLANKA_TOKEN` vars consumed by the `plnk` CLI itself are unchanged. See [CHANGELOG.md](../../CHANGELOG.md) for details.
 
 ## First-run experience
 

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
-use std::io;
+use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -76,7 +76,6 @@ fn base64_encode(input: &[u8]) -> String {
 }
 
 fn write_osc52_clipboard(text: &str) -> io::Result<()> {
-    use std::io::Write;
     let encoded = base64_encode(text.as_bytes());
     let mut out = io::stdout().lock();
     out.write_all(b"\x1b]52;c;")?;
@@ -93,15 +92,15 @@ fn write_osc52_clipboard(text: &str) -> io::Result<()> {
 )]
 struct Args {
     /// Planka server URL
-    #[arg(long, env = "PLANKA_SERVER")]
+    #[arg(long, env = "PLNK_TUI_SERVER")]
     server: Option<String>,
 
     /// Username or email for interactive login
-    #[arg(long, env = "PLANKA_USERNAME")]
+    #[arg(long, env = "PLNK_TUI_USERNAME")]
     username: Option<String>,
 
     /// Password for interactive login (omit to prompt securely)
-    #[arg(long, env = "PLANKA_PASSWORD")]
+    #[arg(long, env = "PLNK_TUI_PASSWORD")]
     password: Option<String>,
 
     /// Board ID to subscribe to for live updates at startup. Optional —
@@ -120,11 +119,79 @@ struct Args {
     headless_timeout_secs: u64,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+struct TuiConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    server: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    username: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    board: Option<String>,
+}
+
+fn tui_config_path() -> PathBuf {
+    resolve_tui_config_path(
+        env::var("XDG_CONFIG_HOME").ok().as_deref(),
+        dirs::home_dir().as_deref(),
+    )
+}
+
+fn resolve_tui_config_path(xdg_config_home: Option<&str>, home: Option<&Path>) -> PathBuf {
+    let base = xdg_config_home.filter(|s| !s.is_empty()).map_or_else(
+        || {
+            home.map_or_else(|| PathBuf::from("."), Path::to_path_buf)
+                .join(".config")
+        },
+        PathBuf::from,
+    );
+
+    base.join("plnk-tui").join("config.toml")
+}
+
+fn read_tui_config() -> Result<Option<TuiConfig>, TuiError> {
+    let path = tui_config_path();
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let content = fs::read_to_string(&path)?;
+    let config = toml::from_str(&content).map_err(|source| TuiError::ConfigParse {
+        path: path.display().to_string(),
+        source,
+    })?;
+    Ok(Some(config))
+}
+
+fn write_tui_config(config: &TuiConfig) -> Result<(), TuiError> {
+    let path = tui_config_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let content = toml::to_string_pretty(config)?;
+    fs::write(&path, content)?;
+    set_owner_only_permissions(&path)?;
+    Ok(())
+}
+
+fn set_owner_only_permissions(path: &Path) -> Result<(), TuiError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
+    Ok(())
+}
+
 #[derive(Debug, Error)]
 enum TuiError {
-    #[error("--server or PLANKA_SERVER is required")]
+    #[error("--server, PLNK_TUI_SERVER, or plnk-tui config server is required")]
     MissingServer,
-    #[error("--username or PLANKA_USERNAME is required")]
+    #[error("--username, PLNK_TUI_USERNAME, or plnk-tui config username is required")]
     MissingUsername,
     #[error("terminal error: {0}")]
     Io(#[from] io::Error),
@@ -132,6 +199,13 @@ enum TuiError {
     Http(#[from] reqwest::Error),
     #[error("url error: {0}")]
     Url(#[from] url::ParseError),
+    #[error("config parse error in {path}: {source}")]
+    ConfigParse {
+        path: String,
+        source: toml::de::Error,
+    },
+    #[error("config serialization error: {0}")]
+    ConfigSerialize(#[from] toml::ser::Error),
     #[error("authentication failed: {0}")]
     Authentication(String),
     #[error("socket error: {0}")]
@@ -2852,17 +2926,157 @@ struct AcceptTermsRequest<'a> {
     initial_language: &'a str,
 }
 
+fn resolve_server(args: &Args, config: Option<&TuiConfig>) -> Result<String, TuiError> {
+    if let Some(server) = args.server.as_deref() {
+        Url::parse(server)?;
+        return Ok(server.to_string());
+    }
+
+    if let Some(server) = config.and_then(|config| config.server.as_deref()) {
+        Url::parse(server)?;
+        return Ok(server.to_string());
+    }
+
+    if !io::stdin().is_terminal() {
+        return Err(TuiError::MissingServer);
+    }
+
+    loop {
+        let server = prompt_line("Planka server URL", None)?;
+        if server.is_empty() {
+            eprintln!("Server URL is required.");
+            continue;
+        }
+        match Url::parse(&server) {
+            Ok(_) => return Ok(server),
+            Err(err) => eprintln!("Invalid URL: {err}"),
+        }
+    }
+}
+
+fn resolve_username(args: &Args, config: Option<&TuiConfig>) -> Result<String, TuiError> {
+    if let Some(username) = args.username.as_deref() {
+        return Ok(username.to_string());
+    }
+
+    if let Some(username) = config.and_then(|config| config.username.as_deref()) {
+        return Ok(username.to_string());
+    }
+
+    if !io::stdin().is_terminal() {
+        return Err(TuiError::MissingUsername);
+    }
+
+    loop {
+        let username = prompt_line("Planka username/email", None)?;
+        if username.is_empty() {
+            eprintln!("Username/email is required.");
+            continue;
+        }
+        return Ok(username);
+    }
+}
+
+fn resolve_board(args: &Args, config: Option<&TuiConfig>) -> Option<String> {
+    args.board
+        .clone()
+        .or_else(|| config.and_then(|config| config.board.clone()))
+}
+
+fn prompt_line(label: &str, default: Option<&str>) -> Result<String, TuiError> {
+    let suffix = match default {
+        Some(default) if !default.is_empty() => format!(" [{default}]"),
+        _ => String::new(),
+    };
+    eprint!("{label}{suffix}: ");
+    io::stderr().flush()?;
+
+    let mut buf = String::new();
+    io::stdin().lock().read_line(&mut buf)?;
+    let trimmed = buf.trim().to_string();
+    if trimmed.is_empty() {
+        if let Some(default) = default {
+            if !default.is_empty() {
+                return Ok(default.to_string());
+            }
+        }
+    }
+    Ok(trimmed)
+}
+
+fn prompt_yes_no(question: &str, default_yes: bool) -> Result<bool, TuiError> {
+    let hint = if default_yes { "[Y/n]" } else { "[y/N]" };
+    eprint!("{question} {hint} ");
+    io::stderr().flush()?;
+
+    let mut buf = String::new();
+    io::stdin().lock().read_line(&mut buf)?;
+    Ok(parse_yes_no(&buf, default_yes))
+}
+
+fn parse_yes_no(input: &str, default_yes: bool) -> bool {
+    match input.trim().to_lowercase().as_str() {
+        "y" | "yes" => true,
+        "n" | "no" => false,
+        _ => default_yes,
+    }
+}
+
+fn maybe_save_tui_config(
+    existing: Option<&TuiConfig>,
+    server: &str,
+    username: &str,
+) -> Result<(), TuiError> {
+    let already_saved = existing.is_some_and(|config| {
+        config.server.as_deref() == Some(server) && config.username.as_deref() == Some(username)
+    });
+    if already_saved {
+        return Ok(());
+    }
+
+    let path = tui_config_path();
+    if !io::stdin().is_terminal() {
+        eprintln!(
+            "Not saving plnk-tui config because stdin is not interactive. Config path: {}",
+            path.display()
+        );
+        return Ok(());
+    }
+
+    if !prompt_yes_no(
+        &format!(
+            "Save server and username for future plnk-tui launches to {}?",
+            path.display()
+        ),
+        true,
+    )? {
+        return Ok(());
+    }
+
+    write_tui_config(&TuiConfig {
+        server: Some(server.to_string()),
+        username: Some(username.to_string()),
+        board: existing.and_then(|config| config.board.clone()),
+    })?;
+    eprintln!("Saved plnk-tui config to {}", path.display());
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), TuiError> {
     let args = Args::parse();
-    let server = Url::parse(args.server.as_deref().ok_or(TuiError::MissingServer)?)?;
-    let username = args.username.ok_or(TuiError::MissingUsername)?;
+    let config = read_tui_config()?;
+    let server_text = resolve_server(&args, config.as_ref())?;
+    let server = Url::parse(&server_text)?;
+    let username = resolve_username(&args, config.as_ref())?;
+    let board = resolve_board(&args, config.as_ref());
     let password = match args.password {
         Some(password) => password,
         None => rpassword::prompt_password("Planka password: ")?,
     };
 
     let token = authenticate(&server, &username, &password).await?;
+    maybe_save_tui_config(config.as_ref(), &server_text, &username)?;
     let current_user = fetch_current_user(&server, &token).await?;
     let projects = fetch_projects(&server, &token).await?;
     let project_trees = fetch_project_trees(&server, &token, &projects).await?;
@@ -2870,10 +3084,10 @@ async fn main() -> Result<(), TuiError> {
     let initial_socket_session_id = 1;
     let (tx, rx) = mpsc::channel();
     // Only spawn a websocket listener at startup when the user explicitly
-    // passed --board / PLNK_TUI_BOARD. Without that flag the TUI starts
-    // idle and spawns the listener the first time a board is promoted to
-    // the live target (TUI-012).
-    let initial_socket_shutdown = args.board.clone().map(|board_id| {
+    // passed --board / PLNK_TUI_BOARD (or configured a default board). Without
+    // a board, the TUI starts idle and spawns the listener the first time a
+    // board is promoted to the live target (TUI-012).
+    let initial_socket_shutdown = board.clone().map(|board_id| {
         spawn_socket_listener(
             server.clone(),
             token.clone(),
@@ -2884,9 +3098,9 @@ async fn main() -> Result<(), TuiError> {
     });
 
     if args.headless {
-        if args.board.is_none() {
+        if board.is_none() {
             println!(
-                "headless probe: no --board supplied; \
+                "headless probe: no board supplied; \
                  nothing to subscribe to. Pass --board <id> or PLNK_TUI_BOARD to probe a board."
             );
             return Ok(());
@@ -2901,7 +3115,7 @@ async fn main() -> Result<(), TuiError> {
         username,
         current_user,
         project_trees,
-        args.board,
+        board,
         initial_socket_session_id,
     );
     let runtime = Arc::new(tokio::runtime::Handle::current());
@@ -5509,6 +5723,44 @@ mod tests {
     fn base64_high_bits() {
         assert_eq!(base64_encode(&[0xff, 0xff, 0xff]), "////");
         assert_eq!(base64_encode(&[0x00, 0x00, 0x00]), "AAAA");
+    }
+
+    #[test]
+    fn tui_config_path_uses_xdg_on_every_os() {
+        assert_eq!(
+            resolve_tui_config_path(Some("/tmp/xdg"), None),
+            PathBuf::from("/tmp/xdg/plnk-tui/config.toml")
+        );
+    }
+
+    #[test]
+    fn tui_config_path_falls_back_to_home_dot_config() {
+        assert_eq!(
+            resolve_tui_config_path(None, Some(Path::new("/home/me"))),
+            PathBuf::from("/home/me/.config/plnk-tui/config.toml")
+        );
+    }
+
+    #[test]
+    fn tui_config_roundtrip_shape_omits_password() {
+        let config = TuiConfig {
+            server: Some("https://planka.example.com".into()),
+            username: Some("human".into()),
+            board: None,
+        };
+        let encoded = toml::to_string(&config).unwrap();
+        assert!(encoded.contains("server = \"https://planka.example.com\""));
+        assert!(encoded.contains("username = \"human\""));
+        assert!(!encoded.contains("password"));
+        assert_eq!(toml::from_str::<TuiConfig>(&encoded).unwrap(), config);
+    }
+
+    #[test]
+    fn parse_yes_no_defaults_and_explicit_values() {
+        assert!(parse_yes_no("", true));
+        assert!(!parse_yes_no("", false));
+        assert!(parse_yes_no("yes", false));
+        assert!(!parse_yes_no("n", true));
     }
 
     fn fixture_card() -> CardSummary {

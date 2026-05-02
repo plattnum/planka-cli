@@ -125,7 +125,7 @@ The save is optimistic in the UI sense (the edit is sent immediately) but pessim
 
 ## Architecture
 
-`plnk-tui` is its own workspace crate. It depends on `plnk-core` for domain types and nothing from `plnk-cli`. Its additional runtime dependencies:
+`plnk-tui` is its own workspace crate. It does not depend on `plnk-cli`; the TUI currently owns the wire/domain structs it needs for the explorer. Its additional runtime dependencies:
 
 - `ratatui` + `crossterm` — terminal rendering
 - `tokio-tungstenite` — raw websocket for the Planka Engine.IO / Socket.IO protocol
@@ -144,7 +144,7 @@ Rendering is pure: `fn draw(frame, &AppState)` reads state, produces widgets, re
 - No drag-and-drop card moves. Move cards via the CLI (`plnk card move`) or the web UI.
 - No full parity with every Planka web feature — attachments upload, permissions UI, etc. remain browser-only.
 - No multi-board live subscriptions. One board live at a time; see [live-target.md](live-target.md).
-- No second persistent-state layer. The TUI's auth token and config come from `plnk-core` via the shared `~/.config/plnk/config.toml`.
+- No shared automation credentials. The TUI uses its own human-oriented config at `~/.config/plnk-tui/config.toml` and stores only non-secret login hints such as server and username, never passwords.
 
 ## Related
 

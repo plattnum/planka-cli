@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Breaking** — `plnk-tui` auth is now fully separate from `plnk` CLI auth.
+  - Env vars renamed: `PLANKA_SERVER` / `PLANKA_USERNAME` / `PLANKA_PASSWORD` → `PLNK_TUI_SERVER` / `PLNK_TUI_USERNAME` / `PLNK_TUI_PASSWORD`. The `PLANKA_SERVER` / `PLANKA_TOKEN` env vars used by `plnk` itself are unchanged.
+  - The TUI no longer reads `plnk`'s `~/.config/plnk/config.toml`. It now uses its own `~/.config/plnk-tui/config.toml` (mode `0600` on Unix), which stores only non-secret server + username. Passwords are never persisted.
+  - Rationale: `plnk` is automation/AI/API-token oriented; `plnk-tui` is for an interactive human session. Sharing one credential store for two very different access patterns was a footgun, and the prior overlap implied the TUI could be driven from a CLI API token (it can't — it needs a username + password to authenticate over the same endpoint as `plnk auth login`).
+  - Migration: rename any `PLANKA_*` env vars in your `plnk-tui` invocations to `PLNK_TUI_*`, or just launch `plnk-tui` and accept the first-run save prompt.
+
+### Added
+- `plnk-tui`: first-run interactive prompts for server, username/email, and password when no flags, env vars, or config are present. After a successful login the TUI offers to save only the non-secret server + username to `~/.config/plnk-tui/config.toml`.
+
+### Fixed
+- `plnk-tui`: fast-copy (`y` / `Y`) on a label group node now includes the label's id and name in the JSON payload and the breadcrumb. The `Y` form for a label group inside a list now generates a scoped `plnk card find --list <list-id> --label <label-id> --output json` command instead of a plain list snapshot, so the pasted command actually filters to the labeled cards. Previously the label identity was silently dropped from both forms.
+
 ## [0.1.3] - 2026-04-26
 
 ### Added
