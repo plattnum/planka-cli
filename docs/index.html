@@ -289,6 +289,73 @@
             color: var(--accent);
         }
 
+        /* From the blog */
+        .blog {
+            padding: 60px 0;
+            border-top: 1px solid var(--border);
+        }
+        .blog h2 {
+            font-size: 1.9rem;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .blog .sub {
+            text-align: center;
+            color: var(--muted);
+            margin-bottom: 32px;
+        }
+        .blog-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 18px;
+            max-width: 880px;
+            margin: 0 auto;
+        }
+        .blog-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 22px 26px;
+            transition: border-color 0.2s;
+        }
+        .blog-card:hover {
+            border-color: var(--accent-dim);
+        }
+        .blog-card .date {
+            color: var(--muted);
+            font-size: 0.8rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .blog-card h3 {
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+        }
+        .blog-card h3 a {
+            color: var(--fg);
+        }
+        .blog-card h3 a:hover {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .blog-card p {
+            color: var(--muted);
+            font-size: 0.9rem;
+            margin: 0;
+        }
+        .blog .all-posts {
+            text-align: center;
+            margin-top: 28px;
+        }
+        .blog .all-posts a {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+        .blog .all-posts a:hover {
+            color: var(--accent);
+        }
+
         /* Install */
         .install {
             padding: 48px 0;
@@ -478,6 +545,7 @@
             <a href="#install">Install</a>
             <a href="#tools">Tools</a>
             <a href="#how">Quickstart</a>
+            <a href="blogs/">Blog</a>
             <a href="https://github.com/plattnum/planka-cli">GitHub</a>
             <a href="https://www.buymeacoffee.com/plattnum">Support</a>
         </div>
@@ -546,6 +614,26 @@
                 <a href="https://github.com/plattnum/planka-cli/blob/main/CHANGELOG.md">Changelog</a>
             </p>
         </div>
+    </div>
+</section>
+
+<section class="blog" id="blog">
+    <div class="container">
+        <h2>From the blog</h2>
+        <p class="sub">Notes on building plnk, plnk-tui, and working with AI agents in the terminal.</p>
+        <div class="blog-grid">
+            <div class="blog-card">
+                <div class="date">May 10, 2026</div>
+                <h3><a href="blogs/a-companion-not-a-replacement.html">A companion, not a replacement: plnk-tui</a></h3>
+                <p>Why I built a TUI companion to plnk &mdash; a bridge between the Planka web UI and the agent in my terminal.</p>
+            </div>
+            <div class="blog-card">
+                <div class="date">May 2, 2026</div>
+                <h3><a href="blogs/the-long-way-back-to-planka.html">The Long Way Back to Planka: Building plnk</a></h3>
+                <p>Why I came back to Planka and built a thin, strict, hierarchy-aware CLI for AI agents.</p>
+            </div>
+        </div>
+        <p class="all-posts"><a href="blogs/">All posts &rarr;</a></p>
     </div>
 </section>
 

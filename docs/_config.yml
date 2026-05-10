@@ -10,5 +10,9 @@ markdown: kramdown
 kramdown:
   syntax_highlighter: rouge
 
+# Jekyll plugins (whitelisted by GitHub Pages)
+plugins:
+  - jekyll-sitemap
+
 exclude:
   - README.md
