@@ -555,6 +555,54 @@ fn tabular_fields_exist_in_serde_representation() {
         },
         "CardLabel",
     );
+    check(
+        &BaseCustomFieldGroup {
+            id: "1".into(),
+            project_id: "2".into(),
+            name: "Documentation".into(),
+            created_at: "t".into(),
+            updated_at: None,
+        },
+        "BaseCustomFieldGroup",
+    );
+    check(
+        &CustomFieldGroup {
+            id: "1".into(),
+            name: None,
+            board_id: None,
+            card_id: Some("2".into()),
+            base_custom_field_group_id: Some("3".into()),
+            position: 65536.0,
+            created_at: "t".into(),
+            updated_at: None,
+        },
+        "CustomFieldGroup",
+    );
+    check(
+        &CustomField {
+            id: "1".into(),
+            name: "Specification".into(),
+            position: 65536.0,
+            show_on_front_of_card: true,
+            custom_field_group_id: Some("2".into()),
+            base_custom_field_group_id: None,
+            created_at: "t".into(),
+            updated_at: None,
+        },
+        "CustomField",
+    );
+    check(
+        &CustomFieldValue {
+            id: "1".into(),
+            card_id: "2".into(),
+            custom_field_group_id: "3".into(),
+            custom_field_id: "4".into(),
+            content: "specs/x.html".into(),
+            created_at: "t".into(),
+            updated_at: None,
+        },
+        "CustomFieldValue",
+    );
 }
 
 #[test]
@@ -599,4 +647,224 @@ fn create_list_serializes_with_type() {
     let json = serde_json::to_value(&params).unwrap();
     assert_eq!(json["type"], "active");
     assert_eq!(json["boardId"], "456");
+}
+
+// --- custom fields -------------------------------------------------------
+//
+// Payloads below are captured verbatim from a live Planka server (2026-08-10).
+
+#[test]
+fn base_custom_field_group_deserialize_from_planka_api() {
+    let api_json = serde_json::json!({
+        "id": "1838314588785870118",
+        "createdAt": "2026-08-10T04:22:56.098Z",
+        "updatedAt": null,
+        "name": "Documentation",
+        "projectId": "1838286221441238832"
+    });
+
+    let group: BaseCustomFieldGroup = serde_json::from_value(api_json).unwrap();
+    assert_eq!(group.id, "1838314588785870118");
+    assert_eq!(group.name, "Documentation");
+    assert_eq!(group.project_id, "1838286221441238832");
+    assert!(group.updated_at.is_none());
+}
+
+/// A base group's create response omits `position` entirely even though the
+/// create request accepts one — the model must not require it.
+#[test]
+fn base_custom_field_group_deserializes_without_position() {
+    let api_json = serde_json::json!({
+        "id": "1",
+        "createdAt": "t",
+        "updatedAt": null,
+        "name": "Docs",
+        "projectId": "2"
+    });
+
+    let group: BaseCustomFieldGroup = serde_json::from_value(api_json).unwrap();
+    let round_tripped = serde_json::to_value(&group).unwrap();
+    assert!(
+        round_tripped.get("position").is_none(),
+        "base groups carry no position"
+    );
+}
+
+/// The load-bearing case: a card group adopted from a base group has a null
+/// `name`, with the display name living on the base group.
+#[test]
+fn custom_field_group_adopted_from_base_has_null_name() {
+    let api_json = serde_json::json!({
+        "id": "1838315093998175530",
+        "createdAt": "2026-08-10T04:23:56.324Z",
+        "updatedAt": null,
+        "position": 81920.0,
+        "name": null,
+        "boardId": null,
+        "cardId": "1838300473224856753",
+        "baseCustomFieldGroupId": "1838314588785870118"
+    });
+
+    let group: CustomFieldGroup = serde_json::from_value(api_json).unwrap();
+    assert!(group.name.is_none(), "adopted groups carry a null name");
+    assert_eq!(
+        group.base_custom_field_group_id,
+        Some("1838314588785870118".to_string())
+    );
+    assert_eq!(group.card_id, Some("1838300473224856753".to_string()));
+    assert!(group.board_id.is_none());
+}
+
+#[test]
+fn custom_field_group_local_to_card_has_name_and_no_base() {
+    let api_json = serde_json::json!({
+        "id": "1838305759222301878",
+        "createdAt": "2026-08-10T04:05:23.532Z",
+        "updatedAt": "2026-08-10T04:09:26.759Z",
+        "position": 65536.0,
+        "name": "Documentation",
+        "boardId": null,
+        "cardId": "1838300473224856753",
+        "baseCustomFieldGroupId": null
+    });
+
+    let group: CustomFieldGroup = serde_json::from_value(api_json).unwrap();
+    assert_eq!(group.name, Some("Documentation".to_string()));
+    assert!(group.base_custom_field_group_id.is_none());
+}
+
+#[test]
+fn custom_field_belonging_to_base_group_deserializes() {
+    let api_json = serde_json::json!({
+        "id": "1838314715311244583",
+        "createdAt": "2026-08-10T04:23:11.181Z",
+        "updatedAt": null,
+        "position": 65536.0,
+        "name": "Specification",
+        "showOnFrontOfCard": true,
+        "baseCustomFieldGroupId": "1838314588785870118",
+        "customFieldGroupId": null
+    });
+
+    let field: CustomField = serde_json::from_value(api_json).unwrap();
+    assert_eq!(field.name, "Specification");
+    assert!(field.show_on_front_of_card);
+    assert!(field.custom_field_group_id.is_none());
+    assert_eq!(
+        field.base_custom_field_group_id,
+        Some("1838314588785870118".to_string())
+    );
+}
+
+#[test]
+fn custom_field_belonging_to_card_group_deserializes() {
+    let api_json = serde_json::json!({
+        "id": "1838307535082226873",
+        "createdAt": "2026-08-10T04:08:55.229Z",
+        "updatedAt": null,
+        "position": 65536.0,
+        "name": "Specification",
+        "showOnFrontOfCard": false,
+        "baseCustomFieldGroupId": null,
+        "customFieldGroupId": "1838305759222301878"
+    });
+
+    let field: CustomField = serde_json::from_value(api_json).unwrap();
+    assert!(!field.show_on_front_of_card);
+    assert_eq!(
+        field.custom_field_group_id,
+        Some("1838305759222301878".to_string())
+    );
+    assert!(field.base_custom_field_group_id.is_none());
+}
+
+#[test]
+fn custom_field_value_roundtrip_camel_case() {
+    let value = CustomFieldValue {
+        id: "1".to_string(),
+        card_id: "2".to_string(),
+        custom_field_group_id: "3".to_string(),
+        custom_field_id: "4".to_string(),
+        content: "specs/2026-08-06-codex-design.html".to_string(),
+        created_at: "2026-08-10T04:30:00.000Z".to_string(),
+        updated_at: None,
+    };
+
+    let json = serde_json::to_value(&value).unwrap();
+    assert_eq!(json["cardId"], "2");
+    assert_eq!(json["customFieldGroupId"], "3");
+    assert_eq!(json["customFieldId"], "4");
+    assert_eq!(json["content"], "specs/2026-08-06-codex-design.html");
+    assert!(json.get("card_id").is_none(), "should use camelCase");
+
+    let deserialized: CustomFieldValue = serde_json::from_value(json).unwrap();
+    assert_eq!(deserialized, value);
+}
+
+#[test]
+fn custom_field_trimmed_columns_match_wire_format() {
+    let fields: Vec<&str> = CustomField::trimmed_columns()
+        .iter()
+        .map(|(f, _)| *f)
+        .collect();
+    assert_eq!(
+        fields,
+        vec!["id", "name", "showOnFrontOfCard", "position"],
+        "trimmed columns must use wire spelling, never display labels"
+    );
+
+    let group_fields: Vec<&str> = CustomFieldGroup::trimmed_columns()
+        .iter()
+        .map(|(f, _)| *f)
+        .collect();
+    assert_eq!(
+        group_fields,
+        vec!["id", "name", "cardId", "boardId", "position"]
+    );
+
+    let value_fields: Vec<&str> = CustomFieldValue::trimmed_columns()
+        .iter()
+        .map(|(f, _)| *f)
+        .collect();
+    assert_eq!(value_fields, vec!["id", "customFieldId", "content"]);
+
+    let base_fields: Vec<&str> = BaseCustomFieldGroup::trimmed_columns()
+        .iter()
+        .map(|(f, _)| *f)
+        .collect();
+    assert_eq!(base_fields, vec!["id", "name", "projectId"]);
+}
+
+#[test]
+fn update_custom_field_omits_unset_fields() {
+    let params = UpdateCustomField {
+        name: Some("Spec".to_string()),
+        show_on_front_of_card: None,
+    };
+    let json = serde_json::to_value(&params).unwrap();
+    assert_eq!(json["name"], "Spec");
+    assert!(
+        json.get("showOnFrontOfCard").is_none(),
+        "unset must be omitted, not sent as null"
+    );
+}
+
+/// "Set to false" and "leave unchanged" must stay distinguishable — an
+/// explicit `false` has to reach the wire.
+#[test]
+fn update_custom_field_sends_explicit_false() {
+    let params = UpdateCustomField {
+        name: None,
+        show_on_front_of_card: Some(false),
+    };
+    let json = serde_json::to_value(&params).unwrap();
+    assert_eq!(json["showOnFrontOfCard"], false);
+    assert!(json.get("name").is_none());
+}
+
+#[test]
+fn update_custom_field_group_omits_unset_name() {
+    let params = UpdateCustomFieldGroup { name: None };
+    let json = serde_json::to_value(&params).unwrap();
+    assert_eq!(json.as_object().unwrap().len(), 0);
 }

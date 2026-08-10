@@ -3,6 +3,7 @@ mod board;
 mod card;
 mod comment;
 mod common;
+mod custom_field;
 mod label;
 mod list;
 mod membership;
@@ -17,6 +18,7 @@ pub use board::*;
 pub use card::*;
 pub use comment::*;
 pub use common::*;
+pub use custom_field::*;
 pub use label::*;
 pub use list::*;
 pub use membership::*;
@@ -150,5 +152,44 @@ impl Tabular for CardMembership {
 impl Tabular for CardLabel {
     fn trimmed_columns() -> &'static [(&'static str, &'static str)] {
         &[("id", "ID"), ("cardId", "Card"), ("labelId", "Label")]
+    }
+}
+
+impl Tabular for BaseCustomFieldGroup {
+    fn trimmed_columns() -> &'static [(&'static str, &'static str)] {
+        &[("id", "ID"), ("name", "Name"), ("projectId", "Project")]
+    }
+}
+
+impl Tabular for CustomFieldGroup {
+    fn trimmed_columns() -> &'static [(&'static str, &'static str)] {
+        &[
+            ("id", "ID"),
+            ("name", "Name"),
+            ("cardId", "Card"),
+            ("boardId", "Board"),
+            ("position", "Position"),
+        ]
+    }
+}
+
+impl Tabular for CustomField {
+    fn trimmed_columns() -> &'static [(&'static str, &'static str)] {
+        &[
+            ("id", "ID"),
+            ("name", "Name"),
+            ("showOnFrontOfCard", "On Front"),
+            ("position", "Position"),
+        ]
+    }
+}
+
+impl Tabular for CustomFieldValue {
+    fn trimmed_columns() -> &'static [(&'static str, &'static str)] {
+        &[
+            ("id", "ID"),
+            ("customFieldId", "Field"),
+            ("content", "Content"),
+        ]
     }
 }
