@@ -281,7 +281,16 @@ fn aliases_hidden_from_help() {
 
     // In clap's help, commands are listed as "  <name>  <description>"
     // Check that none of the alias names appear as command entries
-    for alias in &["boards", "lists", "cards", "tasks", "comments", "labels"] {
+    for alias in &[
+        "boards",
+        "lists",
+        "cards",
+        "tasks",
+        "comments",
+        "labels",
+        "field-groups",
+        "fields",
+    ] {
         let pattern = format!("  {alias} ");
         assert!(
             !help.contains(&pattern),
@@ -299,6 +308,43 @@ fn boards_alias_missing_project_exits_2() {
         .env("PLANKA_SERVER", "http://127.0.0.1:1")
         .env("PLANKA_TOKEN", "test-api-key")
         .args(["boards"])
+        .assert()
+        .failure()
+        .code(2);
+}
+
+// ─── Custom field aliases ───────────────────────────────────────────
+
+#[test]
+fn field_groups_alias_resolves() {
+    // Validation happens before network, so no server is needed: reaching the
+    // missing-scope error proves the alias resolved to `field-group list`.
+    plnk()
+        .env("PLANKA_SERVER", "http://127.0.0.1:1")
+        .env("PLANKA_TOKEN", "test-api-key")
+        .args(["field-groups"])
+        .assert()
+        .failure()
+        .code(2);
+}
+
+#[test]
+fn fields_alias_resolves() {
+    plnk()
+        .env("PLANKA_SERVER", "http://127.0.0.1:1")
+        .env("PLANKA_TOKEN", "test-api-key")
+        .args(["fields"])
+        .assert()
+        .failure()
+        .code(2);
+}
+
+#[test]
+fn field_groups_alias_rejects_conflicting_scopes() {
+    plnk()
+        .env("PLANKA_SERVER", "http://127.0.0.1:1")
+        .env("PLANKA_TOKEN", "test-api-key")
+        .args(["field-groups", "--project", "1", "--card", "2"])
         .assert()
         .failure()
         .code(2);

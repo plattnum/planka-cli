@@ -12,7 +12,7 @@ Every command fits this form. No verb-first commands, no hidden actions — the 
 
 ## Resources
 
-`project`, `board`, `list`, `card`, `task`, `comment`, `label`, `attachment`, `membership`, `user`, `auth`
+`project`, `board`, `list`, `card`, `task`, `comment`, `label`, `field-group`, `field`, `attachment`, `membership`, `user`, `auth`
 
 Each has its own per-resource docs in [`docs/cli/`](.).
 
@@ -26,8 +26,11 @@ project
         task
         comment
         attachment
+        custom field group ── custom field ── value
     label
+    custom field group ── custom field
   membership
+  base custom field group ── custom field
 ```
 
 All scoped queries follow this hierarchy. You can't list cards without a list (or board / project for `find`). You can't list tasks without a card. Sole exception: `project find` is unscoped because projects are the root.
@@ -149,6 +152,8 @@ plnk cards --board <id>            # → plnk card list --board <id>
 plnk tasks --card <id>             # → plnk task list --card <id>
 plnk comments --card <id>          # → plnk comment list --card <id>
 plnk labels --board <id>           # → plnk label list --board <id>
+plnk field-groups --card <id>      # → plnk field-group list --card <id>
+plnk fields --base-group <id>      # → plnk field list --base-group <id>
 ```
 
 ## Stdout vs stderr
