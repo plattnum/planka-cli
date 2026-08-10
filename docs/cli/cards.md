@@ -161,6 +161,21 @@ plnk card assignee add <cardId> <userId>
 plnk card assignee remove <cardId> <userId>
 ```
 
+### Custom field values
+
+```bash
+plnk card field list <cardId>
+plnk card field set <cardId> --group <id|name> --field <id|name> --value "specs/design.html"
+plnk card field clear <cardId> --group <id|name> --field <id|name>
+```
+
+`--group` and `--field` accept an ID or a name, resolving through the card's attached groups
+(and through the base group when the card's group was adopted from a template). Values are
+capped at 512 characters and cannot be empty; `clear` is idempotent.
+
+See [Custom fields](custom-fields.md) for the full model, including how to define a reusable
+field template on a project and adopt it onto a card.
+
 ## Examples
 
 ```bash

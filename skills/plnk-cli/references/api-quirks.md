@@ -18,13 +18,64 @@ plnk board snapshot <boardId> --output json # whole board (labels under included
 
 The parent listing paths use proper GET endpoints and don't mutate `updatedAt`.
 
+## Custom fields: adopted groups have no name and no fields of their own
+
+The single most confusing part of the custom field model.
+
+A card adopts a project-level template (a *base group*) by creating a card-level group that
+carries `baseCustomFieldGroupId`. That adopted group has:
+
+- **`name: null`** — its display name lives on the base group
+- **no fields of its own** — `GET /api/custom-field-groups/{adoptedId}` returns
+  `included.customFields: []`, because the fields belong to the base group
+
+So `plnk field list --group <adoptedCardGroupId>` correctly returns **zero** fields. Ask the
+base group instead:
+
+```bash
+plnk field-group list --card <cardId> --output json   # note name: null, baseCustomFieldGroupId set
+plnk field list --base-group <baseGroupId>            # the fields actually live here
+```
+
+`plnk card field set/clear` hides all of this — `--group Documentation` resolves through the
+base group — so prefer names there and only drop to IDs to break ambiguity.
+
+## Custom fields: base groups are only partly routed
+
+There is **no `GET /api/base-custom-field-groups/{id}`**. That path falls through to the Planka
+SPA and returns HTML with HTTP `200` — worse than a 404, since a JSON client fails with a parse
+error rather than a clean not-found. `PATCH` and `DELETE` on the same prefix *do* exist.
+
+Base groups are readable only through `GET /api/projects` or `GET /api/projects/{id}`, under
+`included.baseCustomFieldGroups`. The board snapshot has no `baseCustomFieldGroups` key at all,
+and its `included.customFields` covers only board- and card-level group fields.
+
+`plnk field-group get <id>` handles this by falling back to the base route, so scripts can pass
+any group ID without tracking its kind.
+
+## Custom fields: value rules
+
+- `content` is capped at **512 characters**. `plnk` rejects over-length client-side with exit
+  `2` and sends no request.
+- **Empty strings are rejected by the server.** There is no "set to empty" — clearing is
+  `plnk card field clear`, which maps to a DELETE. `plnk` exits `2` on `--value ""` and says so.
+- Clearing is **idempotent**: an already-unset value exits `0`.
+- **No endpoint filters cards by custom field value.** Do not look for one. Filter client-side:
+
+```bash
+plnk card snapshot <cardId> --output json \
+  | jq '.included.customFieldValues[] | select(.content | test("pattern"))'
+```
+
+- The server may **rewrite a group's `position`** on create. Never assert the echoed value.
+
 ## Board snapshot pattern
 
 Many resources are not directly listable. Instead, the CLI fetches a parent "snapshot" that includes nested data:
 
 - `GET /api/boards/{id}` returns `included.lists`, `included.cards`, `included.labels`, `included.boardMemberships`
-- `GET /api/cards/{id}` returns `included.tasks`, `included.taskLists`, `included.cardLabels`, `included.cardMemberships`, `included.attachments`
-- `GET /api/projects/{id}` returns `included.boards`, `included.projectManagers`
+- `GET /api/cards/{id}` returns `included.tasks`, `included.taskLists`, `included.cardLabels`, `included.cardMemberships`, `included.attachments`, `included.customFieldGroups`, `included.customFields`, `included.customFieldValues`
+- `GET /api/projects/{id}` returns `included.boards`, `included.projectManagers`, `included.baseCustomFieldGroups`, `included.customFields`
 
 This means listing labels on a board actually fetches the entire board snapshot. Listing tasks on a card fetches the entire card snapshot. The CLI extracts what it needs.
 

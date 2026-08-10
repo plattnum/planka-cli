@@ -1,6 +1,6 @@
 ---
 name: plnk-cli
-description: Use this skill when the user wants to inspect or manage Planka projects, boards, lists, cards, tasks, comments, labels, attachments, memberships, users, or authentication with the plnk CLI.
+description: Use this skill when the user wants to inspect or manage Planka projects, boards, lists, cards, tasks, comments, labels, custom fields (field groups, fields, card field values), attachments, memberships, users, or authentication with the plnk CLI.
 ---
 
 # plnk-cli
@@ -14,7 +14,7 @@ Use this skill when the user wants to:
 - inspect Planka projects, boards, lists, cards, tasks, comments, labels, attachments, memberships, or users
 - create, update, move, archive, unarchive, or delete Planka resources
 - find cards, lists, boards, or labels by name/title
-- add comments, tasks, assignees, labels, or attachments to cards
+- add comments, tasks, assignees, labels, custom field values, or attachments to cards
 - understand or debug `plnk` command behavior
 
 ## Core Rules
@@ -43,8 +43,11 @@ project
         task
         comment
         attachment
+        custom field group ── custom field ── value
     label
+    custom field group ── custom field
   membership
+  base custom field group ── custom field   (reusable template)
 ```
 
 Implications:
@@ -55,6 +58,9 @@ Implications:
 - `card find` requires exactly one of `--list`, `--board`, or `--project`.
 - tasks and comments live under cards
 - labels live under boards
+- `field-group list` requires exactly one of `--project`, `--board`, or `--card`
+- `field list` requires exactly one of `--group` or `--base-group`
+- custom field *values* live under cards: `card field list|set|clear`
 
 ## Default Operating Procedure
 
@@ -140,6 +146,17 @@ and errors like:
 
 - `get` requires an ID. Never use `get` with a name.
 - `find` returns collections, including zero or many matches.
+- Custom fields have three surfaces — do not conflate them:
+  - `plnk field-group` — the groups (project-level ones are reusable templates)
+  - `plnk field` — the named slots inside a group
+  - `plnk card field` — the values a card stores
+- A card group adopted from a template has `name: null` and **no fields of its own** — its
+  fields belong to the base group. `field list --group <adoptedId>` returning nothing is
+  correct; ask `field list --base-group <baseId>`. See `references/api-quirks.md`.
+- `card field set/clear` accept an ID **or a name** for `--group` and `--field`, resolving
+  through the base group. Values are capped at 512 chars, cannot be empty, and `clear` is
+  idempotent.
+- There is no server-side filter by custom field value — filter a snapshot locally.
 - There is no standalone `get` for `task`, `comment`, or `label`.
   - use `task list --card <cardId>`
   - use `comment list --card <cardId>`
@@ -216,6 +233,7 @@ Resource docs:
 - `../../docs/cli/tasks.md`
 - `../../docs/cli/comments.md`
 - `../../docs/cli/labels.md`
+- `../../docs/cli/custom-fields.md`
 - `../../docs/cli/attachments.md`
 - `../../docs/cli/memberships.md`
 - `../../docs/cli/users.md`
