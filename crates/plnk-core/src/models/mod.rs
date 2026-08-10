@@ -163,9 +163,13 @@ impl Tabular for BaseCustomFieldGroup {
 
 impl Tabular for CustomFieldGroup {
     fn trimmed_columns() -> &'static [(&'static str, &'static str)] {
+        // `baseCustomFieldGroupId` earns its place in the trimmed view: an
+        // adopted group's own `name` is null, so without it the row is a blank
+        // name with nothing explaining why.
         &[
             ("id", "ID"),
             ("name", "Name"),
+            ("baseCustomFieldGroupId", "Base Group"),
             ("cardId", "Card"),
             ("boardId", "Board"),
             ("position", "Position"),

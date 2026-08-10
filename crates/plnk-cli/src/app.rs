@@ -104,6 +104,8 @@ pub enum Command {
     Comment(CommentCommand),
     /// Manage board labels
     Label(LabelCommand),
+    /// Manage custom field groups
+    FieldGroup(FieldGroupCommand),
     /// Manage attachments on cards
     Attachment(AttachmentCommand),
     /// Manage project/board memberships
@@ -158,6 +160,19 @@ pub enum Command {
         /// Parent board ID
         #[arg(long)]
         board: String,
+    },
+    /// Alias for `field-group list --project|--board|--card <id>`
+    #[command(hide = true)]
+    FieldGroups {
+        /// Parent project ID (lists base groups)
+        #[arg(long, group = "scope")]
+        project: Option<String>,
+        /// Parent board ID
+        #[arg(long, group = "scope")]
+        board: Option<String>,
+        /// Parent card ID
+        #[arg(long, group = "scope")]
+        card: Option<String>,
     },
 }
 
@@ -749,6 +764,87 @@ pub enum LabelAction {
     /// Delete a label
     Delete {
         /// Label ID
+        id: String,
+    },
+}
+
+// ── Field Group ─────────────────────────────────────────────────────────
+
+/// Custom field groups hold the named fields a card can carry values for.
+///
+/// A group on a *project* is a reusable template (a base group). A card adopts
+/// a template with `create --card <id> --base <baseGroupId>`, or defines a
+/// one-off group with `create --card <id> --name <name>`.
+#[derive(Parser)]
+pub struct FieldGroupCommand {
+    #[command(subcommand)]
+    pub action: FieldGroupAction,
+}
+
+#[derive(Subcommand)]
+pub enum FieldGroupAction {
+    /// List custom field groups in a project, board, or card
+    List {
+        /// Parent project ID (lists base groups — the reusable templates)
+        #[arg(long, group = "scope")]
+        project: Option<String>,
+        /// Parent board ID
+        #[arg(long, group = "scope")]
+        board: Option<String>,
+        /// Parent card ID
+        #[arg(long, group = "scope")]
+        card: Option<String>,
+    },
+    /// Find custom field groups by name within a project, board, or card
+    Find {
+        /// Search a project's base groups
+        #[arg(long, group = "scope")]
+        project: Option<String>,
+        /// Search a board's groups
+        #[arg(long, group = "scope")]
+        board: Option<String>,
+        /// Search a card's groups
+        #[arg(long, group = "scope")]
+        card: Option<String>,
+        /// Group name to search for
+        #[arg(long)]
+        name: String,
+    },
+    /// Get a custom field group by ID
+    Get {
+        /// Custom field group ID (base group IDs are accepted too)
+        id: String,
+    },
+    /// Create a custom field group
+    Create {
+        /// Parent project ID — creates a reusable base group
+        #[arg(long, group = "scope")]
+        project: Option<String>,
+        /// Parent board ID
+        #[arg(long, group = "scope")]
+        board: Option<String>,
+        /// Parent card ID
+        #[arg(long, group = "scope")]
+        card: Option<String>,
+        /// Group name. Required for --project and --board; on --card it creates
+        /// a one-off group instead of adopting a template
+        #[arg(long)]
+        name: Option<String>,
+        /// Base group ID to adopt onto a card. Only valid with --card
+        #[arg(long, conflicts_with = "name")]
+        base: Option<String>,
+    },
+    /// Update a custom field group
+    Update {
+        /// Custom field group ID (base group IDs are accepted too)
+        id: String,
+        /// New group name
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Delete a custom field group
+    Delete {
+        /// Custom field group ID (base group IDs are accepted too)
         id: String,
     },
 }

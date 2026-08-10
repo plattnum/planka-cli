@@ -819,7 +819,15 @@ fn custom_field_trimmed_columns_match_wire_format() {
         .collect();
     assert_eq!(
         group_fields,
-        vec!["id", "name", "cardId", "boardId", "position"]
+        vec![
+            "id",
+            "name",
+            "baseCustomFieldGroupId",
+            "cardId",
+            "boardId",
+            "position"
+        ],
+        "an adopted group's name is null, so the base group id must survive trimming"
     );
 
     let value_fields: Vec<&str> = CustomFieldValue::trimmed_columns()

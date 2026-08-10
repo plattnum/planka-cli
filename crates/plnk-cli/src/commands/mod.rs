@@ -5,6 +5,7 @@ pub mod card;
 pub mod card_assignee;
 pub mod card_label;
 pub mod comment;
+pub mod field_group;
 pub mod init;
 pub mod label;
 pub mod list;

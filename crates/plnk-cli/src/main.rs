@@ -328,6 +328,17 @@ async fn main() {
             }
             Err(e) => Err(e),
         },
+        Command::FieldGroup(cmd) => match build_client(
+            app.server.as_deref(),
+            app.token.as_deref(),
+            &transport_policy,
+        ) {
+            Ok(client) => {
+                commands::field_group::execute(&client, cmd.action, app.output, app.yes, app.full)
+                    .await
+            }
+            Err(e) => Err(e),
+        },
         Command::Attachment(cmd) => match build_client(
             app.server.as_deref(),
             app.token.as_deref(),
@@ -428,6 +439,31 @@ async fn main() {
                 commands::comment::execute(
                     &client,
                     app::CommentAction::List { card },
+                    app.output,
+                    app.yes,
+                    app.full,
+                )
+                .await
+            }
+            Err(e) => Err(e),
+        },
+        Command::FieldGroups {
+            project,
+            board,
+            card,
+        } => match build_client(
+            app.server.as_deref(),
+            app.token.as_deref(),
+            &transport_policy,
+        ) {
+            Ok(client) => {
+                commands::field_group::execute(
+                    &client,
+                    app::FieldGroupAction::List {
+                        project,
+                        board,
+                        card,
+                    },
                     app.output,
                     app.yes,
                     app.full,
