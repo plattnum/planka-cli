@@ -252,6 +252,8 @@ fn machine_help_all_resources() {
         "task",
         "comment",
         "label",
+        "field-group",
+        "field",
         "attachment",
         "membership",
     ];
@@ -290,4 +292,100 @@ fn normal_help_still_works() {
         .stdout(predicate::str::contains("Create a new card"))
         .stdout(predicate::str::contains("--list"))
         .stdout(predicate::str::contains("--title"));
+}
+
+// ─── Machine help: custom field commands ─────────────────────────────
+
+#[test]
+fn machine_help_field_group_create() {
+    let output = plnk()
+        .args(["field-group", "create", "--help", "--output", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["resource"], "field-group");
+    assert_eq!(json["action"], "create");
+
+    let opts = &json["options"];
+    for flag in ["--project", "--board", "--card", "--name", "--base"] {
+        assert!(
+            opts.get(flag).is_some(),
+            "field-group create should expose {flag}"
+        );
+    }
+
+    assert!(
+        !json["examples"].as_array().unwrap().is_empty(),
+        "field-group create should carry examples"
+    );
+}
+
+#[test]
+fn machine_help_field_create_documents_show_on_front() {
+    let output = plnk()
+        .args(["field", "create", "--help", "--output", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["resource"], "field");
+
+    let description = json["options"]["--show-on-front"]["description"]
+        .as_str()
+        .unwrap()
+        .to_lowercase();
+    assert!(
+        description.contains("front of the card"),
+        "--show-on-front must say plainly what it controls, got: {description}"
+    );
+}
+
+/// The value cap and the fact that clearing is a separate command are the two
+/// things a caller most needs from this help text.
+#[test]
+fn machine_help_card_field_set_documents_limits() {
+    let output = plnk()
+        .args(["card", "field", "set", "--help", "--output", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["resource"], "card");
+    assert_eq!(json["action"], "field set");
+
+    let value_help = json["options"]["--value"]["description"].as_str().unwrap();
+    assert!(
+        value_help.contains("512"),
+        "--value help must state the 512 character cap, got: {value_help}"
+    );
+    assert!(
+        value_help.contains("card field clear"),
+        "--value help must point at card field clear, got: {value_help}"
+    );
+
+    assert!(
+        !json["examples"].as_array().unwrap().is_empty(),
+        "card field set should carry examples"
+    );
+}
+
+#[test]
+fn custom_field_help_renders_in_plain_form() {
+    for args in [
+        vec!["field-group", "--help"],
+        vec!["field", "--help"],
+        vec!["card", "field", "--help"],
+    ] {
+        plnk().args(&args).assert().success();
+    }
 }

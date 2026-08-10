@@ -70,6 +70,28 @@ impl Named for crate::models::Label {
     }
 }
 
+impl Named for crate::models::CustomField {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl Named for crate::models::BaseCustomFieldGroup {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// A custom field group's own `name` is `None` when it was adopted from a base
+/// group — the display name then lives on the base group. Matching on this impl
+/// alone will therefore miss every template-adopted group; callers that need to
+/// match adopted groups must resolve the base group's name first.
+impl Named for crate::models::CustomFieldGroup {
+    fn name(&self) -> &str {
+        self.name.as_deref().unwrap_or("")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

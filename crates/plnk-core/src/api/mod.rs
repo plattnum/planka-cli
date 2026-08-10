@@ -5,7 +5,8 @@ pub mod v1;
 
 pub use search::{Named, match_by_name};
 pub use traits::{
-    AssigneeApi, AttachmentApi, BoardApi, CardApi, CardLabelApi, CommentApi, LabelApi, ListApi,
-    MembershipApi, ProjectApi, TaskApi, UserApi,
+    AssigneeApi, AttachmentApi, BoardApi, CardApi, CardCustomFieldApi, CardLabelApi, CommentApi,
+    CustomFieldApi, CustomFieldGroupApi, LabelApi, ListApi, MembershipApi, ProjectApi, TaskApi,
+    UserApi,
 };
 pub use v1::PlankaClientV1;

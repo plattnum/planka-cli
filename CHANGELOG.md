@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Custom field support across `plnk-core` and `plnk`, adding three resources:
+  - `plnk field-group` — base groups on a project (reusable templates), plus board- and card-level groups. Adopt a template onto a card with `field-group create --card <id> --base <baseGroupId>`.
+  - `plnk field` — the named slots inside a group, with `--show-on-front` controlling visibility on the card face in the Planka web UI.
+  - `plnk card field` — get, set, and clear the values a card stores, with ID-or-name resolution for `--group` and `--field` following the house three-tier match.
+  - `plnk-core` gains `CustomFieldGroupApi`, `CustomFieldApi` and `CardCustomFieldApi`, plus the `BaseCustomFieldGroup`, `CustomFieldGroup`, `CustomField` and `CustomFieldValue` models.
+  - Hidden plural aliases `field-groups` and `fields`, matching the existing `labels` / `boards` pattern.
+  - Values are validated client-side: empty values and values over Planka's 512-character cap exit `2` without issuing a request. Clearing is idempotent — clearing an already-unset value exits `0`.
+  - Name resolution reaches through the base group. A card group adopted from a template has `name: null` and carries no fields of its own, so both the group name and its field names are resolved via `baseCustomFieldGroupId`.
+  - Docs: [Custom fields](docs/cli/custom-fields.md), plus a worked example in `docs/cli/examples.md` and the verified wire quirks in `AGENTS.md`.
+
 ## [0.2.0] - 2026-05-02
 
 ### Changed

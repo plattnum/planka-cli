@@ -104,6 +104,10 @@ pub enum Command {
     Comment(CommentCommand),
     /// Manage board labels
     Label(LabelCommand),
+    /// Manage custom field groups
+    FieldGroup(FieldGroupCommand),
+    /// Manage custom fields inside a group
+    Field(FieldCommand),
     /// Manage attachments on cards
     Attachment(AttachmentCommand),
     /// Manage project/board memberships
@@ -158,6 +162,29 @@ pub enum Command {
         /// Parent board ID
         #[arg(long)]
         board: String,
+    },
+    /// Alias for `field list --group|--base-group <id>`
+    #[command(hide = true)]
+    Fields {
+        /// Parent custom field group ID
+        #[arg(long, group = "field_scope")]
+        group: Option<String>,
+        /// Parent base custom field group ID
+        #[arg(long = "base-group", group = "field_scope")]
+        base_group: Option<String>,
+    },
+    /// Alias for `field-group list --project|--board|--card <id>`
+    #[command(hide = true)]
+    FieldGroups {
+        /// Parent project ID (lists base groups)
+        #[arg(long, group = "scope")]
+        project: Option<String>,
+        /// Parent board ID
+        #[arg(long, group = "scope")]
+        board: Option<String>,
+        /// Parent card ID
+        #[arg(long, group = "scope")]
+        card: Option<String>,
     },
 }
 
@@ -542,6 +569,8 @@ pub enum CardAction {
     },
     /// Manage labels on a card
     Label(CardLabelCommand),
+    /// Manage custom field values on a card
+    Field(CardFieldCommand),
     /// Manage assignees on a card
     Assignee(CardAssigneeCommand),
 }
@@ -574,6 +603,51 @@ pub enum CardLabelAction {
         card: String,
         /// Label ID
         label: String,
+    },
+}
+
+// ── Card Field ──────────────────────────────────────────────────────────
+
+/// Custom field *values* on a card — the string a card stores for one
+/// (group, field) pair.
+#[derive(Parser)]
+pub struct CardFieldCommand {
+    #[command(subcommand)]
+    pub action: CardFieldAction,
+}
+
+#[derive(Subcommand)]
+pub enum CardFieldAction {
+    /// List custom field values on a card
+    List {
+        /// Card ID
+        card: String,
+    },
+    /// Set a custom field value on a card
+    Set {
+        /// Card ID
+        card: String,
+        /// Custom field group ID or name; use an ID to avoid ambiguity
+        #[arg(long)]
+        group: String,
+        /// Custom field ID or name; use an ID to avoid ambiguity
+        #[arg(long)]
+        field: String,
+        /// Value to store. Capped at 512 characters. An empty value is not
+        /// accepted — use `plnk card field clear` to remove a value
+        #[arg(long)]
+        value: String,
+    },
+    /// Clear a custom field value on a card
+    Clear {
+        /// Card ID
+        card: String,
+        /// Custom field group ID or name; use an ID to avoid ambiguity
+        #[arg(long)]
+        group: String,
+        /// Custom field ID or name; use an ID to avoid ambiguity
+        #[arg(long)]
+        field: String,
     },
 }
 
@@ -749,6 +823,157 @@ pub enum LabelAction {
     /// Delete a label
     Delete {
         /// Label ID
+        id: String,
+    },
+}
+
+// ── Field Group ─────────────────────────────────────────────────────────
+
+/// Custom field groups hold the named fields a card can carry values for.
+///
+/// A group on a *project* is a reusable template (a base group). A card adopts
+/// a template with `create --card <id> --base <baseGroupId>`, or defines a
+/// one-off group with `create --card <id> --name <name>`.
+#[derive(Parser)]
+pub struct FieldGroupCommand {
+    #[command(subcommand)]
+    pub action: FieldGroupAction,
+}
+
+#[derive(Subcommand)]
+pub enum FieldGroupAction {
+    /// List custom field groups in a project, board, or card
+    List {
+        /// Parent project ID (lists base groups — the reusable templates)
+        #[arg(long, group = "scope")]
+        project: Option<String>,
+        /// Parent board ID
+        #[arg(long, group = "scope")]
+        board: Option<String>,
+        /// Parent card ID
+        #[arg(long, group = "scope")]
+        card: Option<String>,
+    },
+    /// Find custom field groups by name within a project, board, or card
+    Find {
+        /// Search a project's base groups
+        #[arg(long, group = "scope")]
+        project: Option<String>,
+        /// Search a board's groups
+        #[arg(long, group = "scope")]
+        board: Option<String>,
+        /// Search a card's groups
+        #[arg(long, group = "scope")]
+        card: Option<String>,
+        /// Group name to search for
+        #[arg(long)]
+        name: String,
+    },
+    /// Get a custom field group by ID
+    Get {
+        /// Custom field group ID (base group IDs are accepted too)
+        id: String,
+    },
+    /// Create a custom field group
+    Create {
+        /// Parent project ID — creates a reusable base group
+        #[arg(long, group = "scope")]
+        project: Option<String>,
+        /// Parent board ID
+        #[arg(long, group = "scope")]
+        board: Option<String>,
+        /// Parent card ID
+        #[arg(long, group = "scope")]
+        card: Option<String>,
+        /// Group name. Required for --project and --board; on --card it creates
+        /// a one-off group instead of adopting a template
+        #[arg(long)]
+        name: Option<String>,
+        /// Base group ID to adopt onto a card. Only valid with --card
+        #[arg(long, conflicts_with = "name")]
+        base: Option<String>,
+    },
+    /// Update a custom field group
+    Update {
+        /// Custom field group ID (base group IDs are accepted too)
+        id: String,
+        /// New group name
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Delete a custom field group
+    Delete {
+        /// Custom field group ID (base group IDs are accepted too)
+        id: String,
+    },
+}
+
+// ── Field ───────────────────────────────────────────────────────────────
+
+/// Custom fields are the named slots inside a group. A card carries a *value*
+/// for a field; see `plnk card field`.
+#[derive(Parser)]
+pub struct FieldCommand {
+    #[command(subcommand)]
+    pub action: FieldAction,
+}
+
+#[derive(Subcommand)]
+pub enum FieldAction {
+    /// List custom fields in a group
+    List {
+        /// Parent custom field group ID
+        #[arg(long, group = "field_scope")]
+        group: Option<String>,
+        /// Parent base custom field group ID
+        #[arg(long = "base-group", group = "field_scope")]
+        base_group: Option<String>,
+    },
+    /// Find custom fields by name within a group
+    Find {
+        /// Parent custom field group ID
+        #[arg(long, group = "field_scope")]
+        group: Option<String>,
+        /// Parent base custom field group ID
+        #[arg(long = "base-group", group = "field_scope")]
+        base_group: Option<String>,
+        /// Field name to search for
+        #[arg(long)]
+        name: String,
+    },
+    /// Create a custom field
+    Create {
+        /// Parent custom field group ID
+        #[arg(long, group = "field_scope")]
+        group: Option<String>,
+        /// Parent base custom field group ID
+        #[arg(long = "base-group", group = "field_scope")]
+        base_group: Option<String>,
+        /// Field name
+        #[arg(long)]
+        name: String,
+        /// Show this field's value on the front of the card in the Planka web
+        /// UI. Off by default, matching Planka — it is the difference between a
+        /// field a human sees at a glance and one only a script reads
+        #[arg(long = "show-on-front")]
+        show_on_front: bool,
+    },
+    /// Update a custom field
+    Update {
+        /// Custom field ID
+        id: String,
+        /// New field name
+        #[arg(long)]
+        name: Option<String>,
+        /// Whether the value shows on the front of the card in the Planka web
+        /// UI. Takes an explicit true or false, so that leaving it unset and
+        /// setting it false stay distinguishable
+        #[arg(long = "show-on-front")]
+        show_on_front: Option<bool>,
+    },
+    /// Delete a custom field
+    Delete {
+        /// Custom field ID
         id: String,
     },
 }

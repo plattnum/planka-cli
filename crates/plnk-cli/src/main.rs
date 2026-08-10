@@ -285,6 +285,9 @@ async fn main() {
             &transport_policy,
         ) {
             Ok(client) => match cmd.action {
+                crate::app::CardAction::Field(sub) => {
+                    commands::card_field::execute(&client, sub.action, app.output, app.full).await
+                }
                 crate::app::CardAction::Label(sub) => {
                     commands::card_label::execute(&client, sub.action, app.output, app.full).await
                 }
@@ -325,6 +328,27 @@ async fn main() {
         ) {
             Ok(client) => {
                 commands::label::execute(&client, cmd.action, app.output, app.yes, app.full).await
+            }
+            Err(e) => Err(e),
+        },
+        Command::Field(cmd) => match build_client(
+            app.server.as_deref(),
+            app.token.as_deref(),
+            &transport_policy,
+        ) {
+            Ok(client) => {
+                commands::field::execute(&client, cmd.action, app.output, app.yes, app.full).await
+            }
+            Err(e) => Err(e),
+        },
+        Command::FieldGroup(cmd) => match build_client(
+            app.server.as_deref(),
+            app.token.as_deref(),
+            &transport_policy,
+        ) {
+            Ok(client) => {
+                commands::field_group::execute(&client, cmd.action, app.output, app.yes, app.full)
+                    .await
             }
             Err(e) => Err(e),
         },
@@ -428,6 +452,48 @@ async fn main() {
                 commands::comment::execute(
                     &client,
                     app::CommentAction::List { card },
+                    app.output,
+                    app.yes,
+                    app.full,
+                )
+                .await
+            }
+            Err(e) => Err(e),
+        },
+        Command::Fields { group, base_group } => match build_client(
+            app.server.as_deref(),
+            app.token.as_deref(),
+            &transport_policy,
+        ) {
+            Ok(client) => {
+                commands::field::execute(
+                    &client,
+                    app::FieldAction::List { group, base_group },
+                    app.output,
+                    app.yes,
+                    app.full,
+                )
+                .await
+            }
+            Err(e) => Err(e),
+        },
+        Command::FieldGroups {
+            project,
+            board,
+            card,
+        } => match build_client(
+            app.server.as_deref(),
+            app.token.as_deref(),
+            &transport_policy,
+        ) {
+            Ok(client) => {
+                commands::field_group::execute(
+                    &client,
+                    app::FieldGroupAction::List {
+                        project,
+                        board,
+                        card,
+                    },
                     app.output,
                     app.yes,
                     app.full,

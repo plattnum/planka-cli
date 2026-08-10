@@ -411,6 +411,52 @@ fn get_examples(resource: &str, action: &str) -> Vec<String> {
         ("label", "update") => vec!["plnk label update 111 --name 'blocked' --color sunset-orange".into()],
         ("label", "delete") => vec!["plnk label delete 111".into()],
 
+        // Field group
+        ("field-group", "list") => vec![
+            "plnk field-group list --project 123".into(),
+            "plnk field-group list --card 1234".into(),
+        ],
+        ("field-group", "find") => {
+            vec!["plnk field-group find --project 123 --name 'Documentation'".into()]
+        }
+        ("field-group", "get") => vec!["plnk field-group get 777".into()],
+        ("field-group", "create") => vec![
+            "plnk field-group create --project 123 --name 'Documentation'".into(),
+            "plnk field-group create --card 1234 --base 777".into(),
+            "plnk field-group create --card 1234 --name 'Ad-hoc'".into(),
+        ],
+        ("field-group", "update") => vec!["plnk field-group update 777 --name 'Docs'".into()],
+        ("field-group", "delete") => vec!["plnk field-group delete 777".into()],
+
+        // Field
+        ("field", "list") => vec![
+            "plnk field list --base-group 777".into(),
+            "plnk field list --group 888".into(),
+        ],
+        ("field", "find") => vec!["plnk field find --base-group 777 --name 'Spec'".into()],
+        ("field", "create") => vec![
+            "plnk field create --base-group 777 --name 'Specification' --show-on-front".into(),
+            "plnk field create --group 888 --name 'Implementation Plan'".into(),
+        ],
+        ("field", "update") => vec![
+            "plnk field update 999 --name 'Spec'".into(),
+            "plnk field update 999 --show-on-front false".into(),
+        ],
+        ("field", "delete") => vec!["plnk field delete 999".into()],
+
+        // Card field values (nested under `card`, so the action carries the
+        // subcommand — matching how `card label add` is keyed)
+        ("card", "field list") => vec!["plnk card field list 1234".into()],
+        ("card", "field set") => vec![
+            "plnk card field set 1234 --group 'Documentation' --field 'Specification' \
+             --value 'specs/design.html'"
+                .into(),
+            "plnk card field set 1234 --group 888 --field 999 --value 'specs/design.html'".into(),
+        ],
+        ("card", "field clear") => {
+            vec!["plnk card field clear 1234 --group 'Documentation' --field 'Specification'".into()]
+        }
+
         // Attachment
         ("attachment", "list") => vec!["plnk attachment list --card 1234".into()],
         ("attachment", "upload") => vec!["plnk attachment upload --card 1234 ./spec.png".into()],

@@ -105,6 +105,69 @@ $ plnk card get 1756505635064644838 --output markdown
 
 Add `--full` for the complete field set (description, timestamps, creator, subscription state).
 
+## Pointing a card at its documents
+
+Custom fields are the only structured, named metadata a card can carry. This defines a
+reusable template once, adopts it onto a card, and fills it in by name.
+
+```bash
+# Define the template on the project, once
+BASE=$(plnk field-group create --project 123 --name "Documentation" \
+         --output json | jq -r .data.id)
+
+# Give it two named slots, both visible on the card face in the web UI
+plnk field create --base-group "$BASE" --name "Specification" --show-on-front
+plnk field create --base-group "$BASE" --name "Implementation Plan" --show-on-front
+
+# Adopt the template onto a card
+plnk field-group create --card 1234 --base "$BASE"
+
+# Fill in the values by name — resolution reaches through to the base group,
+# so this works even though the adopted group's own name is null
+plnk card field set 1234 --group "Documentation" --field "Specification" \
+                         --value "specs/2026-08-06-design.html"
+plnk card field set 1234 --group "Documentation" --field "Implementation Plan" \
+                         --value "specs/2026-08-06-plan.md"
+
+# Read them back
+plnk card field list 1234 --output json
+```
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "1838340035317859694",
+      "customFieldId": "1838338046462788967",
+      "content": "specs/2026-08-06-design.html"
+    },
+    {
+      "id": "1838340251232241010",
+      "customFieldId": "1838338049474299240",
+      "content": "specs/2026-08-06-plan.md"
+    }
+  ],
+  "meta": { "count": 2 }
+}
+```
+
+Values are capped at 512 characters and cannot be empty — clearing is a separate
+operation, and it is idempotent:
+
+```bash
+plnk card field clear 1234 --group "Documentation" --field "Specification"   # exit 0
+plnk card field clear 1234 --group "Documentation" --field "Specification"   # exit 0 again
+```
+
+There is no server-side filter on custom field values. Filtering by value means
+pulling a snapshot and filtering locally:
+
+```bash
+plnk card snapshot 1234 --output json \
+  | jq '.included.customFieldValues[] | select(.content | test("codex"))'
+```
+
 ## Exit codes for script branching
 
 Every command exits with a typed status code so shell scripts can branch without parsing stderr.

@@ -33,6 +33,11 @@ This file is optimized for agent lookup. When using it from Pi:
 | add a comment to a card | `plnk comment create --card <cardId> --text <text>` |
 | list labels on a board | `plnk label list --board <boardId>` |
 | apply/remove label on card | `plnk card label add <cardId> <labelId>` / `plnk card label remove <cardId> <labelId>` |
+| list custom field groups on a card | `plnk field-group list --card <cardId>` |
+| define a reusable field template | `plnk field-group create --project <projectId> --name <name>` then `plnk field create --base-group <groupId> --name <name>` |
+| attach a template to a card | `plnk field-group create --card <cardId> --base <baseGroupId>` |
+| set/clear a custom field value | `plnk card field set <cardId> --group <id\|name> --field <id\|name> --value <text>` / `plnk card field clear <cardId> --group <id\|name> --field <id\|name>` |
+| read a card's custom field values | `plnk card field list <cardId>` |
 | list assignees on a card | `plnk card assignee list <cardId>` |
 | add/remove assignee | `plnk card assignee add <cardId> <userId>` / `plnk card assignee remove <cardId> <userId>` |
 | list/upload/download attachments | `plnk attachment list --card <cardId>` / `plnk attachment upload --card <cardId> <file>` / `plnk attachment download <attachmentId> --card <cardId>` |
@@ -260,6 +265,62 @@ Alias: `plnk labels --board <boardId>`
 
 `berry-red`, `pumpkin-orange`, `light-mud`, `sunset-orange`, `rain-blue`, `lagoon-blue`, `sky-blue`, `midnight-blue`, `concrete-gray`, `bright-moss`, `dark-granite`, `pink-tulip`
 
+## Field Group
+
+```bash
+plnk field-group list --project <projectId>   # base groups (reusable templates)
+plnk field-group list --board <boardId>
+plnk field-group list --card <cardId>
+plnk field-group find --project <projectId> --name <name>
+plnk field-group get <groupId>
+plnk field-group create --project <projectId> --name <name>   # a template
+plnk field-group create --board <boardId> --name <name>
+plnk field-group create --card <cardId> --base <baseGroupId>  # adopt a template
+plnk field-group create --card <cardId> --name <name>         # one-off group
+plnk field-group update <groupId> --name <name>
+plnk field-group delete <groupId> [--yes]
+```
+
+Alias: `plnk field-groups --project|--board|--card <id>`
+
+- `--project`, `--board`, `--card` are mutually exclusive and one is required on `list`, `find` and `create`.
+- `--project` returns **base groups** (a different type with different columns than board/card groups). Do not expect one shape.
+- On `create --card`, exactly one of `--base` or `--name`. Neither exits `2`.
+- `get`, `update` and `delete` accept either kind of ID and fall back to the base-group route automatically.
+
+## Field
+
+```bash
+plnk field list --base-group <baseGroupId>
+plnk field list --group <groupId>
+plnk field find --base-group <baseGroupId> --name <name>
+plnk field create --base-group <baseGroupId> --name <name> [--show-on-front]
+plnk field create --group <groupId> --name <name>
+plnk field update <fieldId> [--name <name>] [--show-on-front true|false]
+plnk field delete <fieldId> [--yes]
+```
+
+Alias: `plnk fields --group|--base-group <id>`
+
+- `--group` and `--base-group` are mutually exclusive and one is required on `list`, `find` and `create`.
+- **Asking an adopted card group for its fields returns nothing.** Its fields belong to the base group — ask `--base-group <baseGroupId>` instead. This is not a bug.
+- `--show-on-front` makes the value visible on the card face in the Planka web UI. Off by default.
+
+## Card Field Values
+
+```bash
+plnk card field list <cardId>
+plnk card field set <cardId> --group <id|name> --field <id|name> --value <text>
+plnk card field clear <cardId> --group <id|name> --field <id|name>
+```
+
+- `--group` and `--field` accept an **ID or a name**, like `card label add`. Names resolve within the card's own groups and reach through to the base group. Use an ID to avoid ambiguity.
+- Ambiguous name → exit `2` naming every candidate. No match → exit `4`.
+- Values are capped at **512 characters**; over-length exits `2` with no request sent.
+- **Empty values are rejected** (exit `2`). There is no "set to empty" — use `card field clear`.
+- `clear` is **idempotent**: clearing an already-unset value exits `0`.
+- **There is no server-side filter by field value.** To filter, pull a snapshot and filter locally.
+
 ## Attachment
 
 ```bash
@@ -300,6 +361,8 @@ All aliases are hidden from `--help` and produce identical output to their canon
 | `plnk tasks --card <id>` | `plnk task list --card <id>` |
 | `plnk comments --card <id>` | `plnk comment list --card <id>` |
 | `plnk labels --board <id>` | `plnk label list --board <id>` |
+| `plnk field-groups --card <id>` | `plnk field-group list --card <id>` |
+| `plnk fields --base-group <id>` | `plnk field list --base-group <id>` |
 
 ## Global Flags
 
