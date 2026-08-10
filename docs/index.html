@@ -601,15 +601,22 @@
 
 <section class="whats-new" id="whats-new">
     <div class="container">
-        <h2>What&rsquo;s new<span class="version-pill">v0.2.0</span></h2>
-        <p class="sub">Released 2026-05-02.</p>
+        <h2>What&rsquo;s new<span class="version-pill">v0.3.0</span></h2>
+        <p class="sub">Released 2026-08-10.</p>
         <div class="whats-new-card">
-            <h3>plnk-tui &mdash; standalone auth + first-run prompts</h3>
-            <p><strong>Breaking change.</strong> The TUI no longer shares <code>plnk</code>'s config or environment variables. Launch <code>plnk-tui</code> with no flags and it prompts for server, username, and password on first run, then offers to save the non-secret server + username to <code>~/.config/plnk-tui/config.toml</code>. Passwords are never persisted. The TUI's environment variables were renamed from <code>PLANKA_*</code> to <code>PLNK_TUI_*</code>; <code>plnk</code>'s own <code>PLANKA_SERVER</code> / <code>PLANKA_TOKEN</code> are unchanged. Rationale: <code>plnk</code> is automation/AI/API-token oriented, while <code>plnk-tui</code> is for an interactive human session &mdash; sharing one credential store for two very different access patterns was a footgun.</p>
+            <h3>Custom fields &mdash; structured metadata on a card</h3>
+            <p>Custom fields are the only place in Planka a card can carry <strong>named, structured metadata</strong> rather than free prose &mdash; a spec URL, a ticket id, a ruling date. Three new resources make them scriptable: <code>plnk field-group</code> for the groups (a group on a project is a reusable template), <code>plnk field</code> for the named slots inside one, and <code>plnk card field</code> to get, set, and clear a card's values. <code>--group</code> and <code>--field</code> accept an ID <em>or</em> a name, resolving through the base group so <code>--group Documentation</code> works even though an adopted card group's own name is <code>null</code>. Values are validated before any request is sent, and clearing is idempotent.</p>
+            <div class="code-block">
+                <span class="comment"># define a reusable template once, then point a card at its docs</span><br>
+                plnk field-group create --project 123 --name Documentation<br>
+                plnk field create --base-group 777 --name Specification --show-on-front<br>
+                plnk field-group create --card 1234 --base 777<br>
+                plnk card field set 1234 --group Documentation --field Specification --value "specs/design.html"
+            </div>
             <p class="meta">
-                <a href="https://github.com/plattnum/planka-cli/releases/tag/v0.2.0">Release notes &rarr;</a>
+                <a href="https://github.com/plattnum/planka-cli/releases/tag/v0.3.0">Release notes &rarr;</a>
                 &nbsp;&middot;&nbsp;
-                <a href="https://github.com/plattnum/planka-cli/blob/main/docs/tui/overview.md">TUI overview &amp; migration &rarr;</a>
+                <a href="https://github.com/plattnum/planka-cli/blob/main/docs/cli/custom-fields.md">Custom fields guide &rarr;</a>
                 &nbsp;&middot;&nbsp;
                 <a href="https://github.com/plattnum/planka-cli/blob/main/CHANGELOG.md">Changelog</a>
             </p>
