@@ -949,6 +949,11 @@ impl CustomFieldGroupApi for PlankaClientV1 {
         Ok(resp.included.base_custom_field_groups)
     }
 
+    async fn list_all_base_field_groups(&self) -> Result<Vec<BaseCustomFieldGroup>, PlankaError> {
+        let resp: ProjectsListSnapshot = self.http.get("/api/projects").await?;
+        Ok(resp.included.base_custom_field_groups)
+    }
+
     async fn get_base_field_group(&self, id: &str) -> Result<BaseCustomFieldGroup, PlankaError> {
         // There is no `GET /api/base-custom-field-groups/{id}` route: that path
         // falls through to the SPA and returns HTML with 200, so it cannot be

@@ -569,6 +569,8 @@ pub enum CardAction {
     },
     /// Manage labels on a card
     Label(CardLabelCommand),
+    /// Manage custom field values on a card
+    Field(CardFieldCommand),
     /// Manage assignees on a card
     Assignee(CardAssigneeCommand),
 }
@@ -601,6 +603,51 @@ pub enum CardLabelAction {
         card: String,
         /// Label ID
         label: String,
+    },
+}
+
+// ── Card Field ──────────────────────────────────────────────────────────
+
+/// Custom field *values* on a card — the string a card stores for one
+/// (group, field) pair.
+#[derive(Parser)]
+pub struct CardFieldCommand {
+    #[command(subcommand)]
+    pub action: CardFieldAction,
+}
+
+#[derive(Subcommand)]
+pub enum CardFieldAction {
+    /// List custom field values on a card
+    List {
+        /// Card ID
+        card: String,
+    },
+    /// Set a custom field value on a card
+    Set {
+        /// Card ID
+        card: String,
+        /// Custom field group ID or name; use an ID to avoid ambiguity
+        #[arg(long)]
+        group: String,
+        /// Custom field ID or name; use an ID to avoid ambiguity
+        #[arg(long)]
+        field: String,
+        /// Value to store. Capped at 512 characters. An empty value is not
+        /// accepted — use `plnk card field clear` to remove a value
+        #[arg(long)]
+        value: String,
+    },
+    /// Clear a custom field value on a card
+    Clear {
+        /// Card ID
+        card: String,
+        /// Custom field group ID or name; use an ID to avoid ambiguity
+        #[arg(long)]
+        group: String,
+        /// Custom field ID or name; use an ID to avoid ambiguity
+        #[arg(long)]
+        field: String,
     },
 }
 

@@ -158,6 +158,12 @@ pub trait CustomFieldGroupApi {
         &self,
         project_id: &str,
     ) -> Result<Vec<BaseCustomFieldGroup>, PlankaError>;
+    /// Every base group the caller can see, in one request.
+    ///
+    /// Deliberately unscoped: `GET /api/projects` is the only endpoint that
+    /// exposes base groups at all, and resolving a card's adopted groups needs
+    /// their names without first walking card to board to project.
+    async fn list_all_base_field_groups(&self) -> Result<Vec<BaseCustomFieldGroup>, PlankaError>;
     /// Look up a single base group by id.
     ///
     /// Reads `GET /api/projects` because no by-id route exists for base groups.

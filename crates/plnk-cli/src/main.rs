@@ -285,6 +285,9 @@ async fn main() {
             &transport_policy,
         ) {
             Ok(client) => match cmd.action {
+                crate::app::CardAction::Field(sub) => {
+                    commands::card_field::execute(&client, sub.action, app.output, app.full).await
+                }
                 crate::app::CardAction::Label(sub) => {
                     commands::card_label::execute(&client, sub.action, app.output, app.full).await
                 }

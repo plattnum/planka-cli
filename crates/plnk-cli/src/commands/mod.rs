@@ -3,6 +3,7 @@ pub mod auth;
 pub mod board;
 pub mod card;
 pub mod card_assignee;
+pub mod card_field;
 pub mod card_label;
 pub mod comment;
 pub mod field;
