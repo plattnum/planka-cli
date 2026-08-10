@@ -13,21 +13,23 @@ use tracing::debug;
 use crate::client::HttpClient;
 use crate::error::PlankaError;
 use crate::models::{
-    Attachment, Board, BoardMembership, Card, CardBatchFailure, CardBatchGetResult, CardLabel,
-    CardMembership, Comment, CreateBoard, CreateCard, CreateCardMembership, CreateComment,
-    CreateList, CreateProject, CreateTaskList, FindScope, Label, List, MoveCard, Project,
-    ProjectManager, Task, UpdateBoard, UpdateCard, UpdateComment, UpdateLabel, UpdateList,
-    UpdateProject, UpdateTask, User,
+    Attachment, BaseCustomFieldGroup, Board, BoardMembership, Card, CardBatchFailure,
+    CardBatchGetResult, CardLabel, CardMembership, Comment, CreateBoard, CreateCard,
+    CreateCardMembership, CreateComment, CreateList, CreateProject, CreateTaskList, CustomField,
+    CustomFieldGroup, CustomFieldValue, FindScope, Label, List, MoveCard, Project, ProjectManager,
+    Task, UpdateBoard, UpdateCard, UpdateComment, UpdateCustomField, UpdateCustomFieldGroup,
+    UpdateLabel, UpdateList, UpdateProject, UpdateTask, User,
 };
 
 use super::responses::{
-    BoardSnapshot, CardSnapshot, CardsListResponse, CommentsListResponse, ItemResponse,
-    ItemsResponse, ProjectSnapshot,
+    BoardSnapshot, CardSnapshot, CardsListResponse, CommentsListResponse, CustomFieldGroupSnapshot,
+    ItemResponse, ItemsResponse, ProjectSnapshot, ProjectsListSnapshot,
 };
 use super::search::match_by_name;
 use super::traits::{
-    AssigneeApi, AttachmentApi, BoardApi, CardApi, CardLabelApi, CommentApi, LabelApi, ListApi,
-    MembershipApi, ProjectApi, TaskApi, UserApi,
+    AssigneeApi, AttachmentApi, BoardApi, CardApi, CardCustomFieldApi, CardLabelApi, CommentApi,
+    CustomFieldApi, CustomFieldGroupApi, LabelApi, ListApi, MembershipApi, ProjectApi, TaskApi,
+    UserApi,
 };
 
 /// Concrete Planka API client for the current server version.
@@ -916,6 +918,374 @@ impl MembershipApi for PlankaClientV1 {
         self.http
             .delete(&format!("/api/project-managers/{id}"))
             .await
+    }
+}
+
+// ── Custom fields ───────────────────────────────────────────────────────
+
+/// Build the composite path segment that addresses a single custom field value.
+///
+/// Planka does not use ordinary path parameters here — group and field ids are
+/// packed into one segment. Planka's published `OpenAPI` spec writes this as
+/// `customFieldId:${customFieldId}` with a literal `$`; that is a documentation
+/// bug. Sending the `$` returns `400 E_MISSING_OR_INVALID_PARAMS` because the
+/// server reads it as part of the id and fails a length check.
+fn custom_field_value_path(card_id: &str, group_id: &str, field_id: &str) -> String {
+    format!(
+        "/api/cards/{card_id}/custom-field-values/customFieldGroupId:{group_id}:customFieldId:{field_id}"
+    )
+}
+
+#[async_trait]
+impl CustomFieldGroupApi for PlankaClientV1 {
+    async fn list_base_field_groups(
+        &self,
+        project_id: &str,
+    ) -> Result<Vec<BaseCustomFieldGroup>, PlankaError> {
+        let resp: ProjectSnapshot = self
+            .http
+            .get(&format!("/api/projects/{project_id}"))
+            .await?;
+        Ok(resp.included.base_custom_field_groups)
+    }
+
+    async fn get_base_field_group(&self, id: &str) -> Result<BaseCustomFieldGroup, PlankaError> {
+        // There is no `GET /api/base-custom-field-groups/{id}` route: that path
+        // falls through to the SPA and returns HTML with 200, so it cannot be
+        // used. The projects list is the only endpoint exposing base groups.
+        let resp: ProjectsListSnapshot = self.http.get("/api/projects").await?;
+        resp.included
+            .base_custom_field_groups
+            .into_iter()
+            .find(|group| group.id == id)
+            .ok_or_else(|| PlankaError::NotFound {
+                resource_type: "base custom field group".to_string(),
+                id: id.to_string(),
+            })
+    }
+
+    async fn list_field_groups_for_board(
+        &self,
+        board_id: &str,
+    ) -> Result<Vec<CustomFieldGroup>, PlankaError> {
+        let resp: BoardSnapshot = self.http.get(&format!("/api/boards/{board_id}")).await?;
+        Ok(resp.included.custom_field_groups)
+    }
+
+    async fn list_field_groups_for_card(
+        &self,
+        card_id: &str,
+    ) -> Result<Vec<CustomFieldGroup>, PlankaError> {
+        let resp: CardSnapshot = self.http.get(&format!("/api/cards/{card_id}")).await?;
+        Ok(resp.included.custom_field_groups)
+    }
+
+    async fn get_field_group(&self, id: &str) -> Result<CustomFieldGroup, PlankaError> {
+        let resp: CustomFieldGroupSnapshot = self
+            .http
+            .get(&format!("/api/custom-field-groups/{id}"))
+            .await?;
+        Ok(resp.item)
+    }
+
+    async fn create_base_field_group(
+        &self,
+        project_id: &str,
+        name: &str,
+    ) -> Result<BaseCustomFieldGroup, PlankaError> {
+        #[derive(serde::Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Payload {
+            name: String,
+            position: f64,
+        }
+
+        let payload = Payload {
+            name: name.to_string(),
+            position: 65536.0,
+        };
+        let resp: ItemResponse<BaseCustomFieldGroup> = self
+            .http
+            .post(
+                &format!("/api/projects/{project_id}/base-custom-field-groups"),
+                &payload,
+            )
+            .await?;
+        Ok(resp.item)
+    }
+
+    async fn create_board_field_group(
+        &self,
+        board_id: &str,
+        name: &str,
+    ) -> Result<CustomFieldGroup, PlankaError> {
+        #[derive(serde::Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Payload {
+            name: String,
+            position: f64,
+        }
+
+        let payload = Payload {
+            name: name.to_string(),
+            position: 65536.0,
+        };
+        let resp: ItemResponse<CustomFieldGroup> = self
+            .http
+            .post(
+                &format!("/api/boards/{board_id}/custom-field-groups"),
+                &payload,
+            )
+            .await?;
+        Ok(resp.item)
+    }
+
+    async fn create_card_field_group(
+        &self,
+        card_id: &str,
+        base_id: Option<&str>,
+        name: Option<&str>,
+    ) -> Result<CustomFieldGroup, PlankaError> {
+        // `baseCustomFieldGroupId` and `name` are mutually exclusive on the
+        // wire: adopting a template carries no name of its own.
+        #[derive(serde::Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Payload {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            base_custom_field_group_id: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            name: Option<String>,
+            position: f64,
+        }
+
+        let payload = match (base_id, name) {
+            (Some(base), _) => Payload {
+                base_custom_field_group_id: Some(base.to_string()),
+                name: None,
+                position: 65536.0,
+            },
+            (None, Some(group_name)) => Payload {
+                base_custom_field_group_id: None,
+                name: Some(group_name.to_string()),
+                position: 65536.0,
+            },
+            (None, None) => {
+                return Err(PlankaError::MissingRequiredOption {
+                    field: "--base or --name".to_string(),
+                });
+            }
+        };
+
+        // The server may reposition the group when a sibling already occupies
+        // the requested slot — the echoed position is not asserted.
+        let resp: ItemResponse<CustomFieldGroup> = self
+            .http
+            .post(
+                &format!("/api/cards/{card_id}/custom-field-groups"),
+                &payload,
+            )
+            .await?;
+        Ok(resp.item)
+    }
+
+    async fn update_field_group(
+        &self,
+        id: &str,
+        params: UpdateCustomFieldGroup,
+    ) -> Result<CustomFieldGroup, PlankaError> {
+        let resp: ItemResponse<CustomFieldGroup> = self
+            .http
+            .patch(&format!("/api/custom-field-groups/{id}"), &params)
+            .await?;
+        Ok(resp.item)
+    }
+
+    async fn update_base_field_group(
+        &self,
+        id: &str,
+        params: UpdateCustomFieldGroup,
+    ) -> Result<BaseCustomFieldGroup, PlankaError> {
+        // PATCH exists on this route even though GET does not.
+        let resp: ItemResponse<BaseCustomFieldGroup> = self
+            .http
+            .patch(&format!("/api/base-custom-field-groups/{id}"), &params)
+            .await?;
+        Ok(resp.item)
+    }
+
+    async fn delete_field_group(&self, id: &str) -> Result<(), PlankaError> {
+        self.http
+            .delete(&format!("/api/custom-field-groups/{id}"))
+            .await
+    }
+
+    async fn delete_base_field_group(&self, id: &str) -> Result<(), PlankaError> {
+        self.http
+            .delete(&format!("/api/base-custom-field-groups/{id}"))
+            .await
+    }
+}
+
+#[async_trait]
+impl CustomFieldApi for PlankaClientV1 {
+    async fn list_fields(
+        &self,
+        group_id: &str,
+        base: bool,
+    ) -> Result<Vec<CustomField>, PlankaError> {
+        if base {
+            // Base group fields appear only in the projects list — neither the
+            // board snapshot nor any by-id base-group route exposes them.
+            let resp: ProjectsListSnapshot = self.http.get("/api/projects").await?;
+            if !resp
+                .included
+                .base_custom_field_groups
+                .iter()
+                .any(|group| group.id == group_id)
+            {
+                return Err(PlankaError::NotFound {
+                    resource_type: "base custom field group".to_string(),
+                    id: group_id.to_string(),
+                });
+            }
+            return Ok(resp
+                .included
+                .custom_fields
+                .into_iter()
+                .filter(|field| field.base_custom_field_group_id.as_deref() == Some(group_id))
+                .collect());
+        }
+
+        let resp: CustomFieldGroupSnapshot = self
+            .http
+            .get(&format!("/api/custom-field-groups/{group_id}"))
+            .await?;
+        Ok(resp.included.custom_fields)
+    }
+
+    async fn list_fields_for_card(&self, card_id: &str) -> Result<Vec<CustomField>, PlankaError> {
+        let resp: CardSnapshot = self.http.get(&format!("/api/cards/{card_id}")).await?;
+        Ok(resp.included.custom_fields)
+    }
+
+    async fn find_fields(
+        &self,
+        group_id: &str,
+        base: bool,
+        name: &str,
+    ) -> Result<Vec<CustomField>, PlankaError> {
+        let fields = self.list_fields(group_id, base).await?;
+        let matched = match_by_name(&fields, name);
+        Ok(matched.into_iter().cloned().collect())
+    }
+
+    async fn create_field(
+        &self,
+        group_id: &str,
+        base: bool,
+        name: &str,
+        show_on_front: bool,
+    ) -> Result<CustomField, PlankaError> {
+        #[derive(serde::Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Payload {
+            name: String,
+            position: f64,
+            show_on_front_of_card: bool,
+        }
+
+        let payload = Payload {
+            name: name.to_string(),
+            position: 65536.0,
+            show_on_front_of_card: show_on_front,
+        };
+        let path = if base {
+            format!("/api/base-custom-field-groups/{group_id}/custom-fields")
+        } else {
+            format!("/api/custom-field-groups/{group_id}/custom-fields")
+        };
+        let resp: ItemResponse<CustomField> = self.http.post(&path, &payload).await?;
+        Ok(resp.item)
+    }
+
+    async fn update_field(
+        &self,
+        id: &str,
+        params: UpdateCustomField,
+    ) -> Result<CustomField, PlankaError> {
+        let resp: ItemResponse<CustomField> = self
+            .http
+            .patch(&format!("/api/custom-fields/{id}"), &params)
+            .await?;
+        Ok(resp.item)
+    }
+
+    async fn delete_field(&self, id: &str) -> Result<(), PlankaError> {
+        self.http.delete(&format!("/api/custom-fields/{id}")).await
+    }
+}
+
+#[async_trait]
+impl CardCustomFieldApi for PlankaClientV1 {
+    async fn list_field_values(&self, card_id: &str) -> Result<Vec<CustomFieldValue>, PlankaError> {
+        let resp: CardSnapshot = self.http.get(&format!("/api/cards/{card_id}")).await?;
+        Ok(resp.included.custom_field_values)
+    }
+
+    async fn set_field_value(
+        &self,
+        card_id: &str,
+        group_id: &str,
+        field_id: &str,
+        content: &str,
+    ) -> Result<CustomFieldValue, PlankaError> {
+        #[derive(serde::Serialize)]
+        struct Payload {
+            content: String,
+        }
+
+        let payload = Payload {
+            content: content.to_string(),
+        };
+        let resp: ItemResponse<CustomFieldValue> = self
+            .http
+            .patch(
+                &custom_field_value_path(card_id, group_id, field_id),
+                &payload,
+            )
+            .await?;
+        Ok(resp.item)
+    }
+
+    /// Remove a value, treating "already unset" as success.
+    ///
+    /// This is a deliberate departure from the crate's usual "errors are data"
+    /// stance. The intent of clearing is *ensure this field carries no value*,
+    /// which an already-unset field satisfies, so scripts should not have to
+    /// branch on it. Only a 404 from this specific route is swallowed; every
+    /// other status maps to its normal typed error.
+    ///
+    /// Note the route is **plural** (`custom-field-values`). Planka's published
+    /// spec spells the DELETE path singular; that route does not exist and
+    /// returns a bare `{"code":"E_NOT_FOUND"}` with no message.
+    async fn clear_field_value(
+        &self,
+        card_id: &str,
+        group_id: &str,
+        field_id: &str,
+    ) -> Result<(), PlankaError> {
+        match self
+            .http
+            .delete(&custom_field_value_path(card_id, group_id, field_id))
+            .await
+        {
+            Ok(()) => Ok(()),
+            Err(PlankaError::Remote404 { .. }) => {
+                debug!("custom field value already unset; treating clear as a no-op");
+                Ok(())
+            }
+            Err(other) => Err(other),
+        }
     }
 }
 

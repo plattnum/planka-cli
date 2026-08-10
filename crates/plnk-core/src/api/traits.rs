@@ -10,10 +10,11 @@ use async_trait::async_trait;
 
 use crate::error::PlankaError;
 use crate::models::{
-    Attachment, Board, BoardMembership, Card, CardBatchGetResult, CardLabel, CardMembership,
-    Comment, CreateBoard, CreateCard, CreateComment, CreateList, CreateProject, FindScope, Label,
-    List, MoveCard, Project, ProjectManager, Task, UpdateBoard, UpdateCard, UpdateComment,
-    UpdateLabel, UpdateList, UpdateProject, UpdateTask, User,
+    Attachment, BaseCustomFieldGroup, Board, BoardMembership, Card, CardBatchGetResult, CardLabel,
+    CardMembership, Comment, CreateBoard, CreateCard, CreateComment, CreateList, CreateProject,
+    CustomField, CustomFieldGroup, CustomFieldValue, FindScope, Label, List, MoveCard, Project,
+    ProjectManager, Task, UpdateBoard, UpdateCard, UpdateComment, UpdateCustomField,
+    UpdateCustomFieldGroup, UpdateLabel, UpdateList, UpdateProject, UpdateTask, User,
 };
 
 #[async_trait]
@@ -139,6 +140,127 @@ pub trait CardLabelApi {
     async fn add_card_label(&self, card_id: &str, label_id: &str)
     -> Result<CardLabel, PlankaError>;
     async fn remove_card_label(&self, card_id: &str, label_id: &str) -> Result<(), PlankaError>;
+}
+
+/// Custom field groups: the reusable project-level templates (base groups) and
+/// the board- and card-level groups that hold fields.
+///
+/// Base groups are a separate resource from ordinary groups on the wire, with
+/// their own routes, and are therefore given their own methods here rather than
+/// being folded into the group methods. In particular there is **no
+/// `GET /api/base-custom-field-groups/{id}`** route — that path falls through to
+/// the Planka SPA and returns HTML with `200` — so `get_base_field_group` reads
+/// the projects list instead.
+#[async_trait]
+pub trait CustomFieldGroupApi {
+    /// Base groups defined on a project, read from the project snapshot.
+    async fn list_base_field_groups(
+        &self,
+        project_id: &str,
+    ) -> Result<Vec<BaseCustomFieldGroup>, PlankaError>;
+    /// Look up a single base group by id.
+    ///
+    /// Reads `GET /api/projects` because no by-id route exists for base groups.
+    async fn get_base_field_group(&self, id: &str) -> Result<BaseCustomFieldGroup, PlankaError>;
+    async fn list_field_groups_for_board(
+        &self,
+        board_id: &str,
+    ) -> Result<Vec<CustomFieldGroup>, PlankaError>;
+    async fn list_field_groups_for_card(
+        &self,
+        card_id: &str,
+    ) -> Result<Vec<CustomFieldGroup>, PlankaError>;
+    async fn get_field_group(&self, id: &str) -> Result<CustomFieldGroup, PlankaError>;
+    async fn create_base_field_group(
+        &self,
+        project_id: &str,
+        name: &str,
+    ) -> Result<BaseCustomFieldGroup, PlankaError>;
+    async fn create_board_field_group(
+        &self,
+        board_id: &str,
+        name: &str,
+    ) -> Result<CustomFieldGroup, PlankaError>;
+    /// Attach a group to a card, either by adopting a base group (`base_id`) or
+    /// as a one-off named group. Exactly one of the two must be supplied.
+    async fn create_card_field_group(
+        &self,
+        card_id: &str,
+        base_id: Option<&str>,
+        name: Option<&str>,
+    ) -> Result<CustomFieldGroup, PlankaError>;
+    async fn update_field_group(
+        &self,
+        id: &str,
+        params: UpdateCustomFieldGroup,
+    ) -> Result<CustomFieldGroup, PlankaError>;
+    async fn update_base_field_group(
+        &self,
+        id: &str,
+        params: UpdateCustomFieldGroup,
+    ) -> Result<BaseCustomFieldGroup, PlankaError>;
+    async fn delete_field_group(&self, id: &str) -> Result<(), PlankaError>;
+    async fn delete_base_field_group(&self, id: &str) -> Result<(), PlankaError>;
+}
+
+/// Custom fields: the named slots inside a group.
+///
+/// Every method takes a `base` flag alongside the group id because base groups
+/// and ordinary groups are distinct wire resources reached by different routes.
+/// Reading a base group's fields is only possible through the projects list.
+#[async_trait]
+pub trait CustomFieldApi {
+    async fn list_fields(
+        &self,
+        group_id: &str,
+        base: bool,
+    ) -> Result<Vec<CustomField>, PlankaError>;
+    /// Every custom field defined by the card's own groups, read from the card
+    /// snapshot in a single call.
+    ///
+    /// Fields belonging to an adopted group's *base* group are not included —
+    /// those live on the base group and must be fetched with
+    /// `list_fields(base_id, true)`.
+    async fn list_fields_for_card(&self, card_id: &str) -> Result<Vec<CustomField>, PlankaError>;
+    async fn find_fields(
+        &self,
+        group_id: &str,
+        base: bool,
+        name: &str,
+    ) -> Result<Vec<CustomField>, PlankaError>;
+    async fn create_field(
+        &self,
+        group_id: &str,
+        base: bool,
+        name: &str,
+        show_on_front: bool,
+    ) -> Result<CustomField, PlankaError>;
+    async fn update_field(
+        &self,
+        id: &str,
+        params: UpdateCustomField,
+    ) -> Result<CustomField, PlankaError>;
+    async fn delete_field(&self, id: &str) -> Result<(), PlankaError>;
+}
+
+/// Custom field values stored against a card.
+#[async_trait]
+pub trait CardCustomFieldApi {
+    async fn list_field_values(&self, card_id: &str) -> Result<Vec<CustomFieldValue>, PlankaError>;
+    async fn set_field_value(
+        &self,
+        card_id: &str,
+        group_id: &str,
+        field_id: &str,
+        content: &str,
+    ) -> Result<CustomFieldValue, PlankaError>;
+    /// Remove a value. Idempotent: an already-unset value is a success.
+    async fn clear_field_value(
+        &self,
+        card_id: &str,
+        group_id: &str,
+        field_id: &str,
+    ) -> Result<(), PlankaError>;
 }
 
 #[async_trait]

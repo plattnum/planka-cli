@@ -56,10 +56,9 @@ pub(crate) struct BoardSnapshotIncluded {
     #[serde(default)]
     pub board_memberships: Vec<crate::models::BoardMembership>,
     #[serde(default)]
-    #[allow(dead_code)] // board-scoped groups are read via the board snapshot
     pub custom_field_groups: Vec<crate::models::CustomFieldGroup>,
     #[serde(default)]
-    #[allow(dead_code)] // board snapshot carries these; read via the group endpoint
+    #[allow(dead_code)] // board-wide fields are read per-group instead
     pub custom_fields: Vec<crate::models::CustomField>,
     #[serde(default)]
     #[allow(dead_code)] // board-wide values are not surfaced; card scope is
@@ -82,7 +81,6 @@ pub(crate) struct ProjectSnapshotIncluded {
     #[serde(default)]
     pub project_managers: Vec<crate::models::ProjectManager>,
     #[serde(default)]
-    #[allow(dead_code)] // consumed by CustomFieldGroupApi in the following task
     pub base_custom_field_groups: Vec<crate::models::BaseCustomFieldGroup>,
     #[serde(default)]
     #[allow(dead_code)] // base-group fields are read from the projects list
@@ -119,13 +117,10 @@ pub(crate) struct CardSnapshotIncluded {
     #[serde(default)]
     pub attachments: Vec<crate::models::Attachment>,
     #[serde(default)]
-    #[allow(dead_code)] // consumed by CustomFieldGroupApi in the following task
     pub custom_field_groups: Vec<crate::models::CustomFieldGroup>,
     #[serde(default)]
-    #[allow(dead_code)] // consumed by CustomFieldApi in the following task
     pub custom_fields: Vec<crate::models::CustomField>,
     #[serde(default)]
-    #[allow(dead_code)] // consumed by CardCustomFieldApi in the following task
     pub custom_field_values: Vec<crate::models::CustomFieldValue>,
 }
 
@@ -135,7 +130,6 @@ pub(crate) struct CardSnapshotIncluded {
 /// empty — the fields belong to the base group, not to the adopted group.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)] // consumed by CustomFieldApi in the following task
 pub(crate) struct CustomFieldGroupSnapshot {
     pub item: crate::models::CustomFieldGroup,
     pub included: CustomFieldGroupSnapshotIncluded,
@@ -143,7 +137,6 @@ pub(crate) struct CustomFieldGroupSnapshot {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)] // consumed by CustomFieldApi in the following task
 pub(crate) struct CustomFieldGroupSnapshotIncluded {
     #[serde(default)]
     pub custom_fields: Vec<crate::models::CustomField>,
@@ -156,14 +149,12 @@ pub(crate) struct CustomFieldGroupSnapshotIncluded {
 /// route: that path falls through to the SPA and returns HTML with `200`.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)] // consumed by CustomFieldApi in the following task
 pub(crate) struct ProjectsListSnapshot {
     pub included: ProjectsListSnapshotIncluded,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)] // consumed by CustomFieldApi in the following task
 pub(crate) struct ProjectsListSnapshotIncluded {
     #[serde(default)]
     pub base_custom_field_groups: Vec<crate::models::BaseCustomFieldGroup>,
