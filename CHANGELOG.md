@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-10
+
 ### Added
 - Custom field support across `plnk-core` and `plnk`, adding three resources:
   - `plnk field-group` — base groups on a project (reusable templates), plus board- and card-level groups. Adopt a template onto a card with `field-group create --card <id> --base <baseGroupId>`.
