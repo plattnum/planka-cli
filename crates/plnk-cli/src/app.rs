@@ -106,6 +106,8 @@ pub enum Command {
     Label(LabelCommand),
     /// Manage custom field groups
     FieldGroup(FieldGroupCommand),
+    /// Manage custom fields inside a group
+    Field(FieldCommand),
     /// Manage attachments on cards
     Attachment(AttachmentCommand),
     /// Manage project/board memberships
@@ -160,6 +162,16 @@ pub enum Command {
         /// Parent board ID
         #[arg(long)]
         board: String,
+    },
+    /// Alias for `field list --group|--base-group <id>`
+    #[command(hide = true)]
+    Fields {
+        /// Parent custom field group ID
+        #[arg(long, group = "field_scope")]
+        group: Option<String>,
+        /// Parent base custom field group ID
+        #[arg(long = "base-group", group = "field_scope")]
+        base_group: Option<String>,
     },
     /// Alias for `field-group list --project|--board|--card <id>`
     #[command(hide = true)]
@@ -845,6 +857,76 @@ pub enum FieldGroupAction {
     /// Delete a custom field group
     Delete {
         /// Custom field group ID (base group IDs are accepted too)
+        id: String,
+    },
+}
+
+// ── Field ───────────────────────────────────────────────────────────────
+
+/// Custom fields are the named slots inside a group. A card carries a *value*
+/// for a field; see `plnk card field`.
+#[derive(Parser)]
+pub struct FieldCommand {
+    #[command(subcommand)]
+    pub action: FieldAction,
+}
+
+#[derive(Subcommand)]
+pub enum FieldAction {
+    /// List custom fields in a group
+    List {
+        /// Parent custom field group ID
+        #[arg(long, group = "field_scope")]
+        group: Option<String>,
+        /// Parent base custom field group ID
+        #[arg(long = "base-group", group = "field_scope")]
+        base_group: Option<String>,
+    },
+    /// Find custom fields by name within a group
+    Find {
+        /// Parent custom field group ID
+        #[arg(long, group = "field_scope")]
+        group: Option<String>,
+        /// Parent base custom field group ID
+        #[arg(long = "base-group", group = "field_scope")]
+        base_group: Option<String>,
+        /// Field name to search for
+        #[arg(long)]
+        name: String,
+    },
+    /// Create a custom field
+    Create {
+        /// Parent custom field group ID
+        #[arg(long, group = "field_scope")]
+        group: Option<String>,
+        /// Parent base custom field group ID
+        #[arg(long = "base-group", group = "field_scope")]
+        base_group: Option<String>,
+        /// Field name
+        #[arg(long)]
+        name: String,
+        /// Show this field's value on the front of the card in the Planka web
+        /// UI. Off by default, matching Planka — it is the difference between a
+        /// field a human sees at a glance and one only a script reads
+        #[arg(long = "show-on-front")]
+        show_on_front: bool,
+    },
+    /// Update a custom field
+    Update {
+        /// Custom field ID
+        id: String,
+        /// New field name
+        #[arg(long)]
+        name: Option<String>,
+        /// Whether the value shows on the front of the card in the Planka web
+        /// UI. Takes an explicit true or false, so that leaving it unset and
+        /// setting it false stay distinguishable
+        #[arg(long = "show-on-front")]
+        show_on_front: Option<bool>,
+    },
+    /// Delete a custom field
+    Delete {
+        /// Custom field ID
         id: String,
     },
 }
