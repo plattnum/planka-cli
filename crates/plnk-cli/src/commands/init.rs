@@ -57,6 +57,10 @@ pub fn execute(
     let new_config = ConfigFile {
         server,
         token,
+        auth_scheme: existing
+            .as_ref()
+            .map(|config| config.auth_scheme)
+            .unwrap_or_default(),
         http,
     };
 

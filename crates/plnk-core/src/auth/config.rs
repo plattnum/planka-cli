@@ -16,6 +16,14 @@ pub struct HttpConfig {
     pub retry_max_delay_ms: Option<u64>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum AuthScheme {
+    #[default]
+    ApiKey,
+    Bearer,
+}
+
 /// Config file contents.
 ///
 /// Default location on every OS: `~/.config/plnk/config.toml`, honoring
@@ -26,8 +34,14 @@ pub struct HttpConfig {
 pub struct ConfigFile {
     pub server: String,
     pub token: String,
+    #[serde(default, skip_serializing_if = "is_default_auth_scheme")]
+    pub auth_scheme: AuthScheme,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub http: Option<HttpConfig>,
+}
+
+fn is_default_auth_scheme(scheme: &AuthScheme) -> bool {
+    *scheme == AuthScheme::ApiKey
 }
 
 /// Resolve the config file path.
@@ -257,6 +271,7 @@ mod tests {
         let config = ConfigFile {
             server: "http://localhost:3000".to_string(),
             token: "test-token-123".to_string(),
+            auth_scheme: AuthScheme::ApiKey,
             http: Some(HttpConfig {
                 max_in_flight: Some(8),
                 rate_limit: Some(10),
