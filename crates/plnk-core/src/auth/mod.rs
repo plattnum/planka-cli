@@ -1,7 +1,9 @@
 mod config;
 mod login;
 
-pub use config::{ConfigFile, HttpConfig, config_path, delete_config, read_config, write_config};
+pub use config::{
+    AuthScheme, ConfigFile, HttpConfig, config_path, delete_config, read_config, write_config,
+};
 pub use login::{
     login, login_with_policy, validate_access_token_with_policy, validate_token,
     validate_token_with_policy,
@@ -17,6 +19,7 @@ use crate::error::PlankaError;
 pub struct ResolvedCredentials {
     pub server: Url,
     pub token: String,
+    pub auth_scheme: AuthScheme,
     pub source: CredentialSource,
 }
 
@@ -59,6 +62,7 @@ pub fn resolve_credentials(
         return Ok(ResolvedCredentials {
             server,
             token: token.to_string(),
+            auth_scheme: AuthScheme::ApiKey,
             source: CredentialSource::Flags,
         });
     }
@@ -84,6 +88,7 @@ pub fn resolve_credentials(
             return Ok(ResolvedCredentials {
                 server,
                 token: token.to_string(),
+                auth_scheme: AuthScheme::ApiKey,
                 source: CredentialSource::Environment,
             });
         }
@@ -99,6 +104,7 @@ pub fn resolve_credentials(
         return Ok(ResolvedCredentials {
             server,
             token: config.token,
+            auth_scheme: config.auth_scheme,
             source: CredentialSource::ConfigFile,
         });
     }

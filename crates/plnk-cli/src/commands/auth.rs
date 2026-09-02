@@ -1,5 +1,5 @@
 use plnk_core::auth::{
-    self, ConfigFile, delete_config, read_config, resolve_credentials,
+    self, AuthScheme, ConfigFile, delete_config, read_config, resolve_credentials,
     validate_access_token_with_policy, validate_token_with_policy, write_config,
 };
 use plnk_core::error::PlankaError;
@@ -105,6 +105,7 @@ async fn do_login(
     write_config(&ConfigFile {
         server: server_url,
         token: token.clone(),
+        auth_scheme: AuthScheme::Bearer,
         http: existing_http,
     })?;
 
@@ -155,6 +156,7 @@ fn do_token_set(
     write_config(&ConfigFile {
         server: server_url,
         token: token.to_string(),
+        auth_scheme: AuthScheme::ApiKey,
         http: existing_http,
     })?;
 
@@ -169,8 +171,16 @@ async fn do_whoami(
     transport_policy: &TransportPolicy,
 ) -> Result<(), PlankaError> {
     let creds = resolve_credentials(flag_server, flag_token)?;
-    let user =
-        validate_token_with_policy(&creds.server, &creds.token, transport_policy.clone()).await?;
+    let user = match creds.auth_scheme {
+        AuthScheme::Bearer => {
+            validate_access_token_with_policy(&creds.server, &creds.token, transport_policy.clone())
+                .await?
+        }
+        AuthScheme::ApiKey => {
+            validate_token_with_policy(&creds.server, &creds.token, transport_policy.clone())
+                .await?
+        }
+    };
     render_item(&user, format, false)?;
     Ok(())
 }
@@ -210,8 +220,15 @@ async fn do_status(
     };
 
     // Try validating the token
-    let valid =
-        validate_token_with_policy(&creds.server, &creds.token, transport_policy.clone()).await;
+    let valid = match creds.auth_scheme {
+        AuthScheme::Bearer => {
+            validate_access_token_with_policy(&creds.server, &creds.token, transport_policy.clone())
+                .await
+        }
+        AuthScheme::ApiKey => {
+            validate_token_with_policy(&creds.server, &creds.token, transport_policy.clone()).await
+        }
+    };
 
     if format == OutputFormat::Json {
         let (authenticated, user_name) = match &valid {

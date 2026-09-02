@@ -1,4 +1,4 @@
-use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Client, RequestBuilder, StatusCode};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -18,6 +18,7 @@ use crate::transport::{TransportPolicy, TransportRuntime};
 pub struct HttpClient {
     inner: Client,
     base_url: Url,
+    auth_header: Option<(HeaderName, HeaderValue)>,
     transport: TransportRuntime,
 }
 
@@ -86,28 +87,8 @@ impl HttpClient {
         bearer: bool,
         policy: TransportPolicy,
     ) -> Result<Self, PlankaError> {
-        let mut headers = HeaderMap::new();
-
-        if let Some(token) = api_key {
-            let value = if bearer {
-                format!("Bearer {token}")
-            } else {
-                token.to_string()
-            };
-            let mut auth_value =
-                HeaderValue::from_str(&value).map_err(|e| PlankaError::ApiError {
-                    status: 0,
-                    message: format!("Invalid authentication token format: {e}"),
-                })?;
-            auth_value.set_sensitive(true);
-            headers.insert(
-                if bearer { "Authorization" } else { "X-API-Key" },
-                auth_value,
-            );
-        }
-
         let inner = Client::builder()
-            .default_headers(headers)
+            .default_headers(HeaderMap::new())
             .user_agent(format!("plnk/{}", env!("CARGO_PKG_VERSION")))
             .timeout(std::time::Duration::from_secs(30))
             .build()
@@ -117,10 +98,15 @@ impl HttpClient {
             })?;
 
         let transport = TransportRuntime::new(policy)?;
+        let auth_header = match api_key {
+            Some(token) => Some(auth_header_value(token, bearer)?),
+            None => None,
+        };
 
         Ok(Self {
             inner,
             base_url,
+            auth_header,
             transport,
         })
     }
@@ -134,8 +120,12 @@ impl HttpClient {
         &self,
         method: &str,
         path: &str,
-        request: RequestBuilder,
+        mut request: RequestBuilder,
     ) -> Result<reqwest::Response, PlankaError> {
+        if let Some((name, value)) = &self.auth_header {
+            request = request.header(name.clone(), value.clone());
+        }
+
         let retry_attempts = self.transport.policy().retry_attempts;
         let retryable_method =
             retry_attempts > 0 && self.transport.retries_allowed_for_method(method);
@@ -365,4 +355,23 @@ impl HttpClient {
             },
         }
     }
+}
+
+fn auth_header_value(token: &str, bearer: bool) -> Result<(HeaderName, HeaderValue), PlankaError> {
+    let name = if bearer {
+        reqwest::header::AUTHORIZATION
+    } else {
+        HeaderName::from_static("x-api-key")
+    };
+    let value = if bearer {
+        format!("Bearer {token}")
+    } else {
+        token.to_string()
+    };
+    let mut header_value = HeaderValue::from_str(&value).map_err(|e| PlankaError::ApiError {
+        status: 0,
+        message: format!("Invalid authentication token format: {e}"),
+    })?;
+    header_value.set_sensitive(true);
+    Ok((name, header_value))
 }

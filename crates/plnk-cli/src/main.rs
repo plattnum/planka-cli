@@ -184,7 +184,14 @@ fn build_client(
     transport_policy: &TransportPolicy,
 ) -> Result<PlankaClientV1, PlankaError> {
     let creds = resolve_credentials(flag_server, flag_token)?;
-    let http = HttpClient::with_policy(creds.server, &creds.token, transport_policy.clone())?;
+    let http = match creds.auth_scheme {
+        plnk_core::auth::AuthScheme::Bearer => {
+            HttpClient::with_bearer_policy(creds.server, &creds.token, transport_policy.clone())?
+        }
+        plnk_core::auth::AuthScheme::ApiKey => {
+            HttpClient::with_policy(creds.server, &creds.token, transport_policy.clone())?
+        }
+    };
     Ok(PlankaClientV1::new(http))
 }
 
