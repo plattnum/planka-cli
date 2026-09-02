@@ -9,6 +9,7 @@ use crate::transport::TransportPolicy;
 /// Request body for `POST /api/access-tokens`.
 #[derive(Serialize)]
 struct LoginRequest<'a> {
+    #[serde(rename = "emailOrUsername")]
     email: &'a str,
     password: &'a str,
 }
