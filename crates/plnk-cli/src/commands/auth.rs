@@ -1,6 +1,6 @@
 use plnk_core::auth::{
-    self, ConfigFile, delete_config, read_config, resolve_credentials, validate_token_with_policy,
-    write_config,
+    self, ConfigFile, delete_config, read_config, resolve_credentials,
+    validate_access_token_with_policy, validate_token_with_policy, write_config,
 };
 use plnk_core::error::PlankaError;
 use plnk_core::transport::TransportPolicy;
@@ -109,7 +109,7 @@ async fn do_login(
     })?;
 
     // Validate and show user identity
-    let user = validate_token_with_policy(&server, &token, transport_policy.clone()).await?;
+    let user = validate_access_token_with_policy(&server, &token, transport_policy.clone()).await?;
 
     if format == OutputFormat::Json {
         render_item(&user, format, false)?;

@@ -80,3 +80,14 @@ pub async fn validate_token_with_policy(
     let resp: UserMeResponse = client.get("/api/users/me").await?;
     Ok(resp.item)
 }
+
+/// Validate a Planka access token using the Bearer authentication scheme.
+pub async fn validate_access_token_with_policy(
+    server: &Url,
+    token: &str,
+    policy: TransportPolicy,
+) -> Result<User, PlankaError> {
+    let client = HttpClient::with_bearer_policy(server.clone(), token, policy)?;
+    let resp: UserMeResponse = client.get("/api/users/me").await?;
+    Ok(resp.item)
+}

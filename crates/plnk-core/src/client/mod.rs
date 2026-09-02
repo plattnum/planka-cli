@@ -40,7 +40,16 @@ impl HttpClient {
         api_key: &str,
         policy: TransportPolicy,
     ) -> Result<Self, PlankaError> {
-        Self::build(base_url, Some(api_key), policy)
+        Self::build(base_url, Some(api_key), false, policy)
+    }
+
+    /// Create an authenticated client using a Planka access token.
+    pub fn with_bearer_policy(
+        base_url: Url,
+        token: &str,
+        policy: TransportPolicy,
+    ) -> Result<Self, PlankaError> {
+        Self::build(base_url, Some(token), true, policy)
     }
 
     /// Create a new unauthenticated HTTP client with the default transport policy.
@@ -62,7 +71,7 @@ impl HttpClient {
         base_url: Url,
         policy: TransportPolicy,
     ) -> Result<Self, PlankaError> {
-        Self::build(base_url, None, policy)
+        Self::build(base_url, None, false, policy)
     }
 
     /// Access the shared transport policy for this client.
@@ -74,18 +83,27 @@ impl HttpClient {
     fn build(
         base_url: Url,
         api_key: Option<&str>,
+        bearer: bool,
         policy: TransportPolicy,
     ) -> Result<Self, PlankaError> {
         let mut headers = HeaderMap::new();
 
-        if let Some(api_key) = api_key {
+        if let Some(token) = api_key {
+            let value = if bearer {
+                format!("Bearer {token}")
+            } else {
+                token.to_string()
+            };
             let mut auth_value =
-                HeaderValue::from_str(api_key).map_err(|e| PlankaError::ApiError {
+                HeaderValue::from_str(&value).map_err(|e| PlankaError::ApiError {
                     status: 0,
-                    message: format!("Invalid API key format: {e}"),
+                    message: format!("Invalid authentication token format: {e}"),
                 })?;
             auth_value.set_sensitive(true);
-            headers.insert("X-API-Key", auth_value);
+            headers.insert(
+                if bearer { "Authorization" } else { "X-API-Key" },
+                auth_value,
+            );
         }
 
         let inner = Client::builder()
