@@ -12,7 +12,7 @@ Every command fits this form. No verb-first commands, no hidden actions — the 
 
 ## Resources
 
-`project`, `board`, `list`, `card`, `task`, `comment`, `label`, `field-group`, `field`, `attachment`, `membership`, `user`, `auth`
+`project`, `board`, `list`, `card`, `task-list`, `task`, `comment`, `label`, `field-group`, `field`, `attachment`, `membership`, `user`, `auth`
 
 Each has its own per-resource docs in [`docs/cli/`](.).
 
@@ -23,7 +23,7 @@ project
   board
     list
       card
-        task
+        task list ── task
         comment
         attachment
         custom field group ── custom field ── value
@@ -33,7 +33,7 @@ project
   base custom field group ── custom field
 ```
 
-All scoped queries follow this hierarchy. You can't list cards without a list (or board / project for `find`). You can't list tasks without a card. Sole exception: `project find` is unscoped because projects are the root.
+All scoped queries follow this hierarchy. You can't list cards without a list (or board / project for `find`). You can't list tasks without a card, and a task always belongs to one of the card's task lists. Sole exception: `project find` is unscoped because projects are the root.
 
 ## Search matching
 
@@ -149,6 +149,7 @@ plnk boards --project <id>         # → plnk board list --project <id>
 plnk lists --board <id>            # → plnk list list --board <id>
 plnk cards --list <id>             # → plnk card list --list <id>
 plnk cards --board <id>            # → plnk card list --board <id>
+plnk task-lists --card <id>        # → plnk task-list list --card <id>
 plnk tasks --card <id>             # → plnk task list --card <id>
 plnk comments --card <id>          # → plnk comment list --card <id>
 plnk labels --board <id>           # → plnk label list --board <id>

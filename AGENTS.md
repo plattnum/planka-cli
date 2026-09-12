@@ -82,6 +82,7 @@ Real-world wire format differences worth knowing when contributing:
 - Board creation requires `"type": "kanban"`.
 - Position values are powers of 2 starting at `65536`.
 - `GET /api/boards/{id}` returns a nested `included` object with lists, cards, tasks, labels, memberships, and users.
+- Tasks live inside **task lists** (`card → task list → task`). `POST /api/task-lists/{id}/tasks` is the only way to create one. `GET /api/task-lists/{id}` exists and returns `item` plus `included.tasks`. A task list's `showOnFrontOfCard` **defaults to `true`** server-side and `hideCompletedTasks` to `false`; omit them on create unless you want the non-default. Verified 2026-09-12.
 
 ### Custom fields
 

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `plnk task-list` — the named checklists on a card, as a first-class resource: `list`, `find`, `get`, `create`, `update`, `move`, `delete`, plus the hidden plural alias `task-lists`. `create` and `update` take `--show-on-front` and `--hide-completed` as explicit `true`/`false`; omitted on `create`, the server's own defaults apply.
+- `plnk task create` and `plnk task list` take `--task-list <id|name>`, resolved within the card's own checklists by the house three-tier match. An ambiguous name exits `2` naming every candidate; an unknown name exits `4`.
+- `plnk-core`: `TaskListApi` (list, find, get, create, update, delete), `UpdateTaskList`, `TaskApi::list_tasks_in_list`. `TaskList` now carries `showOnFrontOfCard` and `hideCompletedTasks`.
+- Docs: [Task lists](docs/cli/task-lists.md); [Tasks](docs/cli/tasks.md) rewritten around checklists.
+
+### Changed
+- **Breaking** (`plnk-core`) — `TaskApi::create_task` takes a **task list ID**, not a card ID. The SDK used to fetch the card and post to whichever task list came first, silently misplacing tasks on any card with more than one checklist. Choosing a list is now the caller's decision; the CLI makes it explicitly.
+- **Breaking** (`plnk`) — `task create` on a card with **two or more** task lists and no `--task-list` now exits `2` listing the candidates, instead of silently using the first. Cards with zero or one task list behave as before (create "Tasks" / use the only one).
+- `task list` table output gains a `Task List` column. JSON is unchanged; it already carried `taskListId`.
+
 ## [0.3.0] - 2026-08-10
 
 ### Added

@@ -4,7 +4,7 @@ Complete listing of every command, flag, and usage pattern.
 
 This file is optimized for agent lookup. When using it from Pi:
 
-- first identify the resource: project, board, list, card, task, comment, label, attachment, membership, user, or auth
+- first identify the resource: project, board, list, card, task-list, task, comment, label, attachment, membership, user, or auth
 - then identify the operation: list, get, find, create, update, move, archive, delete, add/remove, snapshot
 - prefer the narrowest scope possible
 - prefer `--output json` for machine work
@@ -28,7 +28,9 @@ This file is optimized for agent lookup. When using it from Pi:
 | move a card | `plnk card move <cardId> --to-list <listId>` |
 | archive/unarchive a card | `plnk card archive <cardId>` / `plnk card unarchive <cardId>` |
 | list tasks on a card | `plnk task list --card <cardId>` |
-| add a task to a card | `plnk task create --card <cardId> --title <title>` |
+| add a task to a card | `plnk task create --card <cardId> --title <title>` (add `--task-list <id\|name>` when the card has several checklists) |
+| list a card's checklists | `plnk task-list list --card <cardId>` |
+| add a named checklist | `plnk task-list create --card <cardId> --name <name>` |
 | list comments on a card | `plnk comment list --card <cardId>` |
 | add a comment to a card | `plnk comment create --card <cardId> --text <text>` |
 | list labels on a board | `plnk label list --board <boardId>` |
@@ -214,11 +216,31 @@ plnk card assignee remove <cardId> <userId>
 
 - `list` returns card-membership records from the card snapshot.
 
+## Task List
+
+```bash
+plnk task-list list --card <cardId>
+plnk task-list find --card <cardId> --name <name>
+plnk task-list get <taskListId>
+plnk task-list create --card <cardId> --name <name> [--position top|bottom|<n>] [--show-on-front true|false] [--hide-completed true|false]
+plnk task-list update <taskListId> [--name <name>] [--show-on-front true|false] [--hide-completed true|false]
+plnk task-list move <taskListId> --to-position top|bottom|<n>
+plnk task-list delete <taskListId> [--yes]
+```
+
+Alias: `plnk task-lists --card <cardId>`
+
+- Task lists are the named checklists on a card. Every task belongs to exactly one.
+- `list` reads `included.taskLists` from the card snapshot, sorted by position.
+- `get` uses `GET /api/task-lists/{id}`.
+- Omitted flags on `create` are not sent; the server defaults `showOnFrontOfCard` to `true` and `hideCompletedTasks` to `false`.
+- `delete` removes every task in the list.
+
 ## Task
 
 ```bash
-plnk task list --card <cardId>
-plnk task create --card <cardId> --title <title>
+plnk task list --card <cardId> [--task-list <id|name>]
+plnk task create --card <cardId> --title <title> [--task-list <id|name>]
 plnk task update <taskId> [--title <title>]
 plnk task complete <taskId>
 plnk task reopen <taskId>
@@ -227,8 +249,9 @@ plnk task delete <taskId> [--yes]
 
 Alias: `plnk tasks --card <cardId>`
 
-- `list` fetches tasks from the card snapshot's included data.
-- `create` automatically finds or creates a task list on the card.
+- `list` fetches tasks from the card snapshot's included data; with `--task-list` it reads that one checklist via `GET /api/task-lists/{id}`.
+- `create` without `--task-list`: no checklist on the card → creates "Tasks"; one → uses it; two or more → exit `2` naming the candidates. It never guesses.
+- `--task-list` resolves an ID or a name within the card's checklists (exact → case-insensitive → substring). Ambiguous → exit `2`; unknown → exit `4`.
 - There is no `task get` — Planka exposes no direct GET endpoint and the prior PATCH-with-empty-body workaround silently bumped `updatedAt`. Read via `task list --card` or `card snapshot <cardId>`.
 - `complete` sets `isCompleted: true`. `reopen` sets `isCompleted: false`.
 
@@ -358,6 +381,7 @@ All aliases are hidden from `--help` and produce identical output to their canon
 | `plnk boards --project <id>` | `plnk board list --project <id>` |
 | `plnk lists --board <id>` | `plnk list list --board <id>` |
 | `plnk cards --list <id>` | `plnk card list --list <id>` |
+| `plnk task-lists --card <id>` | `plnk task-list list --card <id>` |
 | `plnk tasks --card <id>` | `plnk task list --card <id>` |
 | `plnk comments --card <id>` | `plnk comment list --card <id>` |
 | `plnk labels --board <id>` | `plnk label list --board <id>` |
