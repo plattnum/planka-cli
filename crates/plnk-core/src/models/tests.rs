@@ -1011,7 +1011,14 @@ fn task_list_tabular_columns_are_wire_names() {
         .collect();
     assert_eq!(
         cols,
-        vec!["id", "name", "cardId", "position", "showOnFrontOfCard"]
+        vec![
+            "id",
+            "name",
+            "cardId",
+            "position",
+            "showOnFrontOfCard",
+            "hideCompletedTasks"
+        ]
     );
 }
 

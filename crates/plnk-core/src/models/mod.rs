@@ -98,6 +98,7 @@ impl Tabular for TaskList {
             ("cardId", "Card"),
             ("position", "Position"),
             ("showOnFrontOfCard", "On Front"),
+            ("hideCompletedTasks", "Hide Done"),
         ]
     }
 }
