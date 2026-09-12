@@ -390,8 +390,14 @@ fn get_examples(resource: &str, action: &str) -> Vec<String> {
         ("card", "assignee remove") => vec!["plnk card assignee remove 1234 88".into()],
 
         // Task
-        ("task", "list") => vec!["plnk task list --card 1234".into()],
-        ("task", "create") => vec!["plnk task create --card 1234 --title 'Write tests'".into()],
+        ("task", "list") => vec![
+            "plnk task list --card 1234".into(),
+            "plnk task list --card 1234 --task-list QA".into(),
+        ],
+        ("task", "create") => vec![
+            "plnk task create --card 1234 --title 'Write tests'".into(),
+            "plnk task create --card 1234 --title 'Write tests' --task-list QA".into(),
+        ],
         ("task", "complete") => vec!["plnk task complete 5678".into()],
         ("task", "reopen") => vec!["plnk task reopen 5678".into()],
         ("task", "delete") => vec!["plnk task delete 5678".into()],
