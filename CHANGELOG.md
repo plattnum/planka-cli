@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-12
+
 ### Added
 - `plnk task-list` — the named checklists on a card, as a first-class resource: `list`, `find`, `get`, `create`, `update`, `move`, `delete`, plus the hidden plural alias `task-lists`. `create` and `update` take `--show-on-front` and `--hide-completed` as explicit `true`/`false`; omitted on `create`, the server's own defaults apply.
 - `plnk task create` and `plnk task list` take `--task-list <id|name>`, resolved within the card's own checklists by the house three-tier match. An ambiguous name exits `2` naming every candidate; an unknown name exits `4`.
