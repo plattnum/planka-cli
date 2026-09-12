@@ -12,9 +12,10 @@ use crate::error::PlankaError;
 use crate::models::{
     Attachment, BaseCustomFieldGroup, Board, BoardMembership, Card, CardBatchGetResult, CardLabel,
     CardMembership, Comment, CreateBoard, CreateCard, CreateComment, CreateList, CreateProject,
-    CustomField, CustomFieldGroup, CustomFieldValue, FindScope, Label, List, MoveCard, Project,
-    ProjectManager, Task, UpdateBoard, UpdateCard, UpdateComment, UpdateCustomField,
-    UpdateCustomFieldGroup, UpdateLabel, UpdateList, UpdateProject, UpdateTask, User,
+    CreateTaskList, CustomField, CustomFieldGroup, CustomFieldValue, FindScope, Label, List,
+    MoveCard, Project, ProjectManager, Task, TaskList, UpdateBoard, UpdateCard, UpdateComment,
+    UpdateCustomField, UpdateCustomFieldGroup, UpdateLabel, UpdateList, UpdateProject, UpdateTask,
+    UpdateTaskList, User,
 };
 
 #[async_trait]
@@ -98,9 +99,37 @@ pub trait CardApi {
 }
 
 #[async_trait]
+pub trait TaskListApi {
+    /// All task lists on a card, sorted by `position`.
+    async fn list_task_lists(&self, card_id: &str) -> Result<Vec<TaskList>, PlankaError>;
+    async fn find_task_lists(
+        &self,
+        card_id: &str,
+        name: &str,
+    ) -> Result<Vec<TaskList>, PlankaError>;
+    async fn get_task_list(&self, id: &str) -> Result<TaskList, PlankaError>;
+    async fn create_task_list(
+        &self,
+        card_id: &str,
+        params: CreateTaskList,
+    ) -> Result<TaskList, PlankaError>;
+    async fn update_task_list(
+        &self,
+        id: &str,
+        params: UpdateTaskList,
+    ) -> Result<TaskList, PlankaError>;
+    async fn delete_task_list(&self, id: &str) -> Result<(), PlankaError>;
+}
+
+#[async_trait]
 pub trait TaskApi {
+    /// Every task on a card, across all of its task lists.
     async fn list_tasks(&self, card_id: &str) -> Result<Vec<Task>, PlankaError>;
-    async fn create_task(&self, card_id: &str, name: &str) -> Result<Task, PlankaError>;
+    /// Tasks in one task list, via `GET /api/task-lists/{id}`.
+    async fn list_tasks_in_list(&self, task_list_id: &str) -> Result<Vec<Task>, PlankaError>;
+    /// Create a task in the given task list. The SDK never chooses a list on
+    /// the caller's behalf; resolving *which* list is the caller's decision.
+    async fn create_task(&self, task_list_id: &str, name: &str) -> Result<Task, PlankaError>;
     async fn update_task(&self, id: &str, params: UpdateTask) -> Result<Task, PlankaError>;
     async fn complete_task(&self, id: &str) -> Result<Task, PlankaError>;
     async fn reopen_task(&self, id: &str) -> Result<Task, PlankaError>;

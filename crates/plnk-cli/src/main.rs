@@ -311,6 +311,17 @@ async fn main() {
             }
             Err(e) => Err(e),
         },
+        Command::TaskList(cmd) => match build_client(
+            app.server.as_deref(),
+            app.token.as_deref(),
+            &transport_policy,
+        ) {
+            Ok(client) => {
+                commands::task_list::execute(&client, cmd.action, app.output, app.yes, app.full)
+                    .await
+            }
+            Err(e) => Err(e),
+        },
         Command::Comment(cmd) => match build_client(
             app.server.as_deref(),
             app.token.as_deref(),
@@ -434,7 +445,27 @@ async fn main() {
             Ok(client) => {
                 commands::task::execute(
                     &client,
-                    app::TaskAction::List { card },
+                    app::TaskAction::List {
+                        card,
+                        task_list: None,
+                    },
+                    app.output,
+                    app.yes,
+                    app.full,
+                )
+                .await
+            }
+            Err(e) => Err(e),
+        },
+        Command::TaskLists { card } => match build_client(
+            app.server.as_deref(),
+            app.token.as_deref(),
+            &transport_policy,
+        ) {
+            Ok(client) => {
+                commands::task_list::execute(
+                    &client,
+                    app::TaskListAction::List { card },
                     app.output,
                     app.yes,
                     app.full,

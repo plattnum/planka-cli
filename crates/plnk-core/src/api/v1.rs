@@ -17,19 +17,20 @@ use crate::models::{
     CardBatchGetResult, CardLabel, CardMembership, Comment, CreateBoard, CreateCard,
     CreateCardMembership, CreateComment, CreateList, CreateProject, CreateTaskList, CustomField,
     CustomFieldGroup, CustomFieldValue, FindScope, Label, List, MoveCard, Project, ProjectManager,
-    Task, UpdateBoard, UpdateCard, UpdateComment, UpdateCustomField, UpdateCustomFieldGroup,
-    UpdateLabel, UpdateList, UpdateProject, UpdateTask, User,
+    Task, TaskList, UpdateBoard, UpdateCard, UpdateComment, UpdateCustomField,
+    UpdateCustomFieldGroup, UpdateLabel, UpdateList, UpdateProject, UpdateTask, UpdateTaskList,
+    User,
 };
 
 use super::responses::{
     BoardSnapshot, CardSnapshot, CardsListResponse, CommentsListResponse, CustomFieldGroupSnapshot,
-    ItemResponse, ItemsResponse, ProjectSnapshot, ProjectsListSnapshot,
+    ItemResponse, ItemsResponse, ProjectSnapshot, ProjectsListSnapshot, TaskListSnapshot,
 };
 use super::search::match_by_name;
 use super::traits::{
     AssigneeApi, AttachmentApi, BoardApi, CardApi, CardCustomFieldApi, CardLabelApi, CommentApi,
     CustomFieldApi, CustomFieldGroupApi, LabelApi, ListApi, MembershipApi, ProjectApi, TaskApi,
-    UserApi,
+    TaskListApi, UserApi,
 };
 
 /// Concrete Planka API client for the current server version.
@@ -477,6 +478,62 @@ impl CardApi for PlankaClientV1 {
     }
 }
 
+// ── TaskListApi ─────────────────────────────────────────────────────────
+
+#[async_trait]
+impl TaskListApi for PlankaClientV1 {
+    async fn list_task_lists(&self, card_id: &str) -> Result<Vec<TaskList>, PlankaError> {
+        // Task lists ride along in the card snapshot; there is no list endpoint.
+        let resp: CardSnapshot = self.http.get(&format!("/api/cards/{card_id}")).await?;
+        let mut lists = resp.included.task_lists;
+        lists.sort_by(|a, b| a.position.total_cmp(&b.position));
+        Ok(lists)
+    }
+
+    async fn find_task_lists(
+        &self,
+        card_id: &str,
+        name: &str,
+    ) -> Result<Vec<TaskList>, PlankaError> {
+        let lists = self.list_task_lists(card_id).await?;
+        let matched = match_by_name(&lists, name);
+        Ok(matched.into_iter().cloned().collect())
+    }
+
+    async fn get_task_list(&self, id: &str) -> Result<TaskList, PlankaError> {
+        let resp: TaskListSnapshot = self.http.get(&format!("/api/task-lists/{id}")).await?;
+        Ok(resp.item)
+    }
+
+    async fn create_task_list(
+        &self,
+        card_id: &str,
+        params: CreateTaskList,
+    ) -> Result<TaskList, PlankaError> {
+        let resp: ItemResponse<TaskList> = self
+            .http
+            .post(&format!("/api/cards/{card_id}/task-lists"), &params)
+            .await?;
+        Ok(resp.item)
+    }
+
+    async fn update_task_list(
+        &self,
+        id: &str,
+        params: UpdateTaskList,
+    ) -> Result<TaskList, PlankaError> {
+        let resp: ItemResponse<TaskList> = self
+            .http
+            .patch(&format!("/api/task-lists/{id}"), &params)
+            .await?;
+        Ok(resp.item)
+    }
+
+    async fn delete_task_list(&self, id: &str) -> Result<(), PlankaError> {
+        self.http.delete(&format!("/api/task-lists/{id}")).await
+    }
+}
+
 // ── TaskApi ─────────────────────────────────────────────────────────────
 
 #[async_trait]
@@ -487,24 +544,15 @@ impl TaskApi for PlankaClientV1 {
         Ok(resp.included.tasks)
     }
 
-    async fn create_task(&self, card_id: &str, name: &str) -> Result<Task, PlankaError> {
-        // Tasks live inside task lists. Find or create a default task list.
-        let resp: CardSnapshot = self.http.get(&format!("/api/cards/{card_id}")).await?;
-        let task_list_id = if let Some(tl) = resp.included.task_lists.first() {
-            tl.id.clone()
-        } else {
-            debug!("No task list found, creating default");
-            let params = CreateTaskList {
-                name: "Tasks".to_string(),
-                position: 65536.0,
-            };
-            let tl_resp: ItemResponse<crate::models::TaskList> = self
-                .http
-                .post(&format!("/api/cards/{card_id}/task-lists"), &params)
-                .await?;
-            tl_resp.item.id
-        };
+    async fn list_tasks_in_list(&self, task_list_id: &str) -> Result<Vec<Task>, PlankaError> {
+        let resp: TaskListSnapshot = self
+            .http
+            .get(&format!("/api/task-lists/{task_list_id}"))
+            .await?;
+        Ok(resp.included.tasks)
+    }
 
+    async fn create_task(&self, task_list_id: &str, name: &str) -> Result<Task, PlankaError> {
         let params = crate::models::CreateTask {
             name: name.to_string(),
             position: 65536.0,

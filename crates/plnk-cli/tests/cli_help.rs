@@ -250,6 +250,7 @@ fn machine_help_all_resources() {
         "list",
         "card",
         "task",
+        "task-list",
         "comment",
         "label",
         "field-group",

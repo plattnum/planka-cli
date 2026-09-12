@@ -66,7 +66,7 @@ Shape: `plnk <resource> <action> [target] [flags]`. Design principles:
 Reference docs, one per resource:
 
 - [Projects](docs/cli/projects.md) · [Boards](docs/cli/boards.md) · [Lists](docs/cli/lists.md) · [Cards](docs/cli/cards.md)
-- [Tasks](docs/cli/tasks.md) · [Comments](docs/cli/comments.md) · [Labels](docs/cli/labels.md)
+- [Task lists](docs/cli/task-lists.md) · [Tasks](docs/cli/tasks.md) · [Comments](docs/cli/comments.md) · [Labels](docs/cli/labels.md)
 - [Attachments](docs/cli/attachments.md) · [Memberships](docs/cli/memberships.md) · [Users](docs/cli/users.md)
 - [Custom fields](docs/cli/custom-fields.md)
 - [Authentication](docs/cli/auth.md) · [Grammar reference](docs/cli/grammar.md) · [Transport policy](docs/cli/transport.md)
