@@ -601,10 +601,28 @@
 
 <section class="whats-new" id="whats-new">
     <div class="container">
-        <h2>What&rsquo;s new<span class="version-pill">v0.3.0</span></h2>
-        <p class="sub">Released 2026-08-10.</p>
+        <h2>What&rsquo;s new<span class="version-pill">v0.4.0</span></h2>
+        <p class="sub">Released 2026-09-12.</p>
         <div class="whats-new-card">
-            <h3>Custom fields &mdash; structured metadata on a card</h3>
+            <h3>Task lists &mdash; named checklists, addressed by name</h3>
+            <p>Planka puts every task inside a <strong>task list</strong>, and a card can carry several &mdash; &ldquo;Design&rdquo;, &ldquo;QA&rdquo;, &ldquo;Release checklist&rdquo;. <code>plnk task-list</code> now manages them as a first-class resource, and <code>plnk task create</code> takes <code>--task-list &lt;id|name&gt;</code> to say where a task goes. The old behaviour of silently posting to whichever checklist came first is gone: with two or more lists and no <code>--task-list</code>, the command exits <code>2</code> and names the candidates. One list, or none, works exactly as before.</p>
+            <div class="code-block">
+                <span class="comment"># two checklists on one card, tasks routed by name</span><br>
+                plnk task-list create --card 1234 --name Design<br>
+                plnk task-list create --card 1234 --name QA --hide-completed true<br>
+                plnk task create --card 1234 --title "Regression pass" --task-list QA<br>
+                plnk task list --card 1234 --task-list QA --output json
+            </div>
+            <p class="meta">
+                <a href="https://github.com/plattnum/planka-cli/releases/tag/v0.4.0">Release notes &rarr;</a>
+                &nbsp;&middot;&nbsp;
+                <a href="https://github.com/plattnum/planka-cli/blob/main/docs/cli/task-lists.md">Task lists guide &rarr;</a>
+                &nbsp;&middot;&nbsp;
+                <a href="https://github.com/plattnum/planka-cli/blob/main/CHANGELOG.md">Changelog</a>
+            </p>
+        </div>
+        <div class="whats-new-card">
+            <h3>v0.3.0 &mdash; Custom fields, structured metadata on a card</h3>
             <p>Custom fields are the only place in Planka a card can carry <strong>named, structured metadata</strong> rather than free prose &mdash; a spec URL, a ticket id, a ruling date. Three new resources make them scriptable: <code>plnk field-group</code> for the groups (a group on a project is a reusable template), <code>plnk field</code> for the named slots inside one, and <code>plnk card field</code> to get, set, and clear a card's values. <code>--group</code> and <code>--field</code> accept an ID <em>or</em> a name, resolving through the base group so <code>--group Documentation</code> works even though an adopted card group's own name is <code>null</code>. Values are validated before any request is sent, and clearing is idempotent.</p>
             <div class="code-block">
                 <span class="comment"># define a reusable template once, then point a card at its docs</span><br>
