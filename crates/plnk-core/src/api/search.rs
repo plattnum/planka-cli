@@ -64,6 +64,12 @@ impl Named for crate::models::Card {
     }
 }
 
+impl Named for crate::models::TaskList {
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 impl Named for crate::models::Label {
     fn name(&self) -> &str {
         self.name.as_deref().unwrap_or("")
