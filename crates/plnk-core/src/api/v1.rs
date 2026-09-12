@@ -497,6 +497,8 @@ impl TaskApi for PlankaClientV1 {
             let params = CreateTaskList {
                 name: "Tasks".to_string(),
                 position: 65536.0,
+                show_on_front_of_card: None,
+                hide_completed_tasks: None,
             };
             let tl_resp: ItemResponse<crate::models::TaskList> = self
                 .http

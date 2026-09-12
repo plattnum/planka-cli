@@ -202,12 +202,16 @@ fn task_list_roundtrip() {
         card_id: "1234".to_string(),
         name: "Checklist".to_string(),
         position: 65536.0,
+        show_on_front_of_card: true,
+        hide_completed_tasks: false,
         created_at: "2026-04-14T12:00:00Z".to_string(),
         updated_at: None,
     };
 
     let json = serde_json::to_value(&tl).unwrap();
     assert_eq!(json["cardId"], "1234");
+    assert_eq!(json["showOnFrontOfCard"], true);
+    assert_eq!(json["hideCompletedTasks"], false);
     let deserialized: TaskList = serde_json::from_value(json).unwrap();
     assert_eq!(deserialized, tl);
 }
@@ -875,4 +879,121 @@ fn update_custom_field_group_omits_unset_name() {
     let params = UpdateCustomFieldGroup { name: None };
     let json = serde_json::to_value(&params).unwrap();
     assert_eq!(json.as_object().unwrap().len(), 0);
+}
+
+#[test]
+fn task_list_deserialize_from_planka_api() {
+    // Captured from GET /api/task-lists/{id} `item` on 2026-09-12.
+    let api_json = serde_json::json!({
+        "id": "1760797851962574777",
+        "createdAt": "2026-04-25T05:31:00.973Z",
+        "updatedAt": null,
+        "position": 65536,
+        "name": "Tasks",
+        "showOnFrontOfCard": true,
+        "hideCompletedTasks": false,
+        "cardId": "1760797845536901046"
+    });
+
+    let tl: TaskList = serde_json::from_value(api_json).unwrap();
+    assert_eq!(tl.id, "1760797851962574777");
+    assert_eq!(tl.card_id, "1760797845536901046");
+    assert!(tl.show_on_front_of_card);
+    assert!(!tl.hide_completed_tasks);
+}
+
+#[test]
+fn create_task_list_omits_unset_flags() {
+    let params = CreateTaskList {
+        name: "QA".to_string(),
+        position: 65536.0,
+        show_on_front_of_card: None,
+        hide_completed_tasks: None,
+    };
+
+    let json = serde_json::to_value(&params).unwrap();
+    assert_eq!(json, serde_json::json!({"name": "QA", "position": 65536.0}));
+}
+
+#[test]
+fn create_task_list_sends_set_flags() {
+    let params = CreateTaskList {
+        name: "QA".to_string(),
+        position: 65536.0,
+        show_on_front_of_card: Some(false),
+        hide_completed_tasks: Some(true),
+    };
+
+    let json = serde_json::to_value(&params).unwrap();
+    assert_eq!(json["showOnFrontOfCard"], false);
+    assert_eq!(json["hideCompletedTasks"], true);
+}
+
+#[test]
+fn update_task_list_all_none_serializes_to_empty_object() {
+    let params = UpdateTaskList::default();
+    let json = serde_json::to_value(&params).unwrap();
+    assert_eq!(json, serde_json::json!({}));
+}
+
+#[test]
+fn update_task_list_serializes_wire_names() {
+    let params = UpdateTaskList {
+        name: Some("Release".to_string()),
+        position: Some(131_072.0),
+        show_on_front_of_card: Some(true),
+        hide_completed_tasks: None,
+    };
+    let json = serde_json::to_value(&params).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({"name": "Release", "position": 131_072.0, "showOnFrontOfCard": true})
+    );
+}
+
+#[test]
+fn task_list_tabular_columns_are_wire_names() {
+    let cols: Vec<&str> = TaskList::trimmed_columns()
+        .iter()
+        .map(|(f, _)| *f)
+        .collect();
+    assert_eq!(
+        cols,
+        vec!["id", "name", "cardId", "position", "showOnFrontOfCard"]
+    );
+}
+
+#[test]
+fn task_tabular_includes_task_list_id() {
+    let cols: Vec<&str> = Task::trimmed_columns().iter().map(|(f, _)| *f).collect();
+    assert_eq!(cols, vec!["id", "name", "isCompleted", "taskListId"]);
+}
+
+#[test]
+fn task_list_is_named_by_its_name() {
+    use crate::api::Named;
+    let tl = TaskList {
+        id: "1".to_string(),
+        card_id: "2".to_string(),
+        name: "QA".to_string(),
+        position: 65536.0,
+        show_on_front_of_card: true,
+        hide_completed_tasks: false,
+        created_at: "2026-04-14T12:00:00Z".to_string(),
+        updated_at: None,
+    };
+    assert_eq!(tl.name(), "QA");
+}
+
+#[test]
+fn task_list_missing_flags_reads_as_planka_defaults() {
+    // Older captures predate the two display flags. Absent, they must read
+    // as Planka's own defaults rather than fail to deserialize.
+    let api_json = serde_json::json!({
+        "id": "tl-1", "cardId": "card-1", "name": "Tasks", "position": 65536.0,
+        "createdAt": "2026-01-01T00:00:00Z", "updatedAt": null
+    });
+    let tl: TaskList = serde_json::from_value(api_json).unwrap();
+    assert!(tl.show_on_front_of_card);
+    assert!(!tl.hide_completed_tasks);
 }
