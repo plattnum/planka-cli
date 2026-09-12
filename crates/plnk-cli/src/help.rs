@@ -283,7 +283,8 @@ fn build_action_help(path: &[&str], cmd: &clap::Command) -> CommandHelp {
 fn infer_type(name: &str) -> String {
     match name {
         "description" | "text" => "text".to_string(),
-        "position" => "enum(top|bottom|int)".to_string(),
+        "position" | "to_position" => "enum(top|bottom|int)".to_string(),
+        "show_on_front" | "hide_completed" => "enum(true|false)".to_string(),
         "role" => "enum(admin|editor|viewer)".to_string(),
         "file" | "out" => "path".to_string(),
         "concurrency"
@@ -405,6 +406,22 @@ fn get_examples(resource: &str, action: &str) -> Vec<String> {
         ("comment", "delete") => vec!["plnk comment delete 9012".into()],
 
         // Label
+        // Task list
+        ("task-list", "list") => vec!["plnk task-list list --card 1234".into()],
+        ("task-list", "find") => vec!["plnk task-list find --card 1234 --name QA".into()],
+        ("task-list", "get") => vec!["plnk task-list get 9876".into()],
+        ("task-list", "create") => vec![
+            "plnk task-list create --card 1234 --name QA".into(),
+            "plnk task-list create --card 1234 --name 'Release checklist' --show-on-front false"
+                .into(),
+        ],
+        ("task-list", "update") => vec![
+            "plnk task-list update 9876 --name 'QA sign-off'".into(),
+            "plnk task-list update 9876 --hide-completed true".into(),
+        ],
+        ("task-list", "move") => vec!["plnk task-list move 9876 --to-position top".into()],
+        ("task-list", "delete") => vec!["plnk task-list delete 9876 --yes".into()],
+
         ("label", "list") => vec!["plnk label list --board 456".into()],
         ("label", "find") => vec!["plnk label find --board 456 --name 'urgent'".into()],
         ("label", "create") => vec!["plnk label create --board 456 --name 'urgent' --color berry-red".into()],
