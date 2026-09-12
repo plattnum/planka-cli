@@ -1,6 +1,6 @@
 ---
 name: plnk-cli
-description: Use this skill when the user wants to inspect or manage Planka projects, boards, lists, cards, tasks, comments, labels, custom fields (field groups, fields, card field values), attachments, memberships, users, or authentication with the plnk CLI.
+description: Use this skill when the user wants to inspect or manage Planka projects, boards, lists, cards, task lists, tasks, comments, labels, custom fields (field groups, fields, card field values), attachments, memberships, users, or authentication with the plnk CLI.
 ---
 
 # plnk-cli
@@ -11,7 +11,7 @@ Use `plnk` as the canonical interface to Planka. Do not invent a parallel task A
 
 Use this skill when the user wants to:
 
-- inspect Planka projects, boards, lists, cards, tasks, comments, labels, attachments, memberships, or users
+- inspect Planka projects, boards, lists, cards, task lists, tasks, comments, labels, attachments, memberships, or users
 - create, update, move, archive, unarchive, or delete Planka resources
 - find cards, lists, boards, or labels by name/title
 - add comments, tasks, assignees, labels, custom field values, or attachments to cards
@@ -40,7 +40,7 @@ project
   board
     list
       card
-        task
+        task list ── task
         comment
         attachment
         custom field group ── custom field ── value
@@ -56,7 +56,7 @@ Implications:
 - `board find` requires `--project`.
 - `list find` requires `--board`.
 - `card find` requires exactly one of `--list`, `--board`, or `--project`.
-- tasks and comments live under cards
+- tasks and comments live under cards; every task belongs to one of the card's task lists
 - labels live under boards
 - `field-group list` requires exactly one of `--project`, `--board`, or `--card`
 - `field list` requires exactly one of `--group` or `--base-group`
@@ -159,6 +159,10 @@ and errors like:
   through the base group. Values are capped at 512 chars, cannot be empty, and `clear` is
   idempotent.
 - There is no server-side filter by custom field value — filter a snapshot locally.
+- `task create` on a card with **more than one task list** requires `--task-list <id|name>`;
+  it exits `2` listing the candidates rather than guessing. With no task list on the card it
+  creates one named "Tasks"; with exactly one it uses it. `task list --task-list <id|name>`
+  reads one checklist. Manage the checklists themselves with `plnk task-list`.
 - There is no standalone `get` for `task`, `comment`, or `label`.
   - use `task list --card <cardId>`
   - use `comment list --card <cardId>`
@@ -209,6 +213,8 @@ Work with tasks and comments:
 ```bash
 plnk task list --card <cardId> --output json
 plnk task create --card <cardId> --title "Write tests" --output json
+plnk task-list list --card <cardId> --output json
+plnk task create --card <cardId> --title "Regression pass" --task-list QA --output json
 plnk comment create --card <cardId> --text "Starting work" --output json
 ```
 
@@ -237,6 +243,7 @@ Resource docs:
 - `../../docs/cli/boards.md`
 - `../../docs/cli/lists.md`
 - `../../docs/cli/cards.md`
+- `../../docs/cli/task-lists.md`
 - `../../docs/cli/tasks.md`
 - `../../docs/cli/comments.md`
 - `../../docs/cli/labels.md`
