@@ -14,4 +14,5 @@ pub mod list;
 pub mod membership;
 pub mod project;
 pub mod task;
+pub mod task_list;
 pub mod user;

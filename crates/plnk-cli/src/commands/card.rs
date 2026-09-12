@@ -37,7 +37,7 @@ fn filter_closed(cards: Vec<Card>, closed: bool) -> Vec<Card> {
 }
 
 /// Parse position flag: "top", "bottom", or numeric value.
-fn parse_position(pos: &str) -> Result<f64, PlankaError> {
+pub(crate) fn parse_position(pos: &str) -> Result<f64, PlankaError> {
     match pos.to_lowercase().as_str() {
         "top" => Ok(0.0),
         "bottom" => Ok(f64::MAX),

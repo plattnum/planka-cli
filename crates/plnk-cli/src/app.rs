@@ -100,6 +100,8 @@ pub enum Command {
     Card(CardCommand),
     /// Manage tasks (checklist items on cards)
     Task(TaskCommand),
+    /// Manage task lists (the named checklists on a card)
+    TaskList(TaskListCommand),
     /// Manage comments on cards
     Comment(CommentCommand),
     /// Manage board labels
@@ -157,6 +159,13 @@ pub enum Command {
     /// Alias for `task list --card <id>`
     #[command(hide = true)]
     Tasks {
+        /// Parent card ID
+        #[arg(long)]
+        card: String,
+    },
+    /// Alias for `task-list list --card <id>`
+    #[command(hide = true)]
+    TaskLists {
         /// Parent card ID
         #[arg(long)]
         card: String,
@@ -771,6 +780,85 @@ pub enum TaskAction {
     /// Delete a task
     Delete {
         /// Task ID
+        id: String,
+    },
+}
+
+// ── Task List ───────────────────────────────────────────────────────────
+
+/// Task lists are the named checklists on a card. Every task belongs to
+/// exactly one; a card may carry several ("Design", "QA", "Release").
+#[derive(Parser)]
+pub struct TaskListCommand {
+    #[command(subcommand)]
+    pub action: TaskListAction,
+}
+
+#[derive(Subcommand)]
+pub enum TaskListAction {
+    /// List task lists on a card
+    List {
+        /// Parent card ID
+        #[arg(long)]
+        card: String,
+    },
+    /// Find task lists by name within a card
+    Find {
+        /// Parent card ID
+        #[arg(long)]
+        card: String,
+        /// Task list name to search for
+        #[arg(long)]
+        name: String,
+    },
+    /// Get a task list by ID
+    Get {
+        /// Task list ID
+        id: String,
+    },
+    /// Create a task list on a card
+    Create {
+        /// Parent card ID
+        #[arg(long)]
+        card: String,
+        /// Task list name
+        #[arg(long)]
+        name: String,
+        /// Position: top, bottom, or a numeric position
+        #[arg(long)]
+        position: Option<String>,
+        /// Show the list on the card face (server default: true)
+        #[arg(long = "show-on-front", value_parser = clap::value_parser!(bool))]
+        show_on_front: Option<bool>,
+        /// Hide completed tasks in the web UI (server default: false)
+        #[arg(long = "hide-completed", value_parser = clap::value_parser!(bool))]
+        hide_completed: Option<bool>,
+    },
+    /// Update a task list
+    Update {
+        /// Task list ID
+        id: String,
+        /// New task list name
+        #[arg(long)]
+        name: Option<String>,
+        /// Show the list on the card face
+        #[arg(long = "show-on-front", value_parser = clap::value_parser!(bool))]
+        show_on_front: Option<bool>,
+        /// Hide completed tasks in the web UI
+        #[arg(long = "hide-completed", value_parser = clap::value_parser!(bool))]
+        hide_completed: Option<bool>,
+    },
+    /// Move a task list to a new position within its card
+    Move {
+        /// Task list ID
+        id: String,
+        /// New position: top, bottom, or a numeric position
+        #[arg(long = "to-position")]
+        to_position: String,
+    },
+    /// Delete a task list and every task in it
+    Delete {
+        /// Task list ID
         id: String,
     },
 }

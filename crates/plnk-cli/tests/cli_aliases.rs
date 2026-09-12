@@ -349,3 +349,37 @@ fn field_groups_alias_rejects_conflicting_scopes() {
         .failure()
         .code(2);
 }
+
+// ─── Alias parity: task-lists ───────────────────────────────────────
+
+#[tokio::test]
+async fn task_lists_alias_json_matches_canonical() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/cards/card-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "item": {"id":"card-1","listId":"list-1","boardId":"board-1","name":"Fix bug","description":null,"position":65536.0,"isSubscribed":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":null},
+            "included": {
+                "tasks": [],
+                "taskLists": [{"id":"tl-1","cardId":"card-1","name":"QA","position":65536.0,"showOnFrontOfCard":true,"hideCompletedTasks":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":null}],
+                "cardLabels": [],
+                "cardMemberships": [],
+                "attachments": []
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let canonical = run_json(
+        &server.uri(),
+        &["task-list", "list", "--card", "card-1", "--output", "json"],
+    );
+    let alias = run_json(
+        &server.uri(),
+        &["task-lists", "--card", "card-1", "--output", "json"],
+    );
+
+    assert_eq!(canonical, alias);
+    assert_eq!(canonical["data"][0]["name"], "QA");
+}
