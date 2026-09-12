@@ -7,6 +7,6 @@ pub use search::{Named, match_by_name};
 pub use traits::{
     AssigneeApi, AttachmentApi, BoardApi, CardApi, CardCustomFieldApi, CardLabelApi, CommentApi,
     CustomFieldApi, CustomFieldGroupApi, LabelApi, ListApi, MembershipApi, ProjectApi, TaskApi,
-    UserApi,
+    TaskListApi, UserApi,
 };
 pub use v1::PlankaClientV1;
