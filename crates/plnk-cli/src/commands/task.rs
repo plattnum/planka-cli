@@ -1,13 +1,13 @@
-use plnk_core::api::TaskApi;
+use plnk_core::api::{TaskApi, TaskListApi};
 use plnk_core::error::PlankaError;
-use plnk_core::models::UpdateTask;
+use plnk_core::models::{CreateTaskList, UpdateTask};
 
 use crate::app::OutputFormat;
 use crate::commands::project::confirm_delete;
 use crate::output::{render_collection, render_item, render_message};
 
 pub async fn execute(
-    client: &impl TaskApi,
+    client: &(impl TaskApi + TaskListApi),
     action: crate::app::TaskAction,
     format: OutputFormat,
     yes: bool,
@@ -19,7 +19,27 @@ pub async fn execute(
             render_collection(&tasks, format, full)?;
         }
         crate::app::TaskAction::Create { card, title } => {
-            let task = client.create_task(&card, &title).await?;
+            // Tasks live inside task lists. Use the card's first list, or
+            // create a default one when the card has none.
+            let lists = client.list_task_lists(&card).await?;
+            let task_list_id = match lists.first() {
+                Some(tl) => tl.id.clone(),
+                None => {
+                    client
+                        .create_task_list(
+                            &card,
+                            CreateTaskList {
+                                name: "Tasks".to_string(),
+                                position: 65536.0,
+                                show_on_front_of_card: None,
+                                hide_completed_tasks: None,
+                            },
+                        )
+                        .await?
+                        .id
+                }
+            };
+            let task = client.create_task(&task_list_id, &title).await?;
             render_item(&task, format, full)?;
         }
         crate::app::TaskAction::Update { id, title } => {

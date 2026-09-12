@@ -168,3 +168,19 @@ pub(crate) struct ProjectsListSnapshotIncluded {
 pub(crate) struct CommentsListResponse {
     pub items: Vec<crate::models::Comment>,
 }
+
+/// Task list snapshot — GET /api/task-lists/{id} returns `item` plus
+/// `included.tasks` (verified against a live server 2026-09-12).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TaskListSnapshot {
+    pub item: crate::models::TaskList,
+    pub included: TaskListSnapshotIncluded,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TaskListSnapshotIncluded {
+    #[serde(default)]
+    pub tasks: Vec<crate::models::Task>,
+}
