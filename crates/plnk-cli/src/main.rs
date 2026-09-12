@@ -469,7 +469,10 @@ async fn main() {
             Ok(client) => {
                 commands::task::execute(
                     &client,
-                    app::TaskAction::List { card },
+                    app::TaskAction::List {
+                        card,
+                        task_list: None,
+                    },
                     app.output,
                     app.yes,
                     app.full,

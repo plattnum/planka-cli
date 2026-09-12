@@ -749,6 +749,9 @@ pub enum TaskAction {
         /// Parent card ID
         #[arg(long)]
         card: String,
+        /// Only tasks in this task list (ID or name)
+        #[arg(long = "task-list")]
+        task_list: Option<String>,
     },
     /// Create a new task
     Create {
@@ -758,6 +761,9 @@ pub enum TaskAction {
         /// Task title
         #[arg(long)]
         title: String,
+        /// Task list ID or name (required when the card has more than one)
+        #[arg(long = "task-list")]
+        task_list: Option<String>,
     },
     /// Update a task
     Update {

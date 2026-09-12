@@ -243,3 +243,264 @@ async fn task_list_delete_with_yes_skips_prompt() {
         .success()
         .stdout(predicate::str::contains("deleted"));
 }
+
+// ─── plnk task, checklist-aware ─────────────────────────────────────
+
+fn task_item(id: &str, task_list_id: &str) -> serde_json::Value {
+    serde_json::json!({"item": {
+        "id": id, "taskListId": task_list_id, "name": "X", "isCompleted": false,
+        "position": 65536.0, "linkedCardId": null, "assigneeUserId": null,
+        "createdAt": "2026-09-12T00:00:00Z", "updatedAt": null
+    }})
+}
+
+#[tokio::test]
+async fn create_on_card_with_two_lists_and_no_flag_exits_2_and_posts_nothing() {
+    let server = MockServer::start().await;
+    mount_card(
+        &server,
+        vec![
+            task_list_json("tl-a", "Design", 65536.0),
+            task_list_json("tl-b", "QA", 131_072.0),
+        ],
+    )
+    .await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    plnk_with_server(&server.uri())
+        .args(["task", "create", "--card", "card-1", "--title", "X"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("--task-list"))
+        .stderr(predicate::str::contains("Design (tl-a)"))
+        .stderr(predicate::str::contains("QA (tl-b)"));
+}
+
+#[tokio::test]
+async fn create_with_task_list_name_posts_to_resolved_list() {
+    let server = MockServer::start().await;
+    mount_card(
+        &server,
+        vec![
+            task_list_json("tl-a", "Design", 65536.0),
+            task_list_json("tl-b", "QA", 131_072.0),
+        ],
+    )
+    .await;
+    Mock::given(method("POST"))
+        .and(path("/api/task-lists/tl-b/tasks"))
+        .and(body_json(
+            serde_json::json!({"name": "X", "position": 65536.0}),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(task_item("task-1", "tl-b")))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    plnk_with_server(&server.uri())
+        .args([
+            "task",
+            "create",
+            "--card",
+            "card-1",
+            "--title",
+            "X",
+            "--task-list",
+            "qa",
+            "--output",
+            "json",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"taskListId\": \"tl-b\""));
+}
+
+#[tokio::test]
+async fn create_with_task_list_id_posts_without_resolution() {
+    let server = MockServer::start().await;
+    mount_card(&server, vec![task_list_json("tl-a", "Design", 65536.0)]).await;
+    Mock::given(method("POST"))
+        .and(path("/api/task-lists/tl-a/tasks"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(task_item("task-1", "tl-a")))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    plnk_with_server(&server.uri())
+        .args([
+            "task",
+            "create",
+            "--card",
+            "card-1",
+            "--title",
+            "X",
+            "--task-list",
+            "tl-a",
+        ])
+        .assert()
+        .success();
+}
+
+#[tokio::test]
+async fn create_on_card_with_no_lists_auto_creates_tasks() {
+    let server = MockServer::start().await;
+    mount_card(&server, vec![]).await;
+    Mock::given(method("POST"))
+        .and(path("/api/cards/card-1/task-lists"))
+        .and(body_json(
+            serde_json::json!({"name": "Tasks", "position": 65536.0}),
+        ))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({"item": task_list_json("tl-new", "Tasks", 65536.0)}),
+            ),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/task-lists/tl-new/tasks"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(task_item("task-1", "tl-new")))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    plnk_with_server(&server.uri())
+        .args(["task", "create", "--card", "card-1", "--title", "X"])
+        .assert()
+        .success();
+}
+
+#[tokio::test]
+async fn create_on_card_with_one_list_uses_it() {
+    let server = MockServer::start().await;
+    mount_card(&server, vec![task_list_json("tl-only", "Tasks", 65536.0)]).await;
+    Mock::given(method("POST"))
+        .and(path("/api/task-lists/tl-only/tasks"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(task_item("task-1", "tl-only")))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    plnk_with_server(&server.uri())
+        .args(["task", "create", "--card", "card-1", "--title", "X"])
+        .assert()
+        .success();
+}
+
+/// "QA" and "qa" both survive the case-insensitive tier for the query "Qa";
+/// an exact "qa" would have won tier one on its own.
+#[tokio::test]
+async fn ambiguous_task_list_name_exits_2_and_names_candidates() {
+    let server = MockServer::start().await;
+    mount_card(
+        &server,
+        vec![
+            task_list_json("tl-a", "QA", 65536.0),
+            task_list_json("tl-b", "qa", 131_072.0),
+        ],
+    )
+    .await;
+
+    plnk_with_server(&server.uri())
+        .args([
+            "task",
+            "create",
+            "--card",
+            "card-1",
+            "--title",
+            "X",
+            "--task-list",
+            "Qa",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("QA (tl-a)"))
+        .stderr(predicate::str::contains("qa (tl-b)"));
+}
+
+#[tokio::test]
+async fn unknown_task_list_name_exits_4() {
+    let server = MockServer::start().await;
+    mount_card(&server, vec![task_list_json("tl-a", "Design", 65536.0)]).await;
+
+    plnk_with_server(&server.uri())
+        .args([
+            "task",
+            "create",
+            "--card",
+            "card-1",
+            "--title",
+            "X",
+            "--task-list",
+            "Release",
+        ])
+        .assert()
+        .code(4)
+        .stderr(predicate::str::contains("task-list list --card card-1"));
+}
+
+#[tokio::test]
+async fn list_with_task_list_filter_uses_task_list_endpoint() {
+    let server = MockServer::start().await;
+    mount_card(
+        &server,
+        vec![
+            task_list_json("tl-a", "Design", 65536.0),
+            task_list_json("tl-b", "QA", 131_072.0),
+        ],
+    )
+    .await;
+    Mock::given(method("GET"))
+        .and(path("/api/task-lists/tl-b"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "item": task_list_json("tl-b", "QA", 131_072.0),
+            "included": {"tasks": [task_item("task-7", "tl-b")["item"]]}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    plnk_with_server(&server.uri())
+        .args([
+            "task",
+            "list",
+            "--card",
+            "card-1",
+            "--task-list",
+            "QA",
+            "--output",
+            "json",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"id\": \"task-7\""));
+}
+
+#[tokio::test]
+async fn task_list_table_shows_task_list_column() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/cards/card-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "item": card_snapshot(&[])["item"],
+            "included": {
+                "taskLists": [task_list_json("tl-a", "Design", 65536.0)],
+                "tasks": [task_item("task-7", "tl-a")["item"]],
+                "cardLabels": [], "cardMemberships": [], "attachments": []
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    plnk_with_server(&server.uri())
+        .args(["task", "list", "--card", "card-1", "--no-color"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Task List"))
+        .stdout(predicate::str::contains("tl-a"));
+}
