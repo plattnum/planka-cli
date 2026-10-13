@@ -67,6 +67,117 @@ where
     }
 }
 
+/// Read a scope default from the environment.
+///
+/// The value is used as-is, exactly like an explicit flag, so an empty value
+/// is not treated as "unset".
+fn scope_env_value(name: &str) -> Option<String> {
+    std::env::var(name).ok()
+}
+
+/// Fill a two-way mutually exclusive scope group from environment defaults.
+///
+/// An explicit flag always wins: the environment is consulted only when the
+/// whole group is empty. The narrowest scope wins when several are set, so
+/// `PLNK_LIST` beats `PLNK_BOARD`.
+fn scope_env_list_board(list: &mut Option<String>, board: &mut Option<String>) {
+    if list.is_some() || board.is_some() {
+        return;
+    }
+    if let Some(value) = scope_env_value("PLNK_LIST") {
+        *list = Some(value);
+    } else if let Some(value) = scope_env_value("PLNK_BOARD") {
+        *board = Some(value);
+    }
+}
+
+/// Fill a three-way scope group (`--list` / `--board` / `--project`) from
+/// environment defaults, narrowest first.
+fn scope_env_list_board_project(
+    list: &mut Option<String>,
+    board: &mut Option<String>,
+    project: &mut Option<String>,
+) {
+    if list.is_some() || board.is_some() || project.is_some() {
+        return;
+    }
+    if let Some(value) = scope_env_value("PLNK_LIST") {
+        *list = Some(value);
+    } else if let Some(value) = scope_env_value("PLNK_BOARD") {
+        *board = Some(value);
+    } else if let Some(value) = scope_env_value("PLNK_PROJECT") {
+        *project = Some(value);
+    }
+}
+
+/// Fill a custom-field-group scope (`--project` / `--board` / `--card`) from
+/// environment defaults. Cards have no environment default, so the order is
+/// board then project.
+fn scope_env_project_board_card(
+    project: &mut Option<String>,
+    board: &mut Option<String>,
+    card: &mut Option<String>,
+) {
+    if project.is_some() || board.is_some() || card.is_some() {
+        return;
+    }
+    if let Some(value) = scope_env_value("PLNK_BOARD") {
+        *board = Some(value);
+    } else if let Some(value) = scope_env_value("PLNK_PROJECT") {
+        *project = Some(value);
+    }
+}
+
+/// Apply environment defaults to the mutually exclusive scope groups that
+/// clap cannot handle itself.
+///
+/// Single-scope arguments get their defaults straight from clap's `env`
+/// attribute. Grouped arguments cannot: clap treats an env default like an
+/// explicit flag, so `PLNK_PROJECT=... plnk card find --board ...` would be
+/// rejected as a conflict. Here an explicit flag suppresses the env default
+/// for the whole group instead.
+fn apply_scope_env(command: &mut Command) {
+    match command {
+        Command::Cards { list, board, .. } => scope_env_list_board(list, board),
+        Command::FieldGroups {
+            project,
+            board,
+            card,
+        } => scope_env_project_board_card(project, board, card),
+        Command::Card(card) => match &mut card.action {
+            app::CardAction::List { list, board, .. } => scope_env_list_board(list, board),
+            app::CardAction::Find {
+                list,
+                board,
+                project,
+                ..
+            } => scope_env_list_board_project(list, board, project),
+            _ => {}
+        },
+        Command::FieldGroup(group) => match &mut group.action {
+            app::FieldGroupAction::List {
+                project,
+                board,
+                card,
+            }
+            | app::FieldGroupAction::Find {
+                project,
+                board,
+                card,
+                ..
+            }
+            | app::FieldGroupAction::Create {
+                project,
+                board,
+                card,
+                ..
+            } => scope_env_project_board_card(project, board, card),
+            _ => {}
+        },
+        _ => {}
+    }
+}
+
 fn validate_range<T>(field: &str, value: T, min: T, max: T) -> Result<T, PlankaError>
 where
     T: PartialOrd + Copy + std::fmt::Display,
@@ -210,10 +321,11 @@ async fn main() {
         no_retry: app.no_retry,
     };
 
-    let Some(command) = app.command else {
+    let Some(mut command) = app.command else {
         // No subcommand — clap already printed help via derive
         return;
     };
+    apply_scope_env(&mut command);
 
     let transport_policy = match resolve_transport_policy(&transport_flags) {
         Ok(policy) => policy,

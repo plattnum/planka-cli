@@ -35,6 +35,29 @@ project
 
 All scoped queries follow this hierarchy. You can't list cards without a list (or board / project for `find`). You can't list tasks without a card. Sole exception: `project find` is unscoped because projects are the root.
 
+## Scope defaults
+
+`--project`, `--board`, and `--list` fall back to environment variables when the flag is absent:
+
+| Flag | Environment variable |
+|------|----------------------|
+| `--project` | `PLNK_PROJECT` |
+| `--board` | `PLNK_BOARD` |
+| `--list` | `PLNK_LIST` |
+
+These calls are identical:
+
+```bash
+plnk board list --project 1234567890
+PLNK_PROJECT=1234567890 plnk board list
+```
+
+An explicit flag always wins. When a command accepts several mutually exclusive scopes
+(`card find`, `field-group list`), an explicit flag suppresses the environment defaults
+for the whole group, so `PLNK_PROJECT=... plnk card find --board ...` searches the board.
+If no flag is given and several environment variables are set, the narrowest scope wins:
+`PLNK_LIST` over `PLNK_BOARD` over `PLNK_PROJECT`.
+
 ## Search matching
 
 `find` commands use three-tier matching, stopping at the first tier with results:
@@ -139,6 +162,8 @@ Every subcommand accepts these (via clap's global flags):
 | `--no-retry` | Disable automatic HTTP retries |
 
 For the full transport policy semantics see [transport.md](transport.md).
+
+Scope flags additionally accept environment defaults — see [Scope defaults](#scope-defaults).
 
 ## Plural aliases
 

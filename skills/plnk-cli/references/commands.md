@@ -7,6 +7,8 @@ This file is optimized for agent lookup. When using it from Pi:
 - first identify the resource: project, board, list, card, task, comment, label, attachment, membership, user, or auth
 - then identify the operation: list, get, find, create, update, move, archive, delete, add/remove, snapshot
 - prefer the narrowest scope possible
+- scope flags `--project`, `--board`, and `--list` fall back to `PLNK_PROJECT`,
+  `PLNK_BOARD`, and `PLNK_LIST`; an explicit flag always wins
 - prefer `--output json` for machine work
 - if syntax is still unclear, fall back to `plnk --help --output json` or `plnk <resource> <action> --help --output json`
 

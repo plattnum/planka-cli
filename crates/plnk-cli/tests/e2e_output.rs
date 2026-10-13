@@ -8,6 +8,9 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 fn plnk_with_server(server_uri: &str) -> Command {
     let mut cmd = Command::cargo_bin("plnk").unwrap();
     cmd.env("PLANKA_CONFIG", "/tmp/plnk-test-nonexistent/config.toml");
+    cmd.env_remove("PLNK_PROJECT");
+    cmd.env_remove("PLNK_BOARD");
+    cmd.env_remove("PLNK_LIST");
     cmd.env("PLANKA_SERVER", server_uri);
     cmd.env("PLANKA_TOKEN", "test-api-key");
     cmd

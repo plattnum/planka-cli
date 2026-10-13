@@ -4,6 +4,9 @@ use predicates::prelude::*;
 fn plnk() -> Command {
     let mut cmd = Command::cargo_bin("plnk").unwrap();
     cmd.env("PLANKA_CONFIG", "/tmp/plnk-test-nonexistent/config.toml");
+    cmd.env_remove("PLNK_PROJECT");
+    cmd.env_remove("PLNK_BOARD");
+    cmd.env_remove("PLNK_LIST");
     cmd
 }
 

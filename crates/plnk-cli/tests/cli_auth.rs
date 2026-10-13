@@ -8,6 +8,9 @@ fn plnk() -> Command {
     // Point config to a guaranteed non-existent path so tests
     // never read the user's real ~/.config/plnk/config.toml
     cmd.env("PLANKA_CONFIG", "/tmp/plnk-test-nonexistent/config.toml");
+    cmd.env_remove("PLNK_PROJECT");
+    cmd.env_remove("PLNK_BOARD");
+    cmd.env_remove("PLNK_LIST");
     cmd
 }
 
