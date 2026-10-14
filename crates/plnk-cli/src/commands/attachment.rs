@@ -5,19 +5,21 @@ use plnk_core::error::PlankaError;
 
 use crate::app::OutputFormat;
 use crate::commands::project::confirm_delete;
-use crate::output::{render_collection, render_item, render_message};
+use crate::names::{NameIndex, NameSource};
+use crate::output::{render_collection_named, render_item_named, render_message};
 
 pub async fn execute(
-    client: &impl AttachmentApi,
+    client: &(impl AttachmentApi + NameSource),
     action: crate::app::AttachmentAction,
     format: OutputFormat,
     yes: bool,
     full: bool,
+    names: &mut NameIndex,
 ) -> Result<(), PlankaError> {
     match action {
         crate::app::AttachmentAction::List { card } => {
             let attachments = client.list_attachments(&card).await?;
-            render_collection(&attachments, format, full)?;
+            render_collection_named(client, &attachments, format, full, names).await?;
         }
         crate::app::AttachmentAction::Upload { card, file } => {
             let path = PathBuf::from(&file);
@@ -28,7 +30,7 @@ pub async fn execute(
                 });
             }
             let attachment = client.upload_attachment(&card, &path).await?;
-            render_item(&attachment, format, full)?;
+            render_item_named(client, &attachment, format, full, names).await?;
         }
         crate::app::AttachmentAction::Download { id, card, out } => {
             let out_path = out.as_deref().map(std::path::Path::new);

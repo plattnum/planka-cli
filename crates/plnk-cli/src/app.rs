@@ -45,6 +45,14 @@ pub struct App {
     #[arg(long, global = true)]
     pub full: bool,
 
+    /// Resolve names to IDs and show names instead of IDs
+    #[arg(long, global = true, conflicts_with = "no_names")]
+    pub names: bool,
+
+    /// Disable name resolution even when `names = true` is set in the config
+    #[arg(long = "no-names", global = true)]
+    pub no_names: bool,
+
     /// Max in-flight HTTP requests per process
     #[arg(long = "http-max-in-flight", global = true)]
     pub http_max_in_flight: Option<usize>,

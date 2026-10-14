@@ -58,6 +58,8 @@ pub fn execute(
         server,
         token,
         http,
+        // Preserve the display preference across a reconfigure.
+        names: existing.as_ref().is_some_and(|c| c.names),
     };
 
     write_config(&new_config)?;

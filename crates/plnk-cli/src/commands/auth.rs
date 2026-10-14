@@ -100,19 +100,21 @@ async fn do_login(
         auth::login_with_policy(&server, &email_str, &password_str, transport_policy.clone())
             .await?;
 
-    // Save to config, preserving any existing transport settings.
-    let existing_http = read_config()?.and_then(|config| config.http);
+    // Save to config, preserving any existing display and transport settings.
+    let existing = read_config()?;
+    let existing_http = existing.as_ref().and_then(|config| config.http.clone());
     write_config(&ConfigFile {
         server: server_url,
         token: token.clone(),
         http: existing_http,
+        names: existing.as_ref().is_some_and(|config| config.names),
     })?;
 
     // Validate and show user identity
     let user = validate_token_with_policy(&server, &token, transport_policy.clone()).await?;
 
     if format == OutputFormat::Json {
-        render_item(&user, format, false)?;
+        render_item(&user, format, false, None)?;
     } else {
         eprintln!(
             "Logged in as {} ({})",
@@ -141,11 +143,13 @@ fn do_token_set(
         });
     };
 
-    let existing_http = read_config()?.and_then(|config| config.http);
+    let existing = read_config()?;
+    let existing_http = existing.as_ref().and_then(|config| config.http.clone());
     write_config(&ConfigFile {
         server: server_url,
         token: token.to_string(),
         http: existing_http,
+        names: existing.as_ref().is_some_and(|config| config.names),
     })?;
 
     render_message("Token saved.", format)?;
@@ -161,7 +165,7 @@ async fn do_whoami(
     let creds = resolve_credentials(flag_server, flag_token)?;
     let user =
         validate_token_with_policy(&creds.server, &creds.token, transport_policy.clone()).await?;
-    render_item(&user, format, false)?;
+    render_item(&user, format, false, None)?;
     Ok(())
 }
 

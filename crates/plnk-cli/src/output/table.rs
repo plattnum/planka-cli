@@ -3,11 +3,15 @@ use plnk_core::error::PlankaError;
 use plnk_core::models::Tabular;
 use serde::Serialize;
 
-use super::value_to_display;
+use super::field_display;
+use crate::names::NameIndex;
 
 /// Print a collection as a table to stdout.
 #[allow(dead_code)] // Used once resource commands land
-pub fn print_collection<T: Serialize + Tabular>(items: &[T]) -> Result<(), PlankaError> {
+pub fn print_collection<T: Serialize + Tabular>(
+    items: &[T],
+    names: Option<&NameIndex>,
+) -> Result<(), PlankaError> {
     if items.is_empty() {
         println!("No results.");
         return Ok(());
@@ -25,7 +29,7 @@ pub fn print_collection<T: Serialize + Tabular>(items: &[T]) -> Result<(), Plank
         let value = serde_json::to_value(item)?;
         let row: Vec<String> = columns
             .iter()
-            .map(|(field, _)| value_to_display(value.get(*field)))
+            .map(|(field, _)| field_display(&value, field, names))
             .collect();
         table.add_row(row);
     }
@@ -35,13 +39,16 @@ pub fn print_collection<T: Serialize + Tabular>(items: &[T]) -> Result<(), Plank
 }
 
 /// Print a single item as a table to stdout.
-pub fn print_item<T: Serialize + Tabular>(item: &T) -> Result<(), PlankaError> {
+pub fn print_item<T: Serialize + Tabular>(
+    item: &T,
+    names: Option<&NameIndex>,
+) -> Result<(), PlankaError> {
     let columns = T::trimmed_columns();
     let max_label = columns.iter().map(|(_, l)| l.len()).max().unwrap_or(0);
     let value = serde_json::to_value(item)?;
 
     for (field, label) in columns {
-        let v = value_to_display(value.get(*field));
+        let v = field_display(&value, field, names);
         println!("{label:>max_label$}: {v}");
     }
     Ok(())
@@ -73,7 +80,7 @@ mod tests {
     #[test]
     fn table_output_returns_error_when_serialize_fails() {
         let rows = [BrokenRow];
-        let err = print_collection(&rows).unwrap_err();
+        let err = print_collection(&rows, None).unwrap_err();
         assert_eq!(err.error_type(), "SerializationError");
         assert!(err.to_string().contains("boom"));
     }

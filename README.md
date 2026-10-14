@@ -61,6 +61,7 @@ Shape: `plnk <resource> <action> [target] [flags]`. Design principles:
 - **Typed exit codes** — `0` success · `2` validation · `3` auth · `4` not-found · `5` server.
 - **Three outputs** — `table` for humans, `json` for scripts, `markdown` for reports.
 - **Machine-readable help** — `plnk <cmd> --help --output json` returns a stable schema agents can bind to before running.
+- **Optional names** — `--names` (or `names = true`) accepts names where IDs are expected and shows names in output.
 - **stdout is data, stderr is logs.**
 
 Reference docs, one per resource:
@@ -69,7 +70,7 @@ Reference docs, one per resource:
 - [Tasks](docs/cli/tasks.md) · [Comments](docs/cli/comments.md) · [Labels](docs/cli/labels.md)
 - [Attachments](docs/cli/attachments.md) · [Memberships](docs/cli/memberships.md) · [Users](docs/cli/users.md)
 - [Custom fields](docs/cli/custom-fields.md)
-- [Authentication](docs/cli/auth.md) · [Grammar reference](docs/cli/grammar.md) · [Transport policy](docs/cli/transport.md)
+- [Authentication](docs/cli/auth.md) · [Grammar reference](docs/cli/grammar.md) · [Transport policy](docs/cli/transport.md) · [Names](docs/cli/names.md)
 - [Worked examples](docs/cli/examples.md)
 
 ## `plnk-tui`

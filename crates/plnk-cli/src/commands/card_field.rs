@@ -5,7 +5,8 @@ use plnk_core::models::{
 };
 
 use crate::app::OutputFormat;
-use crate::output::{render_collection, render_item, render_message};
+use crate::names::{NameIndex, NameSource};
+use crate::output::{render_collection_named, render_item_named, render_message};
 
 /// A card's group paired with the display name it actually presents.
 ///
@@ -200,17 +201,18 @@ fn validate_value(value: &str) -> Result<(), PlankaError> {
 }
 
 pub async fn execute(
-    client: &(impl CardCustomFieldApi + CustomFieldGroupApi + CustomFieldApi),
+    client: &(impl CardCustomFieldApi + NameSource),
     action: crate::app::CardFieldAction,
     format: OutputFormat,
     full: bool,
+    names: &mut NameIndex,
 ) -> Result<(), PlankaError> {
     use crate::app::CardFieldAction as Action;
 
     match action {
         Action::List { card } => {
             let values = client.list_field_values(&card).await?;
-            render_collection(&values, format, full)?;
+            render_collection_named(client, &values, format, full, names).await?;
         }
         Action::Set {
             card,
@@ -225,7 +227,7 @@ pub async fn execute(
             let stored = client
                 .set_field_value(&card, &group.id, &field_id, &value)
                 .await?;
-            render_item(&stored, format, full)?;
+            render_item_named(client, &stored, format, full, names).await?;
         }
         Action::Clear { card, group, field } => {
             let group = resolve_group(client, &card, &group).await?;

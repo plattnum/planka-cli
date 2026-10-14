@@ -130,6 +130,8 @@ Every subcommand accepts these (via clap's global flags):
 | `--no-color` | Disable colored output |
 | `--yes` | Skip confirmation prompts |
 | `--full` | Show all fields (default is trimmed) |
+| `--names` | Resolve names to IDs and show names in output |
+| `--no-names` | Disable names even when `names = true` is set in the config |
 | `--http-max-in-flight <n>` | Max in-flight HTTP requests |
 | `--http-rate-limit <rps>` | Sustained request rate |
 | `--http-burst <n>` | Rate-limit burst size |

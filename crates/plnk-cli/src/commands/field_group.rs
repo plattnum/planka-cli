@@ -1,10 +1,11 @@
-use plnk_core::api::{CustomFieldGroupApi, match_by_name};
+use plnk_core::api::match_by_name;
 use plnk_core::error::PlankaError;
 use plnk_core::models::UpdateCustomFieldGroup;
 
 use crate::app::OutputFormat;
 use crate::commands::project::confirm_delete;
-use crate::output::{render_collection, render_item, render_message};
+use crate::names::{NameIndex, NameSource};
+use crate::output::{render_collection_named, render_item_named, render_message};
 
 /// Base groups and ordinary groups are separate wire resources reached by
 /// different routes, and an ID alone does not say which kind it is. `get`,
@@ -36,11 +37,12 @@ fn missing_scope() -> PlankaError {
 /// are different types with different columns and are deliberately not forced
 /// through one shape.
 async fn list(
-    client: &impl CustomFieldGroupApi,
+    client: &impl NameSource,
     scope: Scope,
     name: Option<&str>,
     format: OutputFormat,
     full: bool,
+    names: &mut NameIndex,
 ) -> Result<(), PlankaError> {
     if let Some(project_id) = scope.project {
         let groups = client.list_base_field_groups(&project_id).await?;
@@ -48,33 +50,34 @@ async fn list(
             Some(query) => match_by_name(&groups, query).into_iter().cloned().collect(),
             None => groups,
         };
-        render_collection(&groups, format, full)
+        render_collection_named(client, &groups, format, full, names).await
     } else if let Some(board_id) = scope.board {
         let groups = client.list_field_groups_for_board(&board_id).await?;
         let groups = match name {
             Some(query) => match_by_name(&groups, query).into_iter().cloned().collect(),
             None => groups,
         };
-        render_collection(&groups, format, full)
+        render_collection_named(client, &groups, format, full, names).await
     } else if let Some(card_id) = scope.card {
         let groups = client.list_field_groups_for_card(&card_id).await?;
         let groups = match name {
             Some(query) => match_by_name(&groups, query).into_iter().cloned().collect(),
             None => groups,
         };
-        render_collection(&groups, format, full)
+        render_collection_named(client, &groups, format, full, names).await
     } else {
         Err(missing_scope())
     }
 }
 
 async fn create(
-    client: &impl CustomFieldGroupApi,
+    client: &impl NameSource,
     scope: Scope,
     name: Option<String>,
     base: Option<String>,
     format: OutputFormat,
     full: bool,
+    names: &mut NameIndex,
 ) -> Result<(), PlankaError> {
     let require_name = |name: Option<String>| {
         name.ok_or_else(|| PlankaError::MissingRequiredOption {
@@ -85,11 +88,11 @@ async fn create(
     if let Some(project_id) = scope.project {
         let name = require_name(name)?;
         let group = client.create_base_field_group(&project_id, &name).await?;
-        render_item(&group, format, full)
+        render_item_named(client, &group, format, full, names).await
     } else if let Some(board_id) = scope.board {
         let name = require_name(name)?;
         let group = client.create_board_field_group(&board_id, &name).await?;
-        render_item(&group, format, full)
+        render_item_named(client, &group, format, full, names).await
     } else if let Some(card_id) = scope.card {
         if base.is_none() && name.is_none() {
             return Err(PlankaError::InvalidOptionValue {
@@ -99,37 +102,44 @@ async fn create(
                     .to_string(),
             });
         }
+        let base = match base {
+            Some(base) => Some(names.resolve_base_group(client, &base).await?),
+            None => None,
+        };
         let group = client
             .create_card_field_group(&card_id, base.as_deref(), name.as_deref())
             .await?;
-        render_item(&group, format, full)
+        render_item_named(client, &group, format, full, names).await
     } else {
         Err(missing_scope())
     }
 }
 
 async fn get(
-    client: &impl CustomFieldGroupApi,
+    client: &impl NameSource,
     id: &str,
     format: OutputFormat,
     full: bool,
+    names: &mut NameIndex,
 ) -> Result<(), PlankaError> {
-    match client.get_field_group(id).await {
-        Ok(group) => render_item(&group, format, full),
+    let id = names.resolve_group(client, id).await?;
+    match client.get_field_group(&id).await {
+        Ok(group) => render_item_named(client, &group, format, full, names).await,
         Err(error) if is_not_found(&error) => {
-            let base = client.get_base_field_group(id).await.map_err(|_| error)?;
-            render_item(&base, format, full)
+            let base = client.get_base_field_group(&id).await.map_err(|_| error)?;
+            render_item_named(client, &base, format, full, names).await
         }
         Err(error) => Err(error),
     }
 }
 
 async fn update(
-    client: &impl CustomFieldGroupApi,
+    client: &impl NameSource,
     id: &str,
     name: Option<String>,
     format: OutputFormat,
     full: bool,
+    names: &mut NameIndex,
 ) -> Result<(), PlankaError> {
     if name.is_none() {
         return Err(PlankaError::InvalidOptionValue {
@@ -137,35 +147,38 @@ async fn update(
             message: "At least one field must be provided for update".to_string(),
         });
     }
+    let id = names.resolve_group(client, id).await?;
     let params = UpdateCustomFieldGroup { name };
-    match client.update_field_group(id, params.clone()).await {
-        Ok(group) => render_item(&group, format, full),
+    match client.update_field_group(&id, params.clone()).await {
+        Ok(group) => render_item_named(client, &group, format, full, names).await,
         Err(error) if is_not_found(&error) => {
             let base = client
-                .update_base_field_group(id, params)
+                .update_base_field_group(&id, params)
                 .await
                 .map_err(|_| error)?;
-            render_item(&base, format, full)
+            render_item_named(client, &base, format, full, names).await
         }
         Err(error) => Err(error),
     }
 }
 
 async fn delete(
-    client: &impl CustomFieldGroupApi,
+    client: &impl NameSource,
     id: &str,
     format: OutputFormat,
     yes: bool,
+    names: &mut NameIndex,
 ) -> Result<(), PlankaError> {
-    if !yes && !confirm_delete("field group", id) {
+    let id = names.resolve_group(client, id).await?;
+    if !yes && !confirm_delete("field group", &id) {
         return render_message("Aborted.", format);
     }
-    match client.delete_field_group(id).await {
+    match client.delete_field_group(&id).await {
         Ok(()) => {}
         Err(error) if is_not_found(&error) => {
             // The ordinary route made no change, so retrying the base route is safe.
             client
-                .delete_base_field_group(id)
+                .delete_base_field_group(&id)
                 .await
                 .map_err(|_| error)?;
         }
@@ -175,11 +188,12 @@ async fn delete(
 }
 
 pub async fn execute(
-    client: &impl CustomFieldGroupApi,
+    client: &impl NameSource,
     action: crate::app::FieldGroupAction,
     format: OutputFormat,
     yes: bool,
     full: bool,
+    names: &mut NameIndex,
 ) -> Result<(), PlankaError> {
     use crate::app::FieldGroupAction as Action;
 
@@ -189,12 +203,16 @@ pub async fn execute(
             board,
             card,
         } => {
+            let project = names.resolve_optional_project(client, project).await?;
+            let board = names
+                .resolve_optional_board(client, board, project.as_deref())
+                .await?;
             let scope = Scope {
                 project,
                 board,
                 card,
             };
-            list(client, scope, None, format, full).await
+            list(client, scope, None, format, full, names).await
         }
         Action::Find {
             project,
@@ -202,14 +220,18 @@ pub async fn execute(
             card,
             name,
         } => {
+            let project = names.resolve_optional_project(client, project).await?;
+            let board = names
+                .resolve_optional_board(client, board, project.as_deref())
+                .await?;
             let scope = Scope {
                 project,
                 board,
                 card,
             };
-            list(client, scope, Some(&name), format, full).await
+            list(client, scope, Some(&name), format, full, names).await
         }
-        Action::Get { id } => get(client, &id, format, full).await,
+        Action::Get { id } => get(client, &id, format, full, names).await,
         Action::Create {
             project,
             board,
@@ -217,14 +239,18 @@ pub async fn execute(
             name,
             base,
         } => {
+            let project = names.resolve_optional_project(client, project).await?;
+            let board = names
+                .resolve_optional_board(client, board, project.as_deref())
+                .await?;
             let scope = Scope {
                 project,
                 board,
                 card,
             };
-            create(client, scope, name, base, format, full).await
+            create(client, scope, name, base, format, full, names).await
         }
-        Action::Update { id, name } => update(client, &id, name, format, full).await,
-        Action::Delete { id } => delete(client, &id, format, yes).await,
+        Action::Update { id, name } => update(client, &id, name, format, full, names).await,
+        Action::Delete { id } => delete(client, &id, format, yes, names).await,
     }
 }

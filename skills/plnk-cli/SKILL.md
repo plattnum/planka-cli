@@ -26,6 +26,10 @@ Use this skill when the user wants to:
 - Use `find` for name/title lookup.
 - `find` may return multiple results. Do not guess when matches are ambiguous.
 - Prefer the narrowest scope possible: `--list` over `--board`, `--board` over `--project`.
+- `--names` (or `names = true` in the config) accepts names where IDs are
+  expected and shows names in output. Card IDs are not resolved by name. When
+  the mode is on, an ambiguous name is an error listing the candidates — never
+  guess.
 - Read before write when current state is unclear.
 - After discovery, perform mutations using IDs, not names.
 - Ask before destructive or bulk operations unless the user was already explicit.

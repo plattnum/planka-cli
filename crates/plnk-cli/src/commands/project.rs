@@ -1,25 +1,26 @@
-use plnk_core::api::ProjectApi;
 use plnk_core::error::PlankaError;
 use plnk_core::models::{CreateProject, UpdateProject};
 
 use crate::app::OutputFormat;
-use crate::output::{render_collection, render_item, render_message, render_snapshot};
+use crate::names::{NameIndex, NameSource};
+use crate::output::{render_collection_named, render_item_named, render_message, render_snapshot};
 
 pub async fn execute(
-    client: &impl ProjectApi,
+    client: &impl NameSource,
     action: crate::app::ProjectAction,
     format: OutputFormat,
     yes: bool,
     full: bool,
+    names: &mut NameIndex,
 ) -> Result<(), PlankaError> {
     match action {
         crate::app::ProjectAction::List => {
             let projects = client.list_projects().await?;
-            render_collection(&projects, format, full)?;
+            render_collection_named(client, &projects, format, full, names).await?;
         }
         crate::app::ProjectAction::Get { id } => {
             let project = client.get_project(&id).await?;
-            render_item(&project, format, full)?;
+            render_item_named(client, &project, format, full, names).await?;
         }
         crate::app::ProjectAction::Snapshot { id } => {
             let snapshot = client.get_project_snapshot(&id).await?;
@@ -27,7 +28,7 @@ pub async fn execute(
         }
         crate::app::ProjectAction::Find { name } => {
             let projects = client.find_projects(&name).await?;
-            render_collection(&projects, format, full)?;
+            render_collection_named(client, &projects, format, full, names).await?;
         }
         crate::app::ProjectAction::Create { name } => {
             let project = client
@@ -36,7 +37,7 @@ pub async fn execute(
                     project_type: "private".to_string(),
                 })
                 .await?;
-            render_item(&project, format, full)?;
+            render_item_named(client, &project, format, full, names).await?;
         }
         crate::app::ProjectAction::Update { id, name } => {
             if name.is_none() {
@@ -46,7 +47,7 @@ pub async fn execute(
                 });
             }
             let project = client.update_project(&id, UpdateProject { name }).await?;
-            render_item(&project, format, full)?;
+            render_item_named(client, &project, format, full, names).await?;
         }
         crate::app::ProjectAction::Delete { id } => {
             if !yes && !confirm_delete("project", &id) {

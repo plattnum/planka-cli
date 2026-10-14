@@ -7,18 +7,20 @@ use plnk_core::models::Tabular;
 use serde::Serialize;
 
 use crate::app::OutputFormat;
+use crate::names::NameIndex;
 
 /// Render a collection of items to stdout.
 pub fn render_collection<T: Serialize + Tabular>(
     items: &[T],
     format: OutputFormat,
     full: bool,
+    names: Option<&NameIndex>,
 ) -> Result<(), PlankaError> {
     match format {
-        OutputFormat::Json if full => json::print_collection_full(items),
-        OutputFormat::Json => json::print_collection_trimmed(items),
-        OutputFormat::Table => table::print_collection(items),
-        OutputFormat::Markdown => markdown::print_collection(items),
+        OutputFormat::Json if full => json::print_collection_full(items, names),
+        OutputFormat::Json => json::print_collection_trimmed(items, names),
+        OutputFormat::Table => table::print_collection(items, names),
+        OutputFormat::Markdown => markdown::print_collection(items, names),
     }
 }
 
@@ -28,12 +30,13 @@ pub fn render_collection_with_meta<T: Serialize + Tabular, M: Serialize>(
     format: OutputFormat,
     full: bool,
     meta: &M,
+    names: Option<&NameIndex>,
 ) -> Result<(), PlankaError> {
     match format {
-        OutputFormat::Json if full => json::print_collection_full_with_meta(items, meta),
-        OutputFormat::Json => json::print_collection_trimmed_with_meta(items, meta),
-        OutputFormat::Table => table::print_collection(items),
-        OutputFormat::Markdown => markdown::print_collection(items),
+        OutputFormat::Json if full => json::print_collection_full_with_meta(items, meta, names),
+        OutputFormat::Json => json::print_collection_trimmed_with_meta(items, meta, names),
+        OutputFormat::Table => table::print_collection(items, names),
+        OutputFormat::Markdown => markdown::print_collection(items, names),
     }
 }
 
@@ -42,13 +45,64 @@ pub fn render_item<T: Serialize + Tabular>(
     item: &T,
     format: OutputFormat,
     full: bool,
+    names: Option<&NameIndex>,
 ) -> Result<(), PlankaError> {
     match format {
-        OutputFormat::Json if full => json::print_item_full(item),
-        OutputFormat::Json => json::print_item_trimmed(item),
-        OutputFormat::Table => table::print_item(item),
-        OutputFormat::Markdown => markdown::print_item(item),
+        OutputFormat::Json if full => json::print_item_full(item, names),
+        OutputFormat::Json => json::print_item_trimmed(item, names),
+        OutputFormat::Table => table::print_item(item, names),
+        OutputFormat::Markdown => markdown::print_item(item, names),
     }
+}
+
+/// Prefetch names for a collection, then render it.
+pub async fn render_collection_named<T, C>(
+    client: &C,
+    items: &[T],
+    format: OutputFormat,
+    full: bool,
+    names: &mut NameIndex,
+) -> Result<(), PlankaError>
+where
+    T: Serialize + Tabular,
+    C: crate::names::NameSource + ?Sized,
+{
+    names.prefetch_items(client, items).await?;
+    render_collection(items, format, full, Some(&*names))
+}
+
+/// Prefetch names for a collection with explicit JSON metadata, then render it.
+pub async fn render_collection_with_meta_named<T, M, C>(
+    client: &C,
+    items: &[T],
+    format: OutputFormat,
+    full: bool,
+    meta: &M,
+    names: &mut NameIndex,
+) -> Result<(), PlankaError>
+where
+    T: Serialize + Tabular,
+    M: Serialize,
+    C: crate::names::NameSource + ?Sized,
+{
+    names.prefetch_items(client, items).await?;
+    render_collection_with_meta(items, format, full, meta, Some(&*names))
+}
+
+/// Prefetch names for a single item, then render it.
+pub async fn render_item_named<T, C>(
+    client: &C,
+    item: &T,
+    format: OutputFormat,
+    full: bool,
+    names: &mut NameIndex,
+) -> Result<(), PlankaError>
+where
+    T: Serialize + Tabular,
+    C: crate::names::NameSource + ?Sized,
+{
+    names.prefetch_item(client, item).await?;
+    render_item(item, format, full, Some(&*names))
 }
 
 /// Render an error to stderr (or stdout for JSON format).
@@ -112,6 +166,21 @@ pub fn render_snapshot(value: &serde_json::Value, format: OutputFormat) -> Resul
                 .to_string(),
         }),
     }
+}
+
+/// Format one field for table/markdown display, substituting a resolved name
+/// for a foreign-key value when an index is active.
+pub(crate) fn field_display(
+    value: &serde_json::Value,
+    field: &str,
+    names: Option<&NameIndex>,
+) -> String {
+    if let (Some(index), Some(id)) = (names, value.get(field).and_then(serde_json::Value::as_str)) {
+        if let Some(name) = index.display(field, id) {
+            return name.to_string();
+        }
+    }
+    value_to_display(value.get(field))
 }
 
 /// Format a JSON value for display in tables and markdown.

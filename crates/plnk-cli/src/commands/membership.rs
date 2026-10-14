@@ -2,22 +2,28 @@ use plnk_core::api::MembershipApi;
 use plnk_core::error::PlankaError;
 
 use crate::app::OutputFormat;
-use crate::output::{render_collection, render_item, render_message};
+use crate::names::{NameIndex, NameSource};
+use crate::output::{render_collection_named, render_item_named, render_message};
 
 pub async fn execute(
-    client: &impl MembershipApi,
+    client: &(impl MembershipApi + NameSource),
     action: crate::app::MembershipAction,
     format: OutputFormat,
     full: bool,
+    names: &mut NameIndex,
 ) -> Result<(), PlankaError> {
     match action {
         crate::app::MembershipAction::List { project, board } => {
+            let project = names.resolve_optional_project(client, project).await?;
+            let board = names
+                .resolve_optional_board(client, board, project.as_deref())
+                .await?;
             if let Some(board_id) = board {
                 let members = client.list_board_members(&board_id).await?;
-                render_collection(&members, format, full)?;
+                render_collection_named(client, &members, format, full, names).await?;
             } else if let Some(project_id) = project {
                 let managers = client.list_project_managers(&project_id).await?;
-                render_collection(&managers, format, full)?;
+                render_collection_named(client, &managers, format, full, names).await?;
             } else {
                 return Err(PlankaError::MissingRequiredOption {
                     field: "--project or --board".to_string(),
@@ -30,14 +36,19 @@ pub async fn execute(
             user,
             role,
         } => {
+            let project = names.resolve_optional_project(client, project).await?;
+            let board = names
+                .resolve_optional_board(client, board, project.as_deref())
+                .await?;
+            let user = names.resolve_user(client, &user).await?;
             if let Some(board_id) = board {
                 let member = client
                     .add_board_member(&board_id, &user, role.as_deref())
                     .await?;
-                render_item(&member, format, full)?;
+                render_item_named(client, &member, format, full, names).await?;
             } else if let Some(project_id) = project {
                 let manager = client.add_project_manager(&project_id, &user).await?;
-                render_item(&manager, format, full)?;
+                render_item_named(client, &manager, format, full, names).await?;
             } else {
                 return Err(PlankaError::MissingRequiredOption {
                     field: "--project or --board".to_string(),
@@ -49,6 +60,11 @@ pub async fn execute(
             board,
             user,
         } => {
+            let project = names.resolve_optional_project(client, project).await?;
+            let board = names
+                .resolve_optional_board(client, board, project.as_deref())
+                .await?;
+            let user = names.resolve_user(client, &user).await?;
             if let Some(board_id) = board {
                 // Find the membership ID by listing and matching user
                 let members = client.list_board_members(&board_id).await?;

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Global `--names` / `--no-names` flags and a `names = true` config key. When
+  enabled, `plnk` resolves names to IDs and shows names in output:
+  - projects: `--project` accepts a name; JSON gains `projectName` and
+    table/markdown show it.
+  - boards: `--board` and `--to-board` accept a name; JSON gains `boardName` and
+    table/markdown show it.
+  - lists: `--list` and `--to-list` accept a name; JSON gains `listName` and
+    table/markdown show it.
+  - users: `--user` and the positional assignee user accept a username; JSON
+    gains `userName` (the username) and table/markdown show it.
+  - labels: `--label` and the positional card-label argument accept a name; JSON
+    gains `labelName` and table/markdown show it.
+  - custom field groups: `--group`, `--base`, `--base-group`, and the
+    `field-group` positional accept a name; JSON gains
+    `customFieldGroupName`/`baseCustomFieldGroupName` and table/markdown show
+    them.
+  - custom fields: JSON gains `customFieldName` and table/markdown show it;
+    `--field` continues to accept a name.
+
 ## [0.3.0] - 2026-08-10
 
 ### Added
