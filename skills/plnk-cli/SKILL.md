@@ -146,6 +146,8 @@ and errors like:
 
 - `get` requires an ID. Never use `get` with a name.
 - `find` returns collections, including zero or many matches.
+- `card find` selects cards by any combination of `--title`, `--label`, `--due-after`, `--due-before`, and `--closed`. Due bounds are strict (`<`) ISO 8601 or relative-date comparisons; relative dates include `now` (the current instant), which makes `--due-before now` the overdue query. Cards without a due date are excluded when a bound is set, and there is no server-side due-date filter — filtering happens over the fetched snapshot. `card list` accepts the same `--due-after` / `--due-before` bounds.
+- A **due query** (a `card list` / `card find` with a due bound) excludes closed cards by default. Pass `--include-closed` to keep them. `--closed` keeps only closed cards. The two flags conflict and exit `2` together. Without a due bound, closed cards are returned as before.
 - Custom fields have three surfaces — do not conflate them:
   - `plnk field-group` — the groups (project-level ones are reusable templates)
   - `plnk field` — the named slots inside a group
@@ -178,6 +180,7 @@ plnk project list --output json
 plnk board list --project <projectId> --output json
 plnk list list --board <boardId> --output json
 plnk card list --list <listId> --output json
+plnk card list --board <boardId> --due-before 2026-04-30 --output json
 ```
 
 Find resources by name/title:
@@ -187,6 +190,8 @@ plnk project find --name "Platform" --output json
 plnk board find --project <projectId> --name "Sprint" --output json
 plnk list find --board <boardId> --name "Backlog" --output json
 plnk card find --board <boardId> --title "auth" --output json
+plnk card find --board <boardId> --due-before 2026-04-30 --output json
+plnk card find --board <boardId> --due-after 2026-04-01 --due-before 2026-04-30 --output json
 ```
 
 Mutate a card:
@@ -194,6 +199,8 @@ Mutate a card:
 ```bash
 plnk card create --list <listId> --title "Fix auth" --output json
 plnk card update <cardId> --description @spec.md --output json
+plnk card update <cardId> --due-date 2026-04-30 --output json
+plnk card update <cardId> --clear-due-date --output json
 plnk card move <cardId> --to-list <listId> --position top --output json
 ```
 

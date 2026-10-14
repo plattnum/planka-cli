@@ -25,6 +25,7 @@ serde_json = { workspace = true }
 comfy-table = { workspace = true }
 rpassword = { workspace = true }
 url = { workspace = true }
+time = { version = "0.3", features = ["parsing", "formatting", "local-offset"] }
 
 [dev-dependencies]
 assert_cmd = "2"

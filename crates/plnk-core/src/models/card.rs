@@ -47,6 +47,33 @@ pub struct CreateCard {
     pub position: f64,
 }
 
+/// A due-date change in an update request.
+///
+/// A plain `Option` cannot express the difference between "leave the stored
+/// due date alone" and "remove it", because Planka distinguishes an absent
+/// `dueDate` key from an explicit `null`. This enum keeps those states apart.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DueDateUpdate {
+    /// Omit the field — the stored due date is left unchanged.
+    Unchanged,
+    /// Send an explicit `null` — the card loses its due date.
+    Clear,
+    /// Send an RFC 3339 timestamp.
+    Set(String),
+}
+
+impl Serialize for DueDateUpdate {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Unchanged | Self::Clear => serializer.serialize_none(),
+            Self::Set(value) => serializer.serialize_str(value),
+        }
+    }
+}
+
 /// Parameters for updating a card.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,10 +82,16 @@ pub struct UpdateCard {
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub due_date: Option<String>,
+    #[serde(skip_serializing_if = "DueDateUpdate::is_unchanged")]
+    pub due_date: DueDateUpdate,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_closed: Option<bool>,
+}
+
+impl DueDateUpdate {
+    fn is_unchanged(&self) -> bool {
+        matches!(self, Self::Unchanged)
+    }
 }
 
 /// Parameters for moving a card.

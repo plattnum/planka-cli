@@ -370,9 +370,15 @@ fn label_roundtrip() {
 fn card_trimmed_columns_match_wire_format() {
     let columns = Card::trimmed_columns();
     let fields: Vec<&str> = columns.iter().map(|(f, _)| *f).collect();
-    assert_eq!(fields, vec!["id", "name", "listId", "position", "isClosed"]);
+    assert_eq!(
+        fields,
+        vec!["id", "name", "listId", "position", "dueDate", "isClosed"]
+    );
     let labels: Vec<&str> = columns.iter().map(|(_, l)| *l).collect();
-    assert_eq!(labels, vec!["ID", "Name", "List", "Position", "Closed"]);
+    assert_eq!(
+        labels,
+        vec!["ID", "Name", "List", "Position", "Due", "Closed"]
+    );
 }
 
 #[test]
@@ -875,4 +881,50 @@ fn update_custom_field_group_omits_unset_name() {
     let params = UpdateCustomFieldGroup { name: None };
     let json = serde_json::to_value(&params).unwrap();
     assert_eq!(json.as_object().unwrap().len(), 0);
+}
+
+/// An unset due date must be omitted so Planka leaves the stored value alone.
+#[test]
+fn update_card_omits_unset_due_date() {
+    let params = UpdateCard {
+        name: Some("Fix auth".to_string()),
+        description: None,
+        due_date: DueDateUpdate::Unchanged,
+        is_closed: None,
+    };
+    let json = serde_json::to_value(&params).unwrap();
+    assert_eq!(json["name"], "Fix auth");
+    assert!(
+        json.get("dueDate").is_none(),
+        "unset due date must be omitted, not sent as null"
+    );
+}
+
+/// Clearing a due date must reach the wire as an explicit null.
+#[test]
+fn update_card_serializes_cleared_due_date_as_null() {
+    let params = UpdateCard {
+        name: None,
+        description: None,
+        due_date: DueDateUpdate::Clear,
+        is_closed: None,
+    };
+    let json = serde_json::to_value(&params).unwrap();
+    assert!(
+        json.get("dueDate").is_some(),
+        "clearing must send the key, not omit it"
+    );
+    assert!(json["dueDate"].is_null());
+}
+
+#[test]
+fn update_card_serializes_set_due_date() {
+    let params = UpdateCard {
+        name: None,
+        description: None,
+        due_date: DueDateUpdate::Set("2026-04-20T00:00:00Z".to_string()),
+        is_closed: None,
+    };
+    let json = serde_json::to_value(&params).unwrap();
+    assert_eq!(json["dueDate"], "2026-04-20T00:00:00Z");
 }

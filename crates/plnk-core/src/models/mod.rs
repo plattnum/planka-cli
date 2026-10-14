@@ -71,6 +71,7 @@ impl Tabular for Card {
             ("name", "Name"),
             ("listId", "List"),
             ("position", "Position"),
+            ("dueDate", "Due"),
             ("isClosed", "Closed"),
         ]
     }

@@ -21,6 +21,22 @@ plnk card list --board <boardId> --label "Urgent"
 plnk card list --board <boardId> --label "Urgent" --label "Backend"
 ```
 
+Filter by due date with `--due-after` / `--due-before`. The bounds are strict and
+behave exactly as they do on `card find`; see [Find cards by title, label, and/or
+due date](#find-cards-by-title-label-andor-due-date).
+
+```bash
+plnk card list --board <boardId> --due-before 2026-04-30
+plnk card list --board <boardId> --due-after 2026-04-01 --due-before 2026-04-30
+plnk card list --board <boardId> --due-before now --include-closed
+```
+
+List closed cards on their own with `--closed`:
+
+```bash
+plnk card list --board <boardId> --closed
+```
+
 ### Get a card by ID
 
 ```bash
@@ -45,7 +61,7 @@ Notes:
 - `--allow-missing` downgrades per-card `404` misses into metadata, but auth/server/transport failures still fail the command.
 - JSON `meta` includes `requestedCount`, `foundCount`, `missingCount`, `missingIds`, `concurrency`, and `allowMissing`.
 
-### Find cards by title and/or label
+### Find cards by title, label, and/or due date
 
 Must be scoped to a list, board, or project. Title matching uses three-tier matching: exact > case-insensitive > substring.
 
@@ -61,15 +77,81 @@ plnk card find --board <boardId> --label "Urgent" --label "Backend" --title "Fix
 
 # Search within a project (searches all boards and lists)
 plnk card find --project <projectId> --title "auth"
+
+# Filter by due date
+plnk card find --board <boardId> --due-before 2026-04-30
+plnk card find --board <boardId> --due-after 2026-04-01 --due-before 2026-04-30
+plnk card find --board <boardId> --label "Urgent" --due-before 2026-04-30T12:00:00Z
+
+# Closed cards are excluded from a due query; opt back in
+plnk card find --board <boardId> --due-before now --include-closed
+
+# Closed cards on their own
+plnk card find --board <boardId> --closed
 ```
 
 Notes:
-- `--title` or `--label` is required.
+- At least one of `--title`, `--label`, `--due-after`, `--due-before`, or `--closed` is required.
 - `--label` is only supported with `--list` or `--board` scopes.
 - Label names are resolved within the owning board using exact > case-insensitive > substring matching.
 - If a label query matches more than one board label, the CLI tells you it matched multiple labels and prints the candidates.
 - If no board label matches, the CLI tells you no label matched in the current board scope.
 - If a name is ambiguous, use the label ID instead (`plnk label list --board <boardId>`).
+
+Due-date bounds accept ISO 8601 timestamps: `YYYY-MM-DD` (midnight UTC) or
+`YYYY-MM-DDThh:mm[:ss[.fff]]` with an optional `Z` or `±hh:mm` offset. A timestamp
+without an offset is treated as UTC.
+
+They also accept relative dates, resolved against the current time in your local
+timezone: `now`, `today`, `tomorrow`, `yesterday`, `next week`, `next month`,
+`2 weeks from today`, `in 3 days`, `3 days ago`, `this month`, and bare weekday
+names. See [Timestamps](grammar.md#relative-dates) for the full grammar.
+
+```bash
+plnk card list --board <boardId> --due-before tomorrow
+plnk card list --board <boardId> --due-after today --due-before 'next month'
+plnk card find --board <boardId> --due-after '2 weeks ago' --due-before today
+```
+
+The bounds are strict: `--due-after` keeps cards due **strictly after** its
+expression and `--due-before` keeps cards due **strictly before** its expression.
+A card due exactly on a bound is excluded. Cards without a due date are excluded
+whenever a due bound is set. A card whose due date cannot be parsed as ISO 8601
+is excluded and reported on stderr.
+
+A due query — any `card list` or `card find` with `--due-after` or `--due-before`
+— also excludes closed cards. A closed card is done, so leaving it in the window
+buries the cards that still need attention. Pass `--include-closed` to keep
+them:
+
+```bash
+plnk card list --board <boardId> --due-before now --include-closed
+```
+
+The exclusion applies only when a due bound is set. A plain
+`plnk card list --board <boardId>` keeps returning closed cards, exactly as
+before. Use `--closed` to see closed cards on their own, with or without a due
+window:
+
+```bash
+plnk card list --board <boardId> --closed
+plnk card find --board <boardId> --closed --due-before now
+```
+
+`--closed` and `--include-closed` contradict each other. Passing both is a
+validation error and exits `2`.
+
+Relative dates resolve to the **start of the day** in local time, so
+`--due-before tomorrow` excludes cards due today as well as tomorrow. `now` is
+the exception: it keeps the current time of day, so `--due-before now` selects
+overdue cards and `--due-after now` selects cards due in the future. To select
+cards due *today*, combine the two bounds:
+
+```bash
+plnk card list --board <boardId> --due-after today --due-before tomorrow
+plnk card list --board <boardId> --due-before now          # overdue
+plnk card list --board <boardId> --due-after now           # still to come
+```
 
 Always returns a collection. Multiple results are expected, not an error.
 
@@ -106,12 +188,25 @@ plnk card create --list 789 --title "Low priority" --position bottom
 plnk card update <cardId> --title "Fix auth race condition"
 plnk card update <cardId> --description "Updated details"
 plnk card update <cardId> --description @updated-spec.md
+plnk card update <cardId> --due-date 2026-04-30
+plnk card update <cardId> --due-date 2026-04-30T12:00:00Z
+plnk card update <cardId> --due-date 'next week'
+plnk card update <cardId> --due-date 'in 2 weeks'
+plnk card update <cardId> --clear-due-date
 
 # Pipe from clipboard (macOS)
 pbpaste | plnk card update <cardId> --description -
 ```
 
 At least one field must be provided.
+
+`--due-date` accepts the same ISO 8601 timestamps and relative dates as
+`card find`, and is normalised to UTC before it is sent. A relative date resolves
+to the start of the day in local time and is stored as that absolute instant.
+Omitting the flag leaves the stored due date alone.
+
+Pass `--clear-due-date` to remove the due date. Planka receives an explicit
+`null`. `--due-date` and `--clear-due-date` are mutually exclusive.
 
 ### Move a card to a different list
 

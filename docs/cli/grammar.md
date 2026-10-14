@@ -116,6 +116,79 @@ pbpaste | plnk card update <cardId> --description -
 plnk card update <cardId> --description @spec.md
 ```
 
+## Timestamps
+
+Flags that take a timestamp, such as `card find --due-after`, `--due-before`,
+and `card update --due-date`, accept ISO 8601 and a set of relative forms.
+
+### ISO 8601
+
+| Form | Meaning |
+|------|---------|
+| `YYYY-MM-DD` | Midnight UTC on that date |
+| `YYYY-MM-DDThh:mm` | Date-time, UTC when no offset is given |
+| `YYYY-MM-DDThh:mm:ss` | Date-time with seconds |
+| `YYYY-MM-DDThh:mm:ss.fff` | Date-time with fractional seconds |
+| `...Z` | UTC offset |
+| `...±hh:mm` | Explicit numeric offset |
+
+A timestamp without an offset is treated as UTC. A malformed timestamp is a
+validation error and exits `2`.
+
+### Relative dates
+
+Relative forms resolve against the current time in your **local** timezone, which
+`plnk` reads from the environment (`TZ` or `/etc/localtime`). When the offset
+cannot be determined, `plnk` falls back to UTC.
+
+| Form | Meaning |
+|------|---------|
+| `now` | The exact reference instant, time of day included |
+| `today`, `tomorrow`, `yesterday` | That calendar day |
+| `in 3 days`, `in 2 weeks`, `in 1 month` | Calendar arithmetic forward |
+| `2 weeks from today` | Same as `in 2 weeks` |
+| `3 days ago`, `2 months ago` | Calendar arithmetic into the past |
+| `next week`, `next month`, `next year` | One calendar unit forward |
+| `last week`, `last month`, `last year` | One calendar unit back |
+| `this week`, `this month`, `this year` | Start of the current unit |
+| `monday` .. `sunday` | Next occurrence of that weekday |
+
+Rules:
+
+- Every relative form **except `now`** resolves to the **start of the day**
+  (00:00:00) in your local timezone. `now` resolves to the reference instant
+  itself, keeping the current time of day, so `--due-before now` selects overdue
+  cards and `--due-after now` selects cards due in the future. `--due-before
+  tomorrow` therefore excludes cards due today as well as tomorrow, because the
+  bounds are strict.
+- Weekday names always mean the *next* occurrence. `monday` on a Monday means the
+  Monday a week later, never today.
+- Month arithmetic clamps to the end of the target month: `next month` from 31
+  January is 28 or 29 February.
+- Multi-word forms need quoting: `--due-before '2 weeks from today'`.
+- Unrecognised values exit `2`. The error names the flag and repeats both
+  grammars.
+
+Because relative dates depend on the current time, two runs across a DST change
+can legitimately return different results for the same input.
+
+### Closed cards
+
+A due query — any `card list` or `card find` with `--due-after` or `--due-before`
+— excludes cards with `isClosed: true`. A closed card is done, so it does not
+belong in an answer about what is still due.
+
+The exclusion is tied to a bound being set. Without one, a listing is unchanged
+and keeps returning closed cards.
+
+| Flag | Effect |
+|------|--------|
+| `--include-closed` | Keep closed cards in a due query |
+| `--closed` | Keep only closed cards, with or without a due window |
+
+`--closed` and `--include-closed` contradict each other. Passing both exits `2`
+before any request is made.
+
 ## Global flags
 
 Every subcommand accepts these (via clap's global flags):

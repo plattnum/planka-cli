@@ -1,10 +1,11 @@
 use plnk_core::api::{CardApi, LabelApi, ListApi, match_by_name};
 use plnk_core::error::PlankaError;
-use plnk_core::models::{CreateCard, ErrorFailure, FindScope, Label, MoveCard, UpdateCard};
+use plnk_core::models::{Card, CreateCard, ErrorFailure, FindScope, Label, MoveCard, UpdateCard};
 use serde::Serialize;
 
 use crate::app::OutputFormat;
 use crate::commands::project::confirm_delete;
+use crate::due::{DueDateRange, parse_due_date_input, reference_now};
 use crate::input::resolve_text;
 use crate::output::{
     render_collection, render_collection_with_meta, render_item, render_message, render_snapshot,
@@ -20,6 +21,19 @@ struct CardGetManyMeta {
     missing_ids: Vec<String>,
     concurrency: usize,
     allow_missing: bool,
+}
+
+/// Keep only closed cards when `closed` is set, otherwise pass through.
+///
+/// This is the explicit `--closed` filter. It is separate from the implicit
+/// closed-card exclusion inside [`DueDateRange::filter`], which a due query
+/// applies unless `--include-closed` is given.
+fn filter_closed(cards: Vec<Card>, closed: bool) -> Vec<Card> {
+    if closed {
+        cards.into_iter().filter(|card| card.is_closed).collect()
+    } else {
+        cards
+    }
 }
 
 /// Parse position flag: "top", "bottom", or numeric value.
@@ -167,7 +181,22 @@ pub async fn execute(
     full: bool,
 ) -> Result<(), PlankaError> {
     match action {
-        crate::app::CardAction::List { list, board, label } => {
+        crate::app::CardAction::List {
+            list,
+            board,
+            label,
+            due_after,
+            due_before,
+            include_closed,
+            closed,
+        } => {
+            let due_range = DueDateRange::parse(
+                due_after.as_deref(),
+                "--due-after",
+                due_before.as_deref(),
+                "--due-before",
+                reference_now(),
+            )?;
             let cards = if let Some((board_id, list_id, label_ids)) =
                 resolve_label_scope(client, list.as_deref(), board.as_deref(), &label).await?
             {
@@ -183,6 +212,10 @@ pub async fn execute(
                     field: "--list or --board".to_string(),
                 });
             };
+            // `--closed` is an explicit filter, independent of the due window.
+            // Apply it first so the two predicates never overlap.
+            let cards = filter_closed(cards, closed);
+            let cards = due_range.filter(cards, include_closed);
             render_collection(&cards, format, full)?;
         }
         crate::app::CardAction::Get { id } => {
@@ -248,12 +281,29 @@ pub async fn execute(
             project,
             title,
             label,
+            due_after,
+            due_before,
+            include_closed,
+            closed,
         } => {
-            if title.is_none() && label.is_empty() {
+            if title.is_none()
+                && label.is_empty()
+                && due_after.is_none()
+                && due_before.is_none()
+                && !closed
+            {
                 return Err(PlankaError::MissingRequiredOption {
-                    field: "--title or --label".to_string(),
+                    field: "--title, --label, --due-after, --due-before, or --closed".to_string(),
                 });
             }
+
+            let due_range = DueDateRange::parse(
+                due_after.as_deref(),
+                "--due-after",
+                due_before.as_deref(),
+                "--due-before",
+                reference_now(),
+            )?;
 
             let cards = if let Some((board_id, list_id, label_ids)) =
                 resolve_label_scope(client, list.as_deref(), board.as_deref(), &label).await?
@@ -285,6 +335,10 @@ pub async fn execute(
                     .find_cards(scope, title.as_deref().unwrap_or(""))
                     .await?
             };
+            // `--closed` is an explicit filter, independent of the due window.
+            // Apply it first so the two predicates never overlap.
+            let cards = filter_closed(cards, closed);
+            let cards = due_range.filter(cards, include_closed);
             render_collection(&cards, format, full)?;
         }
         crate::app::CardAction::Create {
@@ -315,10 +369,12 @@ pub async fn execute(
             id,
             title,
             description,
+            due_date,
+            clear_due_date,
         } => {
-            if title.is_none() && description.is_none() {
+            if title.is_none() && description.is_none() && due_date.is_none() && !clear_due_date {
                 return Err(PlankaError::InvalidOptionValue {
-                    field: "--title / --description".to_string(),
+                    field: "--title / --description / --due-date / --clear-due-date".to_string(),
                     message: "At least one field must be provided for update".to_string(),
                 });
             }
@@ -326,10 +382,16 @@ pub async fn execute(
                 Some(raw) => Some(resolve_text(&raw)?),
                 None => None,
             };
+            let due_date = parse_due_date_input(
+                due_date.as_deref(),
+                clear_due_date,
+                "--due-date",
+                reference_now(),
+            )?;
             let params = UpdateCard {
                 name: title,
                 description: desc,
-                due_date: None,
+                due_date,
                 is_closed: None,
             };
             let card = client.update_card(&id, params).await?;

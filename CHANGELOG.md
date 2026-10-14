@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `plnk card find` accepts `--due-after <iso8601>` and `--due-before <iso8601>` to
+  filter cards by due date. The bounds are strict (`after < due < before`, `<`
+  rather than `≤`) and combine with `--title` and `--label`. A due-only `find`
+  (no title or label) is allowed. Cards without a due date are excluded whenever
+  a bound is set. Timestamps accept `YYYY-MM-DD` (midnight UTC) or RFC 3339
+  date-times; a missing offset means UTC. There is no server-side filter, so the
+  predicate runs over the fetched snapshot. A card whose `dueDate` cannot be
+  parsed is excluded and reported on stderr.
+- `plnk card list` accepts the same `--due-after` / `--due-before` filters,
+  sharing their semantics with `card find`.
+- Due-date flags accept **relative dates** in addition to ISO 8601: `now`,
+  `today`, `tomorrow`, `yesterday`, `next week`, `next month`, `2 weeks from
+  today`, `in 3 days`, `3 days ago`, `this month`, and bare weekday names. They
+  resolve against the current time in the local timezone (read from `TZ` /
+  `/etc/localtime`, falling back to UTC) and land on the start of the day, except
+  `now`, which keeps the current time of day — so `--due-before now` selects
+  overdue cards and `--due-after now` selects cards due in the future.
+- Card table and markdown output now show a `Due` column before `Closed`. The
+  trimmed JSON projection gains `dueDate` for the same reason, keeping it a
+  strict subset of the full card representation.
+- `plnk card update --due-date <iso8601>` sets a card's due date. The value is
+  validated client-side and normalised to UTC before the request is sent.
+  `plnk card update --clear-due-date` removes it, sending an explicit `null`;
+  the two flags are mutually exclusive. Omitting both leaves the stored due date
+  unchanged.
+
 ## [0.3.0] - 2026-08-10
 
 ### Added
