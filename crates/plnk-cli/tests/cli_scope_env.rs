@@ -278,3 +278,66 @@ fn board_list_without_project_still_errors() {
         .code(2)
         .stderr(predicate::str::contains("required"));
 }
+
+// ─── Empty env values are rejected ──────────────────────────────────
+
+/// An empty value must not be read as "unset". Each variable is rejected on
+/// its own, even when the command in play does not accept that scope at all.
+#[test]
+fn empty_scope_env_is_rejected() {
+    for name in ["PLNK_PROJECT", "PLNK_BOARD", "PLNK_LIST"] {
+        let mut cmd = Command::cargo_bin("plnk").unwrap();
+        cmd.env("PLANKA_CONFIG", "/tmp/plnk-test-nonexistent/config.toml");
+        cmd.env("PLANKA_SERVER", "http://127.0.0.1:9");
+        cmd.env("PLANKA_TOKEN", "test-api-key");
+        cmd.env_remove("PLNK_PROJECT");
+        cmd.env_remove("PLNK_BOARD");
+        cmd.env_remove("PLNK_LIST");
+        cmd.env(name, "");
+
+        cmd.args(["board", "list"])
+            .assert()
+            .failure()
+            .code(2)
+            .stderr(predicate::str::contains(name))
+            .stderr(predicate::str::contains("must not be empty"));
+    }
+}
+
+/// Whitespace-only values are as unusable as empty ones.
+#[test]
+fn whitespace_scope_env_is_rejected() {
+    let mut cmd = Command::cargo_bin("plnk").unwrap();
+    cmd.env("PLANKA_CONFIG", "/tmp/plnk-test-nonexistent/config.toml");
+    cmd.env("PLANKA_SERVER", "http://127.0.0.1:9");
+    cmd.env("PLANKA_TOKEN", "test-api-key");
+    cmd.env_remove("PLNK_PROJECT");
+    cmd.env_remove("PLNK_BOARD");
+    cmd.env("PLNK_LIST", "   ");
+
+    cmd.args(["card", "list"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("PLNK_LIST"))
+        .stderr(predicate::str::contains("must not be empty"));
+}
+
+/// An empty env var beats an explicit flag: the environment is validated
+/// before the command runs, so a stale export cannot be papered over.
+#[test]
+fn empty_scope_env_beats_explicit_flag() {
+    let mut cmd = Command::cargo_bin("plnk").unwrap();
+    cmd.env("PLANKA_CONFIG", "/tmp/plnk-test-nonexistent/config.toml");
+    cmd.env("PLANKA_SERVER", "http://127.0.0.1:9");
+    cmd.env("PLANKA_TOKEN", "test-api-key");
+    cmd.env("PLNK_PROJECT", "");
+    cmd.env_remove("PLNK_BOARD");
+    cmd.env_remove("PLNK_LIST");
+
+    cmd.args(["board", "list", "--project", "proj-flag"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("PLNK_PROJECT"));
+}

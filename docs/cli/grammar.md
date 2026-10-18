@@ -58,6 +58,11 @@ for the whole group, so `PLNK_PROJECT=... plnk card find --board ...` searches t
 If no flag is given and several environment variables are set, the narrowest scope wins:
 `PLNK_LIST` over `PLNK_BOARD` over `PLNK_PROJECT`.
 
+An environment variable that is set but empty is an error, not "unset". `plnk` exits
+`2` and names the offending variable. Whitespace-only values are rejected the same
+way. Validation runs before the command, so an empty variable fails even when an
+explicit flag would otherwise win.
+
 ## Search matching
 
 `find` commands use three-tier matching, stopping at the first tier with results:

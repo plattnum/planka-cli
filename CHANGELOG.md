@@ -11,7 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `plnk` scope flags `--project`, `--board`, and `--list` now fall back to the
   `PLNK_PROJECT`, `PLNK_BOARD`, and `PLNK_LIST` environment variables when the flag is
   absent. An explicit flag always wins; when several defaults are set, the narrowest
-  scope wins (`--list` over `--board` over `--project`).
+  scope wins (`--list` over `--board` over `--project`). A variable that is set but
+  empty (or whitespace-only) is rejected with exit `2` instead of being read as
+  "unset".
 
 ## [0.3.0] - 2026-08-10
 

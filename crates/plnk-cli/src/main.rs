@@ -67,10 +67,35 @@ where
     }
 }
 
+/// The scope defaults that fall back to environment variables.
+const SCOPE_ENV_VARS: [&str; 3] = ["PLNK_PROJECT", "PLNK_BOARD", "PLNK_LIST"];
+
+/// Reject scope environment variables that are set but empty.
+///
+/// An empty value is never a valid ID and cannot be reported as "unset": clap
+/// reads an empty env var as an explicit value, and the manual group fallback
+/// would otherwise pass an empty string straight through. Whitespace-only
+/// values are rejected too, because these IDs are opaque and surrounding
+/// whitespace is never meaningful.
+fn validate_scope_env() -> Result<(), PlankaError> {
+    for name in SCOPE_ENV_VARS {
+        if let Ok(value) = std::env::var(name) {
+            if value.trim().is_empty() {
+                return Err(PlankaError::InvalidOptionValue {
+                    field: name.to_string(),
+                    message: "must not be empty".to_string(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Read a scope default from the environment.
 ///
-/// The value is used as-is, exactly like an explicit flag, so an empty value
-/// is not treated as "unset".
+/// The value is used as-is, exactly like an explicit flag. Callers must run
+/// [`validate_scope_env`] first: a present-but-empty value is an error, not an
+/// "unset" sentinel.
 fn scope_env_value(name: &str) -> Option<String> {
     std::env::var(name).ok()
 }
@@ -310,6 +335,11 @@ async fn main() {
     let app = App::parse();
 
     init_tracing(app.verbose, app.quiet);
+
+    if let Err(e) = validate_scope_env() {
+        render_error(&e, app.output);
+        std::process::exit(e.exit_code());
+    }
 
     let transport_flags = TransportOverrides {
         max_in_flight: app.http_max_in_flight,

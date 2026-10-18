@@ -9,6 +9,8 @@ This file is optimized for agent lookup. When using it from Pi:
 - prefer the narrowest scope possible
 - scope flags `--project`, `--board`, and `--list` fall back to `PLNK_PROJECT`,
   `PLNK_BOARD`, and `PLNK_LIST`; an explicit flag always wins
+- an empty or whitespace-only scope variable is rejected with exit `2`; unset it
+  rather than exporting an empty value
 - prefer `--output json` for machine work
 - if syntax is still unclear, fall back to `plnk --help --output json` or `plnk <resource> <action> --help --output json`
 
