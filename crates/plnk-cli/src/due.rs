@@ -101,8 +101,15 @@ const DUE_DATE_GRAMMAR: &str = "expected an ISO 8601 timestamp (YYYY-MM-DD or \
 /// instant for relative expressions and supplies the offset used to derive the
 /// calendar day.
 fn parse_bound(raw: &str, field: &str, now: OffsetDateTime) -> Result<OffsetDateTime, PlankaError> {
-    if let Some(relative) = parse_relative(raw, now) {
-        return Ok(relative);
+    match parse_relative(raw, now) {
+        Ok(Some(relative)) => return Ok(relative),
+        Ok(None) => {}
+        Err(reason) => {
+            return Err(PlankaError::InvalidOptionValue {
+                field: field.to_string(),
+                message: format!("'{raw}' is not a valid due date: {DUE_DATE_GRAMMAR} ({reason})"),
+            });
+        }
     }
     parse_iso8601_utc(raw).map_err(|reason| PlankaError::InvalidOptionValue {
         field: field.to_string(),
@@ -130,20 +137,21 @@ fn start_of_day(now: OffsetDateTime) -> OffsetDateTime {
 
 /// Parse a relative date expression against `now`.
 ///
-/// Returns `None` for anything the grammar does not recognise, leaving ISO 8601
-/// parsing to the caller. Bare relative dates resolve to the start of the day in
-/// `now`'s offset; `now` is the exception and returns the reference instant
-/// itself, keeping the time of day.
-fn parse_relative(raw: &str, now: OffsetDateTime) -> Option<OffsetDateTime> {
+/// Returns `Ok(None)` for anything the grammar does not recognise, leaving ISO
+/// 8601 parsing to the caller, and `Err` when a recognised expression resolves
+/// to a date outside the representable range. Bare relative dates resolve to the
+/// start of the day in `now`'s offset; `now` is the exception and returns the
+/// reference instant itself, keeping the time of day.
+fn parse_relative(raw: &str, now: OffsetDateTime) -> Result<Option<OffsetDateTime>, String> {
     let text = raw.trim().to_ascii_lowercase();
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     let today = start_of_day(now);
 
     match text.as_str() {
-        "now" => return Some(now),
-        "today" => return Some(today),
-        "tomorrow" => return Some(today + time::Duration::days(1)),
-        "yesterday" => return Some(today - time::Duration::days(1)),
+        "now" => return Ok(Some(now)),
+        "today" => return Ok(Some(today)),
+        "tomorrow" => return Ok(Some(shift(today, Unit::Day, 1)?)),
+        "yesterday" => return Ok(Some(shift(today, Unit::Day, -1)?)),
         _ => {}
     }
 
@@ -156,17 +164,17 @@ fn parse_relative(raw: &str, now: OffsetDateTime) -> Option<OffsetDateTime> {
             0 => 7,
             days => i64::from(days),
         };
-        return Some(today + time::Duration::days(delta));
+        return Ok(Some(shift(today, Unit::Day, delta)?));
     }
 
     if let Some(unit) = text.strip_prefix("this ").and_then(parse_unit) {
-        return Some(start_of_unit(today, unit));
+        return Ok(Some(start_of_unit(today, unit)));
     }
     if let Some(unit) = text.strip_prefix("next ").and_then(parse_unit) {
-        return Some(shift_units(start_of_unit(today, unit), unit, 1));
+        return Ok(Some(shift(start_of_unit(today, unit), unit, 1)?));
     }
     if let Some(unit) = text.strip_prefix("last ").and_then(parse_unit) {
-        return Some(shift_units(start_of_unit(today, unit), unit, -1));
+        return Ok(Some(shift(start_of_unit(today, unit), unit, -1)?));
     }
 
     if let Some(rest) = text.strip_prefix("in ") {
@@ -179,7 +187,7 @@ fn parse_relative(raw: &str, now: OffsetDateTime) -> Option<OffsetDateTime> {
         return parse_quantity(rest, today, 1);
     }
 
-    None
+    Ok(None)
 }
 
 /// A calendar unit that relative expressions can shift by.
@@ -216,14 +224,26 @@ fn parse_weekday(word: &str) -> Option<time::Weekday> {
 }
 
 /// Parse `"<N> <unit>"` and shift `today` by `N * sign` units.
-fn parse_quantity(text: &str, today: OffsetDateTime, sign: i64) -> Option<OffsetDateTime> {
+///
+/// Returns `Ok(None)` when `text` is not a quantity expression, and `Err` when it
+/// is one but the resulting date cannot be represented.
+fn parse_quantity(
+    text: &str,
+    today: OffsetDateTime,
+    sign: i64,
+) -> Result<Option<OffsetDateTime>, String> {
     let mut parts = text.split(' ');
-    let count: i64 = parts.next()?.parse().ok()?;
-    let unit = parse_unit(parts.next()?)?;
+    let Some(Ok(count)) = parts.next().map(str::parse::<i64>) else {
+        return Ok(None);
+    };
+    let Some(unit) = parts.next().and_then(parse_unit) else {
+        return Ok(None);
+    };
     if parts.next().is_some() {
-        return None;
+        return Ok(None);
     }
-    Some(shift_units(today, unit, count * sign))
+    let count = count.checked_mul(sign).ok_or_else(out_of_range)?;
+    shift(today, unit, count).map(Some)
 }
 
 /// Start of the calendar unit containing `day`, in `day`'s offset.
@@ -243,55 +263,106 @@ fn start_of_unit(day: OffsetDateTime, unit: Unit) -> OffsetDateTime {
     start.midnight().assume_offset(day.offset())
 }
 
+/// The reason a recognised relative form cannot be represented.
+const RELATIVE_OUT_OF_RANGE: &str =
+    "the resulting date is outside the supported range (years -9999 to 9999)";
+
+fn out_of_range() -> String {
+    RELATIVE_OUT_OF_RANGE.to_string()
+}
+
+/// Build a `Duration` of `days` days, or `None` when it does not fit.
+///
+/// `Duration::days` panics on overflow, so multiply before constructing.
+fn duration_days(days: i64) -> Option<time::Duration> {
+    days.checked_mul(86_400).map(time::Duration::seconds)
+}
+
+/// Shift `from` by `count` units, reporting an out-of-range result as an error.
+fn shift(from: OffsetDateTime, unit: Unit, count: i64) -> Result<OffsetDateTime, String> {
+    shift_units(from, unit, count).ok_or_else(out_of_range)
+}
+
 /// Shift by calendar units, clamping the day to the target month's length.
 ///
-/// A fixed `Duration` would be wrong here: `31 Jan + 1 month` is not `+28..31
-/// days`, it is 28 or 29 Feb depending on the year.
-fn shift_units(from: OffsetDateTime, unit: Unit, count: i64) -> OffsetDateTime {
+/// Returns `None` when the result leaves the range `time::Date` can represent.
+/// A fixed `Duration` would be wrong for months: `31 Jan + 1 month` is not
+/// `+28..31 days`, it is 28 or 29 Feb depending on the year.
+fn shift_units(from: OffsetDateTime, unit: Unit, count: i64) -> Option<OffsetDateTime> {
     let date = from.date();
     let shifted = match unit {
-        Unit::Day => date + time::Duration::days(count),
-        Unit::Week => date + time::Duration::days(count * 7),
-        Unit::Month => shift_months(date, count),
-        Unit::Year => shift_months(date, count * 12),
+        Unit::Day => date.checked_add(duration_days(count)?)?,
+        Unit::Week => date.checked_add(duration_days(count.checked_mul(7)?)?)?,
+        Unit::Month => shift_months(date, count)?,
+        Unit::Year => shift_months(date, count.checked_mul(12)?)?,
     };
-    shifted.midnight().assume_offset(from.offset())
+    Some(shifted.midnight().assume_offset(from.offset()))
 }
 
 /// Add `count` calendar months to `date`, clamping the day to the target month.
-fn shift_months(date: time::Date, count: i64) -> time::Date {
-    let month_index = i64::from(u8::from(date.month()) - 1) + count;
+///
+/// Returns `None` when the result is outside the representable range.
+fn shift_months(date: time::Date, count: i64) -> Option<time::Date> {
+    let month_index = i64::from(u8::from(date.month()) - 1).checked_add(count)?;
     let year_delta = month_index.div_euclid(12);
-    let month = u8::try_from(month_index.rem_euclid(12) + 1).unwrap_or(1);
-    let year = i32::try_from(i64::from(date.year()) + year_delta).unwrap_or(date.year());
-    let month = time::Month::try_from(month).unwrap_or(date.month());
+    let month = u8::try_from(month_index.rem_euclid(12) + 1).ok()?;
+    let year = i32::try_from(i64::from(date.year()) + year_delta).ok()?;
+    let month = time::Month::try_from(month).ok()?;
 
     // Clamp the day: 31 Jan + 1 month is 28/29 Feb, not an error. The day must
     // be reduced *before* `replace_month`, which itself rejects an out-of-range
-    // day for the target month.
+    // day for the target month. `replace_year` rejects a year outside
+    // -9999..=9999, which is how an out-of-range shift becomes `None`.
     let last_day = month.length(year);
     date.replace_day(date.day().min(last_day))
-        .and_then(|d| d.replace_year(year))
-        .and_then(|d| d.replace_month(month))
-        .unwrap_or(date)
+        .ok()?
+        .replace_year(year)
+        .ok()?
+        .replace_month(month)
+        .ok()
 }
 
 /// Parse an ISO 8601 timestamp to a UTC instant.
 ///
-/// Accepts a bare date (`YYYY-MM-DD`, interpreted as midnight UTC) and
-/// RFC 3339 date-times. A date-time without an offset is treated as UTC.
+/// Accepts a bare date (`YYYY-MM-DD`, interpreted as midnight UTC) and RFC 3339
+/// date-times, including the seconds-less `YYYY-MM-DDThh:mm`. A date-time without
+/// an offset is treated as UTC.
 pub fn parse_iso8601_utc(raw: &str) -> Result<OffsetDateTime, String> {
-    // RFC 3339 requires a `T` between date and time, so a bare date cannot be
-    // parsed directly. Normalise it to midnight UTC first.
+    // RFC 3339 requires a `T` between date and time and seconds in the time, so a
+    // bare date and a seconds-less time cannot be parsed directly.
     let candidate = if raw.len() == 10 && !raw.contains(['T', 't', ' ']) {
         format!("{raw}T00:00:00Z")
     } else {
-        raw.to_string()
+        insert_missing_seconds(raw)
     };
 
     OffsetDateTime::parse(&candidate, &Rfc3339)
         .or_else(|_| OffsetDateTime::parse(&format!("{candidate}Z"), &Rfc3339))
         .map_err(|error| error.to_string())
+}
+
+/// Insert `:00` when a date-time carries `hh:mm` but no seconds.
+///
+/// RFC 3339 requires seconds, but the documented grammar accepts
+/// `YYYY-MM-DDThh:mm`. Anything else is returned unchanged so the parser can
+/// report the original value.
+fn insert_missing_seconds(raw: &str) -> String {
+    let Some(t_pos) = raw.find(['T', 't']) else {
+        return raw.to_string();
+    };
+    let time = &raw[t_pos + 1..];
+    // An offset starts at the first `Z`, `+`, or `-`; a bare time has none.
+    let offset_start = time.find(['Z', 'z', '+', '-']).unwrap_or(time.len());
+    let clock = &time[..offset_start];
+    if clock.len() == 5 && clock.as_bytes().get(2) == Some(&b':') {
+        format!(
+            "{}:00{}",
+            &raw[..t_pos + 1 + offset_start],
+            &time[offset_start..]
+        )
+    } else {
+        raw.to_string()
+    }
 }
 
 /// Parse a `card update` due-date input into an update directive.
@@ -384,6 +455,18 @@ mod tests {
     #[test]
     fn missing_offset_is_utc() {
         assert_eq!(nanos("2026-04-20T12:30:00"), nanos("2026-04-20T12:30:00Z"));
+    }
+
+    /// The documented grammar accepts `hh:mm` without seconds, even though RFC
+    /// 3339 requires them. Offsets and the bare form must both work.
+    #[test]
+    fn seconds_less_time_is_accepted() {
+        assert_eq!(nanos("2026-04-30T12:00"), nanos("2026-04-30T12:00:00Z"));
+        assert_eq!(nanos("2026-04-30T12:00Z"), nanos("2026-04-30T12:00:00Z"));
+        assert_eq!(
+            nanos("2026-04-30T12:00+02:00"),
+            nanos("2026-04-30T10:00:00Z")
+        );
     }
 
     #[test]
@@ -829,7 +912,7 @@ mod tests {
             .midnight()
             .assume_utc();
         assert_eq!(
-            shift_units(jan31, Unit::Month, 1).date(),
+            shift_units(jan31, Unit::Month, 1).unwrap().date(),
             time::Date::from_calendar_date(2026, time::Month::February, 28).unwrap()
         );
 
@@ -839,7 +922,7 @@ mod tests {
             .midnight()
             .assume_utc();
         assert_eq!(
-            shift_units(jan31_leap, Unit::Month, 1).date(),
+            shift_units(jan31_leap, Unit::Month, 1).unwrap().date(),
             time::Date::from_calendar_date(2028, time::Month::February, 29).unwrap()
         );
     }
@@ -851,11 +934,11 @@ mod tests {
             .midnight()
             .assume_utc();
         assert_eq!(
-            shift_units(dec15, Unit::Month, 1).date(),
+            shift_units(dec15, Unit::Month, 1).unwrap().date(),
             time::Date::from_calendar_date(2027, time::Month::January, 15).unwrap()
         );
         assert_eq!(
-            shift_units(dec15, Unit::Month, 13).date(),
+            shift_units(dec15, Unit::Month, 13).unwrap().date(),
             time::Date::from_calendar_date(2028, time::Month::January, 15).unwrap()
         );
     }
@@ -883,6 +966,53 @@ mod tests {
                 "{raw} error should mention the relative grammar"
             );
         }
+    }
+
+    /// A recognised relative form whose result leaves the representable range is
+    /// a validation error, not a panic and not a silent fallback to today.
+    #[test]
+    fn out_of_range_relative_dates_are_rejected() {
+        for raw in [
+            "in 10000000 days",
+            "in 9999999999999999 weeks",
+            "in 100000 years",
+            "100000 years ago",
+        ] {
+            let error = parse_bound(raw, "--due-before", test_now()).unwrap_err();
+            assert_eq!(
+                error.error_type(),
+                "InvalidOptionValue",
+                "{raw} should be rejected"
+            );
+            assert_eq!(error.exit_code(), 2, "{raw} should exit 2");
+            assert!(
+                error.to_string().contains("outside the supported range"),
+                "{raw} error should explain the range: {error}"
+            );
+        }
+    }
+
+    /// `next month` means the start of the next month, so it does not clamp the
+    /// day of the current month; only `in N months` does.
+    #[test]
+    fn next_month_is_the_start_of_the_next_month() {
+        let jan31 = time::Date::from_calendar_date(2026, time::Month::January, 31)
+            .unwrap()
+            .with_hms(9, 0, 0)
+            .unwrap()
+            .assume_utc();
+        assert_eq!(
+            parse_bound("next month", "--due-before", jan31)
+                .unwrap()
+                .date(),
+            time::Date::from_calendar_date(2026, time::Month::February, 1).unwrap()
+        );
+        assert_eq!(
+            parse_bound("in 1 month", "--due-before", jan31)
+                .unwrap()
+                .date(),
+            time::Date::from_calendar_date(2026, time::Month::February, 28).unwrap()
+        );
     }
 
     /// Adding relative parsing must not disturb any existing ISO 8601 form.
@@ -930,7 +1060,7 @@ mod tests {
             .midnight()
             .assume_utc();
         assert_eq!(
-            shift_units(mar31, Unit::Month, -1).date(),
+            shift_units(mar31, Unit::Month, -1).unwrap().date(),
             time::Date::from_calendar_date(2026, time::Month::February, 28).unwrap()
         );
 
@@ -940,7 +1070,7 @@ mod tests {
             .midnight()
             .assume_utc();
         assert_eq!(
-            shift_units(feb29, Unit::Month, -1).date(),
+            shift_units(feb29, Unit::Month, -1).unwrap().date(),
             time::Date::from_calendar_date(2028, time::Month::January, 29).unwrap()
         );
     }

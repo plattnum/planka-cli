@@ -141,6 +141,33 @@ async fn card_find_due_after_excludes_boundary_and_null() {
     assert_eq!(ids_from(&output), vec!["card-inside", "card-after"]);
 }
 
+/// The documented grammar accepts `YYYY-MM-DDThh:mm` without seconds, which RFC
+/// 3339 rejects outright.
+#[tokio::test]
+async fn card_find_accepts_seconds_less_time() {
+    let server = MockServer::start().await;
+    mount_board(&server, board_snapshot(due_fixture(), json!([]), json!([]))).await;
+
+    let output = plnk_with_server(&server.uri())
+        .args([
+            "card",
+            "find",
+            "--board",
+            "board-1",
+            "--due-after",
+            "2026-04-20T00:00",
+            "--output",
+            "json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    assert_eq!(ids_from(&output), vec!["card-inside", "card-after"]);
+}
+
 #[tokio::test]
 async fn card_find_due_before_excludes_boundary_and_null() {
     let server = MockServer::start().await;
@@ -329,6 +356,41 @@ async fn card_find_invalid_due_timestamp_exits_2() {
             .as_str()
             .unwrap()
             .contains("not-a-date")
+    );
+}
+
+/// A relative form that overflows the date range is a validation error, not a
+/// panic and not a silent fallback. This hit a real panic before the fix.
+#[tokio::test]
+async fn card_find_out_of_range_relative_date_exits_2() {
+    let server = MockServer::start().await;
+
+    let output = plnk_with_server(&server.uri())
+        .args([
+            "card",
+            "find",
+            "--board",
+            "board-1",
+            "--due-after",
+            "in 100000 years",
+            "--output",
+            "json",
+        ])
+        .assert()
+        .failure()
+        .code(2)
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["error"]["type"], "InvalidOptionValue");
+    assert_eq!(json["error"]["field"], "--due-after");
+    assert!(
+        json["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("outside the supported range")
     );
 }
 
