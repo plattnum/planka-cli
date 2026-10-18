@@ -21,3 +21,6 @@ Thumbs.db
 
 # Local scratch / generated inspection output
 /temp/
+
+# direnv (local env, may hold secrets)
+.envrc
