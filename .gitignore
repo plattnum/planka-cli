@@ -24,3 +24,6 @@ Thumbs.db
 
 # direnv (local env, may hold secrets)
 .envrc
+
+# Local symlink to the private planka-cli-vault (specs and plans live there)
+/vault
