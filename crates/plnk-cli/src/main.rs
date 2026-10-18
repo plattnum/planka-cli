@@ -67,6 +67,142 @@ where
     }
 }
 
+/// The scope defaults that fall back to environment variables.
+const SCOPE_ENV_VARS: [&str; 3] = ["PLNK_PROJECT", "PLNK_BOARD", "PLNK_LIST"];
+
+/// Reject scope environment variables that are set but empty.
+///
+/// An empty value is never a valid ID and cannot be reported as "unset": clap
+/// reads an empty env var as an explicit value, and the manual group fallback
+/// would otherwise pass an empty string straight through. Whitespace-only
+/// values are rejected too, because these IDs are opaque and surrounding
+/// whitespace is never meaningful.
+fn validate_scope_env() -> Result<(), PlankaError> {
+    for name in SCOPE_ENV_VARS {
+        if let Ok(value) = std::env::var(name) {
+            if value.trim().is_empty() {
+                return Err(PlankaError::InvalidOptionValue {
+                    field: name.to_string(),
+                    message: "must not be empty".to_string(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Read a scope default from the environment.
+///
+/// The value is used as-is, exactly like an explicit flag. Callers must run
+/// [`validate_scope_env`] first: a present-but-empty value is an error, not an
+/// "unset" sentinel.
+fn scope_env_value(name: &str) -> Option<String> {
+    std::env::var(name).ok()
+}
+
+/// Fill a two-way mutually exclusive scope group from environment defaults.
+///
+/// An explicit flag always wins: the environment is consulted only when the
+/// whole group is empty. The narrowest scope wins when several are set, so
+/// `PLNK_LIST` beats `PLNK_BOARD`.
+fn scope_env_list_board(list: &mut Option<String>, board: &mut Option<String>) {
+    if list.is_some() || board.is_some() {
+        return;
+    }
+    if let Some(value) = scope_env_value("PLNK_LIST") {
+        *list = Some(value);
+    } else if let Some(value) = scope_env_value("PLNK_BOARD") {
+        *board = Some(value);
+    }
+}
+
+/// Fill a three-way scope group (`--list` / `--board` / `--project`) from
+/// environment defaults, narrowest first.
+fn scope_env_list_board_project(
+    list: &mut Option<String>,
+    board: &mut Option<String>,
+    project: &mut Option<String>,
+) {
+    if list.is_some() || board.is_some() || project.is_some() {
+        return;
+    }
+    if let Some(value) = scope_env_value("PLNK_LIST") {
+        *list = Some(value);
+    } else if let Some(value) = scope_env_value("PLNK_BOARD") {
+        *board = Some(value);
+    } else if let Some(value) = scope_env_value("PLNK_PROJECT") {
+        *project = Some(value);
+    }
+}
+
+/// Fill a custom-field-group scope (`--project` / `--board` / `--card`) from
+/// environment defaults. Cards have no environment default, so the order is
+/// board then project.
+fn scope_env_project_board_card(
+    project: &mut Option<String>,
+    board: &mut Option<String>,
+    card: &mut Option<String>,
+) {
+    if project.is_some() || board.is_some() || card.is_some() {
+        return;
+    }
+    if let Some(value) = scope_env_value("PLNK_BOARD") {
+        *board = Some(value);
+    } else if let Some(value) = scope_env_value("PLNK_PROJECT") {
+        *project = Some(value);
+    }
+}
+
+/// Apply environment defaults to the mutually exclusive scope groups that
+/// clap cannot handle itself.
+///
+/// Single-scope arguments get their defaults straight from clap's `env`
+/// attribute. Grouped arguments cannot: clap treats an env default like an
+/// explicit flag, so `PLNK_PROJECT=... plnk card find --board ...` would be
+/// rejected as a conflict. Here an explicit flag suppresses the env default
+/// for the whole group instead.
+fn apply_scope_env(command: &mut Command) {
+    match command {
+        Command::Cards { list, board, .. } => scope_env_list_board(list, board),
+        Command::FieldGroups {
+            project,
+            board,
+            card,
+        } => scope_env_project_board_card(project, board, card),
+        Command::Card(card) => match &mut card.action {
+            app::CardAction::List { list, board, .. } => scope_env_list_board(list, board),
+            app::CardAction::Find {
+                list,
+                board,
+                project,
+                ..
+            } => scope_env_list_board_project(list, board, project),
+            _ => {}
+        },
+        Command::FieldGroup(group) => match &mut group.action {
+            app::FieldGroupAction::List {
+                project,
+                board,
+                card,
+            }
+            | app::FieldGroupAction::Find {
+                project,
+                board,
+                card,
+                ..
+            }
+            | app::FieldGroupAction::Create {
+                project,
+                board,
+                card,
+                ..
+            } => scope_env_project_board_card(project, board, card),
+            _ => {}
+        },
+        _ => {}
+    }
+}
+
 fn validate_range<T>(field: &str, value: T, min: T, max: T) -> Result<T, PlankaError>
 where
     T: PartialOrd + Copy + std::fmt::Display,
@@ -200,6 +336,11 @@ async fn main() {
 
     init_tracing(app.verbose, app.quiet);
 
+    if let Err(e) = validate_scope_env() {
+        render_error(&e, app.output);
+        std::process::exit(e.exit_code());
+    }
+
     let transport_flags = TransportOverrides {
         max_in_flight: app.http_max_in_flight,
         rate_limit: app.http_rate_limit,
@@ -210,10 +351,11 @@ async fn main() {
         no_retry: app.no_retry,
     };
 
-    let Some(command) = app.command else {
+    let Some(mut command) = app.command else {
         // No subcommand — clap already printed help via derive
         return;
     };
+    apply_scope_env(&mut command);
 
     let transport_policy = match resolve_transport_policy(&transport_flags) {
         Ok(policy) => policy,

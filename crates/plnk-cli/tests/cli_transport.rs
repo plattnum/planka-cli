@@ -7,7 +7,11 @@ use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
 fn plnk() -> Command {
-    Command::cargo_bin("plnk").unwrap()
+    let mut cmd = Command::cargo_bin("plnk").unwrap();
+    cmd.env_remove("PLNK_PROJECT");
+    cmd.env_remove("PLNK_BOARD");
+    cmd.env_remove("PLNK_LIST");
+    cmd
 }
 
 #[derive(Clone)]

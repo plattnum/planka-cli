@@ -26,6 +26,7 @@ Use this skill when the user wants to:
 - Use `find` for name/title lookup.
 - `find` may return multiple results. Do not guess when matches are ambiguous.
 - Prefer the narrowest scope possible: `--list` over `--board`, `--board` over `--project`.
+- Scope flags fall back to environment variables: `PLNK_PROJECT`, `PLNK_BOARD`, and `PLNK_LIST`. An explicit flag always wins; when several env defaults are set, the narrowest scope wins. A variable that is set but empty fails with exit `2`; unset it instead of exporting an empty value.
 - Read before write when current state is unclear.
 - After discovery, perform mutations using IDs, not names.
 - Ask before destructive or bulk operations unless the user was already explicit.
