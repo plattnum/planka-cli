@@ -9,6 +9,9 @@ fn plnk_with_server(server_uri: &str) -> Command {
     cmd.env("PLANKA_CONFIG", "/tmp/plnk-test-nonexistent/config.toml");
     cmd.env("PLANKA_SERVER", server_uri);
     cmd.env("PLANKA_TOKEN", "test-api-key");
+    // Bare dates resolve to local midnight; pin UTC so the expected UTC body
+    // does not depend on the machine's timezone.
+    cmd.env("TZ", "UTC");
     cmd
 }
 
@@ -60,6 +63,36 @@ async fn card_update_sets_due_date_as_utc() {
 
     let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
     assert_eq!(json["data"]["dueDate"], "2026-04-20T00:00:00.000Z");
+}
+
+/// A bare date is midnight in the user's timezone before normalisation. Pin a
+/// west-of-UTC zone in DST so the UTC instant is the day before: midnight EDT
+/// (UTC-4) on 20 April is 04:00Z.
+#[tokio::test]
+async fn card_update_bare_due_date_is_local_midnight() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/api/cards/card-1"))
+        .and(body_json(json!({"dueDate": "2026-04-20T04:00:00Z"})))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(card_body(json!("2026-04-20T04:00:00.000Z"))),
+        )
+        .mount(&server)
+        .await;
+
+    let mut cmd = plnk_with_server(&server.uri());
+    cmd.env("TZ", "EST5EDT");
+    cmd.args([
+        "card",
+        "update",
+        "card-1",
+        "--due-date",
+        "2026-04-20",
+        "--output",
+        "json",
+    ])
+    .assert()
+    .success();
 }
 
 #[tokio::test]

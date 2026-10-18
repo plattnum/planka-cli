@@ -98,9 +98,9 @@ Notes:
 - If no board label matches, the CLI tells you no label matched in the current board scope.
 - If a name is ambiguous, use the label ID instead (`plnk label list --board <boardId>`).
 
-Due-date bounds accept ISO 8601 timestamps: `YYYY-MM-DD` (midnight UTC) or
-`YYYY-MM-DDThh:mm[:ss[.fff]]` with an optional `Z` or `±hh:mm` offset. A timestamp
-without an offset is treated as UTC.
+Due-date bounds accept ISO 8601 timestamps: `YYYY-MM-DD` (midnight in your
+local timezone) or `YYYY-MM-DDThh:mm[:ss[.fff]]` with an optional `Z` or `±hh:mm`
+offset. A date-time without an offset is treated as UTC.
 
 They also accept relative dates, resolved against the current time in your local
 timezone: `now`, `today`, `tomorrow`, `yesterday`, `next week`, `next month`,

@@ -104,17 +104,32 @@ fn parse_bound(raw: &str, field: &str, now: OffsetDateTime) -> Result<OffsetDate
     match parse_relative(raw, now) {
         Ok(Some(relative)) => return Ok(relative),
         Ok(None) => {}
-        Err(reason) => {
-            return Err(PlankaError::InvalidOptionValue {
-                field: field.to_string(),
-                message: format!("'{raw}' is not a valid due date: {DUE_DATE_GRAMMAR} ({reason})"),
-            });
-        }
+        Err(reason) => return Err(invalid_due_date(raw, field, &reason)),
     }
-    parse_iso8601_utc(raw).map_err(|reason| PlankaError::InvalidOptionValue {
+
+    // A bare date means midnight in the caller's timezone, matching relative
+    // forms such as `today`. `parse_iso8601_utc` reads it as midnight UTC, which
+    // is only correct for timestamps already stored on the server.
+    if is_bare_date(raw) {
+        let midnight =
+            parse_iso8601_utc(raw).map_err(|reason| invalid_due_date(raw, field, &reason))?;
+        return Ok(midnight.date().midnight().assume_offset(now.offset()));
+    }
+
+    parse_iso8601_utc(raw).map_err(|reason| invalid_due_date(raw, field, &reason))
+}
+
+/// Build the `InvalidOptionValue` error for a rejected due-date input.
+fn invalid_due_date(raw: &str, field: &str, reason: &str) -> PlankaError {
+    PlankaError::InvalidOptionValue {
         field: field.to_string(),
         message: format!("'{raw}' is not a valid due date: {DUE_DATE_GRAMMAR} ({reason})"),
-    })
+    }
+}
+
+/// Whether `raw` is a bare `YYYY-MM-DD` date with no time component.
+fn is_bare_date(raw: &str) -> bool {
+    raw.len() == 10 && !raw.contains(['T', 't', ' '])
 }
 
 /// Build the reference instant for relative due dates.
@@ -324,13 +339,15 @@ fn shift_months(date: time::Date, count: i64) -> Option<time::Date> {
 
 /// Parse an ISO 8601 timestamp to a UTC instant.
 ///
-/// Accepts a bare date (`YYYY-MM-DD`, interpreted as midnight UTC) and RFC 3339
-/// date-times, including the seconds-less `YYYY-MM-DDThh:mm`. A date-time without
-/// an offset is treated as UTC.
+/// Accepts a bare date (`YYYY-MM-DD`, interpreted as midnight UTC), RFC 3339
+/// date-times, and the seconds-less `YYYY-MM-DDThh:mm`. A date-time without an
+/// offset is treated as UTC. The UTC reading of a bare date is right for values
+/// already stored on the server; user input goes through [`parse_bound`], which
+/// applies the caller's local offset instead.
 pub fn parse_iso8601_utc(raw: &str) -> Result<OffsetDateTime, String> {
     // RFC 3339 requires a `T` between date and time and seconds in the time, so a
     // bare date and a seconds-less time cannot be parsed directly.
-    let candidate = if raw.len() == 10 && !raw.contains(['T', 't', ' ']) {
+    let candidate = if is_bare_date(raw) {
         format!("{raw}T00:00:00Z")
     } else {
         insert_missing_seconds(raw)
@@ -447,9 +464,23 @@ mod tests {
         parse_iso8601_utc(raw).unwrap().unix_timestamp_nanos()
     }
 
+    /// The low-level parser still reads a bare date as midnight UTC; it is used
+    /// for values already stored on the server. User-facing input goes through
+    /// `parse_bound`, which applies the local offset.
     #[test]
-    fn date_only_is_midnight_utc() {
+    fn parse_iso8601_utc_reads_bare_date_as_utc() {
         assert_eq!(nanos("2026-04-20"), nanos("2026-04-20T00:00:00Z"));
+    }
+
+    /// A user-supplied bare date means midnight in the caller's timezone, so it
+    /// agrees with `today`. `test_now()` is UTC+02:00.
+    #[test]
+    fn bare_date_is_local_midnight() {
+        let parsed = parse_bound("2026-04-20", "--due-before", test_now()).unwrap();
+        assert_eq!(parsed.offset(), test_now().offset());
+        assert_eq!(parsed.time(), time::Time::MIDNIGHT);
+        // 2026-04-20T00:00+02:00 is 2026-04-19T22:00Z.
+        assert_eq!(nanos("2026-04-19T22:00:00Z"), parsed.unix_timestamp_nanos());
     }
 
     #[test]
@@ -577,9 +608,9 @@ mod tests {
     #[test]
     fn both_bounds_combine() {
         let range = DueDateRange::parse(
-            Some("2026-04-20"),
+            Some("2026-04-20T00:00:00Z"),
             "--due-after",
-            Some("2026-04-22"),
+            Some("2026-04-22T00:00:00Z"),
             "--due-before",
             test_now(),
         )
@@ -676,10 +707,6 @@ mod tests {
     #[test]
     fn parse_due_date_input_uses_utc() {
         assert_eq!(
-            parse_due_date_input(Some("2026-04-20"), false, "--due-date", test_now()).unwrap(),
-            DueDateUpdate::Set("2026-04-20T00:00:00Z".to_string())
-        );
-        assert_eq!(
             parse_due_date_input(
                 Some("2026-04-20T02:30:00+02:00"),
                 false,
@@ -688,6 +715,16 @@ mod tests {
             )
             .unwrap(),
             DueDateUpdate::Set("2026-04-20T00:30:00Z".to_string())
+        );
+    }
+
+    /// A bare date is local midnight before it is normalised to UTC.
+    #[test]
+    fn parse_due_date_input_bare_date_is_local_midnight() {
+        // test_now() is UTC+02:00, so 2026-04-20T00:00+02:00 is 22:00Z the day before.
+        assert_eq!(
+            parse_due_date_input(Some("2026-04-20"), false, "--due-date", test_now()).unwrap(),
+            DueDateUpdate::Set("2026-04-19T22:00:00Z".to_string())
         );
     }
 
@@ -1015,11 +1052,11 @@ mod tests {
         );
     }
 
-    /// Adding relative parsing must not disturb any existing ISO 8601 form.
+    /// Adding relative parsing must not disturb the ISO 8601 forms. A bare date
+    /// is deliberately excluded: it now resolves to local midnight, not UTC.
     #[test]
     fn iso8601_still_parses_identically() {
         for raw in [
-            "2026-04-20",
             "2026-04-20T12:30:00Z",
             "2026-04-20T12:30:00+02:00",
             "2026-04-20T12:30:00.500Z",

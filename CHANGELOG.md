@@ -12,8 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filter cards by due date. The bounds are strict (`after < due < before`, `<`
   rather than `≤`) and combine with `--title` and `--label`. A due-only `find`
   (no title or label) is allowed. Cards without a due date are excluded whenever
-  a bound is set. Timestamps accept `YYYY-MM-DD` (midnight UTC) or RFC 3339
-  date-times; a missing offset means UTC. There is no server-side filter, so the
+  a bound is set. Timestamps accept `YYYY-MM-DD` (midnight in the local
+  timezone), `YYYY-MM-DDThh:mm[:ss[.fff]]`, with an optional `Z` or `±hh:mm`
+  offset; a date-time without an offset means UTC. There is no server-side filter, so the
   predicate runs over the fetched snapshot. A card whose `dueDate` cannot be
   parsed is excluded and reported on stderr.
 - `plnk card list` accepts the same `--due-after` / `--due-before` filters,
@@ -29,7 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trimmed JSON projection gains `dueDate` for the same reason, keeping it a
   strict subset of the full card representation.
 - `plnk card update --due-date <iso8601>` sets a card's due date. The value is
-  validated client-side and normalised to UTC before the request is sent.
+  validated client-side and normalised to UTC before the request is sent. A bare
+  date means midnight in the local timezone.
   `plnk card update --clear-due-date` removes it, sending an explicit `null`;
   the two flags are mutually exclusive. Omitting both leaves the stored due date
   unchanged.

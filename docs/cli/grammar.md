@@ -125,15 +125,16 @@ and `card update --due-date`, accept ISO 8601 and a set of relative forms.
 
 | Form | Meaning |
 |------|---------|
-| `YYYY-MM-DD` | Midnight UTC on that date |
+| `YYYY-MM-DD` | Midnight in your local timezone on that date |
 | `YYYY-MM-DDThh:mm` | Date-time, UTC when no offset is given |
 | `YYYY-MM-DDThh:mm:ss` | Date-time with seconds |
 | `YYYY-MM-DDThh:mm:ss.fff` | Date-time with fractional seconds |
 | `...Z` | UTC offset |
 | `...±hh:mm` | Explicit numeric offset |
 
-A timestamp without an offset is treated as UTC. A malformed timestamp is a
-validation error and exits `2`.
+A date-time without an offset is treated as UTC; a bare date resolves to local
+midnight, like `today`. A malformed timestamp is a validation error and exits
+`2`.
 
 ### Relative dates
 

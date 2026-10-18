@@ -9,6 +9,9 @@ fn plnk_with_server(server_uri: &str) -> Command {
     cmd.env("PLANKA_CONFIG", "/tmp/plnk-test-nonexistent/config.toml");
     cmd.env("PLANKA_SERVER", server_uri);
     cmd.env("PLANKA_TOKEN", "test-api-key");
+    // Bare dates resolve to local midnight. Pin UTC so the fixtures, which are
+    // written as UTC instants, stay deterministic; `plnk_with_tz` overrides.
+    cmd.env("TZ", "UTC");
     cmd
 }
 
