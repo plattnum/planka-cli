@@ -878,3 +878,146 @@ async fn relative_due_bound_error_mentions_the_grammar() {
     assert!(message.contains("relative date"), "got: {message}");
     assert!(message.contains("ISO 8601"), "got: {message}");
 }
+
+/// `--closed` plus a due bound must keep closed cards inside the window. The
+/// implicit closed-card exclusion inside the due filter must not undo the
+/// explicit `--closed` filter.
+#[tokio::test]
+async fn card_list_closed_with_due_bound_keeps_closed_cards() {
+    let server = MockServer::start().await;
+    mount_board(
+        &server,
+        board_snapshot(
+            json!([
+                card_json_closed(
+                    "card-open",
+                    "Card open",
+                    json!("2026-04-25T12:00:00.000Z"),
+                    false
+                ),
+                card_json_closed(
+                    "card-closed",
+                    "Card closed",
+                    json!("2026-04-25T12:00:00.000Z"),
+                    true
+                ),
+            ]),
+            json!([]),
+            json!([]),
+        ),
+    )
+    .await;
+
+    let output = plnk_with_server(&server.uri())
+        .args([
+            "card",
+            "list",
+            "--board",
+            "board-1",
+            "--closed",
+            "--due-before",
+            "2026-04-30",
+            "--output",
+            "json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(ids_from(&output), vec!["card-closed"]);
+}
+
+#[tokio::test]
+async fn card_find_closed_with_due_bound_keeps_closed_cards() {
+    let server = MockServer::start().await;
+    mount_board(
+        &server,
+        board_snapshot(
+            json!([
+                card_json_closed(
+                    "card-open",
+                    "Card open",
+                    json!("2026-04-25T12:00:00.000Z"),
+                    false
+                ),
+                card_json_closed(
+                    "card-closed",
+                    "Card closed",
+                    json!("2026-04-25T12:00:00.000Z"),
+                    true
+                ),
+            ]),
+            json!([]),
+            json!([]),
+        ),
+    )
+    .await;
+
+    let output = plnk_with_server(&server.uri())
+        .args([
+            "card",
+            "find",
+            "--board",
+            "board-1",
+            "--closed",
+            "--due-before",
+            "2026-04-30",
+            "--output",
+            "json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(ids_from(&output), vec!["card-closed"]);
+}
+
+/// The due window still applies when `--closed` is set: a closed card outside
+/// the window must not slip through.
+#[tokio::test]
+async fn card_list_closed_with_due_bound_still_applies_window() {
+    let server = MockServer::start().await;
+    mount_board(
+        &server,
+        board_snapshot(
+            json!([
+                card_json_closed(
+                    "card-closed-inside",
+                    "Card closed inside",
+                    json!("2026-04-25T12:00:00.000Z"),
+                    true
+                ),
+                card_json_closed(
+                    "card-closed-after",
+                    "Card closed after",
+                    json!("2026-05-10T12:00:00.000Z"),
+                    true
+                ),
+            ]),
+            json!([]),
+            json!([]),
+        ),
+    )
+    .await;
+
+    let output = plnk_with_server(&server.uri())
+        .args([
+            "card",
+            "list",
+            "--board",
+            "board-1",
+            "--closed",
+            "--due-before",
+            "2026-04-30",
+            "--output",
+            "json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(ids_from(&output), vec!["card-closed-inside"]);
+}

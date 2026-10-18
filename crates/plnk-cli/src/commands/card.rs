@@ -213,9 +213,11 @@ pub async fn execute(
                 });
             };
             // `--closed` is an explicit filter, independent of the due window.
-            // Apply it first so the two predicates never overlap.
+            // Apply it first, then tell the due filter to keep closed cards:
+            // the caller asked for them, so the implicit planning exclusion
+            // must not drop them again.
             let cards = filter_closed(cards, closed);
-            let cards = due_range.filter(cards, include_closed);
+            let cards = due_range.filter(cards, include_closed || closed);
             render_collection(&cards, format, full)?;
         }
         crate::app::CardAction::Get { id } => {
@@ -336,9 +338,11 @@ pub async fn execute(
                     .await?
             };
             // `--closed` is an explicit filter, independent of the due window.
-            // Apply it first so the two predicates never overlap.
+            // Apply it first, then tell the due filter to keep closed cards:
+            // the caller asked for them, so the implicit planning exclusion
+            // must not drop them again.
             let cards = filter_closed(cards, closed);
-            let cards = due_range.filter(cards, include_closed);
+            let cards = due_range.filter(cards, include_closed || closed);
             render_collection(&cards, format, full)?;
         }
         crate::app::CardAction::Create {
