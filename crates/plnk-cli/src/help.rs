@@ -286,7 +286,7 @@ fn infer_type(name: &str) -> String {
         "position" => "enum(top|bottom|int)".to_string(),
         "role" => "enum(admin|editor|viewer)".to_string(),
         "file" | "out" => "path".to_string(),
-        "due_after" | "due_before" | "due_date" => "iso8601".to_string(),
+        "due_after" | "due_before" | "due_date" => "date".to_string(),
         "concurrency"
         | "http_max_in_flight"
         | "http_rate_limit"

@@ -518,7 +518,7 @@ pub enum CardAction {
         /// Card ID
         id: String,
     },
-    /// Find cards by title and/or label within a scope
+    /// Find cards by title, label, and/or due date within a scope
     Find {
         /// Search within a list
         #[arg(long, group = "scope")]

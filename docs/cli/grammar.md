@@ -158,13 +158,15 @@ Rules:
 - Every relative form **except `now`** resolves to the **start of the day**
   (00:00:00) in your local timezone. `now` resolves to the reference instant
   itself, keeping the current time of day, so `--due-before now` selects overdue
-  cards and `--due-after now` selects cards due in the future. `--due-before
-  tomorrow` therefore excludes cards due today as well as tomorrow, because the
-  bounds are strict.
+  cards and `--due-after now` selects cards due in the future. Because the
+  bounds are strict, `--due-before tomorrow` still includes every card due
+  today: each of those instants falls before tomorrow's local midnight. A card
+  due exactly at tomorrow's midnight is excluded.
 - Weekday names always mean the *next* occurrence. `monday` on a Monday means the
   Monday a week later, never today.
-- Month arithmetic clamps to the end of the target month: `next month` from 31
-  January is 28 or 29 February.
+- Calendar quantities clamp to the target month's length: `in 1 month` from 31
+  January is 28 or 29 February. `next month` means the *start* of the next
+  month, so from 31 January it is 1 February.
 - Multi-word forms need quoting: `--due-before '2 weeks from today'`.
 - Unrecognised values exit `2`. The error names the flag and repeats both
   grammars.

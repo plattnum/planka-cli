@@ -120,8 +120,8 @@ fn machine_help_card_list_includes_label_option_and_examples() {
     );
     for flag in ["--due-after", "--due-before"] {
         assert_eq!(
-            opts[flag]["type"], "iso8601",
-            "card list {flag} should be iso8601"
+            opts[flag]["type"], "date",
+            "card list {flag} should be date"
         );
         assert_eq!(opts[flag]["required"], false);
     }
@@ -190,7 +190,7 @@ fn machine_help_card_find_includes_due_options() {
     let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
     let opts = &json["options"];
     for flag in ["--due-after", "--due-before"] {
-        assert_eq!(opts[flag]["type"], "iso8601", "{flag} should be iso8601");
+        assert_eq!(opts[flag]["type"], "date", "{flag} should be date");
         assert_eq!(opts[flag]["required"], false);
         assert!(opts[flag]["description"].is_string());
     }
@@ -222,7 +222,7 @@ fn machine_help_card_update_includes_due_date_option() {
 
     let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
     let opts = &json["options"];
-    assert_eq!(opts["--due-date"]["type"], "iso8601");
+    assert_eq!(opts["--due-date"]["type"], "date");
     assert_eq!(opts["--due-date"]["required"], false);
     assert_eq!(opts["--clear-due-date"]["type"], "flag");
     assert_eq!(opts["--clear-due-date"]["required"], false);

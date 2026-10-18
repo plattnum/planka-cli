@@ -141,11 +141,12 @@ plnk card find --board <boardId> --closed --due-before now
 `--closed` and `--include-closed` contradict each other. Passing both is a
 validation error and exits `2`.
 
-Relative dates resolve to the **start of the day** in local time, so
-`--due-before tomorrow` excludes cards due today as well as tomorrow. `now` is
-the exception: it keeps the current time of day, so `--due-before now` selects
-overdue cards and `--due-after now` selects cards due in the future. To select
-cards due *today*, combine the two bounds:
+Relative dates resolve to the **start of the day** in local time. Because the
+bounds are strict, `--due-before tomorrow` still includes every card due today:
+those instants fall before tomorrow's local midnight. `now` is the exception: it
+keeps the current time of day, so `--due-before now` selects overdue cards and
+`--due-after now` selects cards due in the future. To select cards due *today*,
+combine the two bounds:
 
 ```bash
 plnk card list --board <boardId> --due-after today --due-before tomorrow
