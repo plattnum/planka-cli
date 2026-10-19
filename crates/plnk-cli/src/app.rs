@@ -141,6 +141,18 @@ pub enum Command {
         /// Board-scoped label ID or name (repeat for AND semantics; use an ID to avoid ambiguity)
         #[arg(long = "label")]
         label: Vec<String>,
+        /// Only include cards due strictly after this date (ISO 8601 or relative, e.g. 'now', 'today', 'next week')
+        #[arg(long)]
+        due_after: Option<String>,
+        /// Only include cards due strictly before this date (ISO 8601 or relative, e.g. 'now', 'tomorrow', 'in 3 days')
+        #[arg(long)]
+        due_before: Option<String>,
+        /// Keep closed cards when a due filter is active (a due query excludes them by default)
+        #[arg(long, conflicts_with = "closed")]
+        include_closed: bool,
+        /// Only include closed cards
+        #[arg(long)]
+        closed: bool,
     },
     /// Alias for `task list --card <id>`
     #[command(hide = true)]
@@ -471,6 +483,18 @@ pub enum CardAction {
         /// Board-scoped label ID or name (repeat for AND semantics; use an ID to avoid ambiguity)
         #[arg(long = "label")]
         label: Vec<String>,
+        /// Only include cards due strictly after this date (ISO 8601 or relative, e.g. 'now', 'today', 'next week')
+        #[arg(long)]
+        due_after: Option<String>,
+        /// Only include cards due strictly before this date (ISO 8601 or relative, e.g. 'now', 'tomorrow', 'in 3 days')
+        #[arg(long)]
+        due_before: Option<String>,
+        /// Keep closed cards when a due filter is active (a due query excludes them by default)
+        #[arg(long, conflicts_with = "closed")]
+        include_closed: bool,
+        /// Only include closed cards
+        #[arg(long)]
+        closed: bool,
     },
     /// Get a card by ID
     Get {
@@ -494,7 +518,7 @@ pub enum CardAction {
         /// Card ID
         id: String,
     },
-    /// Find cards by title and/or label within a scope
+    /// Find cards by title, label, and/or due date within a scope
     Find {
         /// Search within a list
         #[arg(long, group = "scope")]
@@ -511,6 +535,18 @@ pub enum CardAction {
         /// Board-scoped label ID or name (repeat for AND semantics; use an ID to avoid ambiguity)
         #[arg(long = "label")]
         label: Vec<String>,
+        /// Only include cards due strictly after this date (ISO 8601 or relative, e.g. 'now', 'today', 'next week')
+        #[arg(long)]
+        due_after: Option<String>,
+        /// Only include cards due strictly before this date (ISO 8601 or relative, e.g. 'now', 'tomorrow', 'in 3 days')
+        #[arg(long)]
+        due_before: Option<String>,
+        /// Keep closed cards when a due filter is active (a due query excludes them by default)
+        #[arg(long, conflicts_with = "closed")]
+        include_closed: bool,
+        /// Only include closed cards
+        #[arg(long)]
+        closed: bool,
     },
     /// Create a new card
     Create {
@@ -537,6 +573,13 @@ pub enum CardAction {
         /// New description (literal, "-" for stdin, "@file" for file)
         #[arg(long)]
         description: Option<String>,
+        /// New due date (ISO 8601 or relative, e.g. 'now', 'tomorrow', 'in 2 weeks');
+        /// relative dates resolve to the start of the day in local time, except 'now', which keeps the current time
+        #[arg(long)]
+        due_date: Option<String>,
+        /// Remove the card's due date
+        #[arg(long, conflicts_with = "due_date")]
+        clear_due_date: bool,
     },
     /// Move a card to a different list (optionally on a different board)
     Move {

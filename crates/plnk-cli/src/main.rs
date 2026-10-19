@@ -2,6 +2,7 @@ use clap::Parser;
 
 mod app;
 mod commands;
+mod due;
 mod help;
 mod input;
 mod output;
@@ -409,7 +410,15 @@ async fn main() {
             }
             Err(e) => Err(e),
         },
-        Command::Cards { list, board, label } => match build_client(
+        Command::Cards {
+            list,
+            board,
+            label,
+            due_after,
+            due_before,
+            include_closed,
+            closed,
+        } => match build_client(
             app.server.as_deref(),
             app.token.as_deref(),
             &transport_policy,
@@ -417,7 +426,15 @@ async fn main() {
             Ok(client) => {
                 commands::card::execute(
                     &client,
-                    app::CardAction::List { list, board, label },
+                    app::CardAction::List {
+                        list,
+                        board,
+                        label,
+                        due_after,
+                        due_before,
+                        include_closed,
+                        closed,
+                    },
                     app.output,
                     app.yes,
                     app.full,

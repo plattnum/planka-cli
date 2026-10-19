@@ -22,6 +22,7 @@ This file is optimized for agent lookup. When using it from Pi:
 | find a list by name | `plnk list find --board <boardId> --name <name>` |
 | list cards in a list | `plnk card list --list <listId>` |
 | find cards by title | `plnk card find --list <listId> --title <title>` or broader board/project scopes |
+| find cards due in a window | `plnk card find --board <boardId> --due-after <iso8601> --due-before <iso8601>` (also on `plnk card list`) |
 | read one card with nested state | `plnk card snapshot <cardId> --output json` |
 | create a card | `plnk card create --list <listId> --title <title>` |
 | update a card title/description | `plnk card update <cardId> ...` |
@@ -171,13 +172,17 @@ Alias: `plnk lists --board <boardId>`
 
 ```bash
 plnk card list --list <listId>
+plnk card list --board <boardId> --due-before <iso8601>
+plnk card list --board <boardId> --due-after <iso8601> --due-before <iso8601>
 plnk card get <cardId>
 plnk card snapshot <cardId>                  # JSON only — full wire response
 plnk card find --list <listId> --title <title>
 plnk card find --board <boardId> --title <title>
 plnk card find --project <projectId> --title <title>
+plnk card find --board <boardId> --due-before <iso8601>
+plnk card find --board <boardId> --due-after <iso8601> --due-before <iso8601>
 plnk card create --list <listId> --title <title> [--description <text>] [--position top|bottom|<int>]
-plnk card update <cardId> [--title <title>] [--description <text>]
+plnk card update <cardId> [--title <title>] [--description <text>] [--due-date <iso8601>] [--clear-due-date]
 plnk card move <cardId> --to-list <listId> [--to-board <boardId>] [--position top|bottom|<int>]
 plnk card archive <cardId>
 plnk card unarchive <cardId>
@@ -189,7 +194,11 @@ Alias: `plnk cards --list <listId>`
 - `find` requires exactly one scope flag (`--list`, `--board`, or `--project`).
 - `find --board` fetches the board snapshot and searches all cards across lists.
 - `find --project` fetches all boards in the project, then all cards in each board.
+- `find` needs at least one of `--title`, `--label`, `--due-after`, `--due-before`, or `--closed`.
+- `--due-after` / `--due-before` take ISO 8601 timestamps or relative dates (`now`, `today`, `next week`, `2 weeks from today`) and are strict (`<`, not `≤`). Relative dates resolve to the start of the day in local time, except `now`, which keeps the current time of day (`--due-before now` selects overdue cards). Cards without a due date are excluded whenever a bound is set. Both `card list` and `card find` accept them; on `card list` they filter without changing the `--list` / `--board` scope requirement.
+- A due query excludes closed cards unless `--include-closed` is passed. `--closed` keeps only closed cards. The two flags conflict and exit `2` together. Without a due bound, closed cards are returned as before.
 - `--description` accepts literal text, `-` for stdin, `@file.md` for file.
+- `--due-date` accepts ISO 8601 or a relative date (`now`, `tomorrow`, `in 2 weeks`) and is normalised to UTC; `--clear-due-date` removes the due date (mutually exclusive).
 - `--position top` = position 0.0, `bottom` = max float, or provide a numeric value.
 - `update` requires at least one mutable field.
 

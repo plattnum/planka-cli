@@ -286,6 +286,7 @@ fn infer_type(name: &str) -> String {
         "position" => "enum(top|bottom|int)".to_string(),
         "role" => "enum(admin|editor|viewer)".to_string(),
         "file" | "out" => "path".to_string(),
+        "due_after" | "due_before" | "due_date" => "date".to_string(),
         "concurrency"
         | "http_max_in_flight"
         | "http_rate_limit"
@@ -293,9 +294,8 @@ fn infer_type(name: &str) -> String {
         | "retry_attempts"
         | "retry_base_delay_ms"
         | "retry_max_delay_ms" => "integer".to_string(),
-        "allow_missing" | "no_retry" | "quiet" | "yes" | "full" | "no_color" | "verbose" => {
-            "flag".to_string()
-        }
+        "allow_missing" | "no_retry" | "quiet" | "yes" | "full" | "no_color" | "verbose"
+        | "clear_due_date" | "include_closed" | "closed" => "flag".to_string(),
         _ => "string".to_string(),
     }
 }
@@ -348,6 +348,12 @@ fn get_examples(resource: &str, action: &str) -> Vec<String> {
             "plnk card list --list 789".into(),
             "plnk card list --board 456 --label urgent".into(),
             "plnk card list --board 456 --label 111".into(),
+            "plnk card list --board 456 --due-before 2026-04-30 --output json".into(),
+            "plnk card list --board 456 --due-after 2026-04-01 --due-before 2026-04-30".into(),
+            "plnk card list --board 456 --due-before tomorrow".into(),
+            "plnk card list --board 456 --due-after now".into(),
+            "plnk card list --board 456 --due-before now --include-closed".into(),
+            "plnk card list --board 456 --closed".into(),
         ],
         ("card", "get") => vec!["plnk card get 1234".into()],
         ("card", "get-many") => vec![
@@ -363,6 +369,12 @@ fn get_examples(resource: &str, action: &str) -> Vec<String> {
             "plnk card find --board 456 --label urgent".into(),
             "plnk card find --board 456 --label 111 --title 'Fix auth'".into(),
             "plnk card find --project 123 --title 'Fix auth'".into(),
+            "plnk card find --board 456 --due-before 2026-04-30 --output json".into(),
+            "plnk card find --board 456 --due-after 2026-04-01 --due-before 2026-04-30".into(),
+            "plnk card find --board 456 --due-before 'next week'".into(),
+            "plnk card find --board 456 --due-after now".into(),
+            "plnk card find --board 456 --due-before now --include-closed".into(),
+            "plnk card find --board 456 --closed".into(),
         ],
         ("card", "create") => vec![
             "plnk card create --list 789 --title 'Fix auth'".into(),
@@ -372,6 +384,10 @@ fn get_examples(resource: &str, action: &str) -> Vec<String> {
         ("card", "update") => vec![
             "plnk card update 1234 --title 'Fix auth race'".into(),
             "plnk card update 1234 --description @spec.md".into(),
+            "plnk card update 1234 --due-date 2026-04-30".into(),
+            "plnk card update 1234 --due-date 'in 2 weeks'".into(),
+            "plnk card update 1234 --due-date now".into(),
+            "plnk card update 1234 --clear-due-date".into(),
         ],
         ("card", "move") => vec!["plnk card move 1234 --to-list 790 --position top".into()],
         ("card", "archive") => vec!["plnk card archive 1234".into()],

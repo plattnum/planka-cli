@@ -118,6 +118,40 @@ fn machine_help_card_list_includes_label_option_and_examples() {
             .iter()
             .any(|example| example.as_str().unwrap().contains("--label"))
     );
+    for flag in ["--due-after", "--due-before"] {
+        assert_eq!(
+            opts[flag]["type"], "date",
+            "card list {flag} should be date"
+        );
+        assert_eq!(opts[flag]["required"], false);
+    }
+    assert!(
+        json["examples"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|example| example.as_str().unwrap().contains("--due-"))
+    );
+    for flag in ["--include-closed", "--closed"] {
+        assert_eq!(
+            opts[flag]["type"], "flag",
+            "card list {flag} should be flag"
+        );
+        assert_eq!(opts[flag]["required"], false);
+    }
+    assert!(
+        opts["--include-closed"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("due query excludes them by default")
+    );
+    assert!(
+        json["examples"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|example| example.as_str().unwrap().contains("--include-closed"))
+    );
 }
 
 #[test]
@@ -140,6 +174,71 @@ fn machine_help_card_find_includes_label_option_and_examples() {
             .unwrap()
             .iter()
             .any(|example| example.as_str().unwrap().contains("--label"))
+    );
+}
+
+#[test]
+fn machine_help_card_find_includes_due_options() {
+    let output = plnk()
+        .args(["card", "find", "--help", "--output", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    let opts = &json["options"];
+    for flag in ["--due-after", "--due-before"] {
+        assert_eq!(opts[flag]["type"], "date", "{flag} should be date");
+        assert_eq!(opts[flag]["required"], false);
+        assert!(opts[flag]["description"].is_string());
+    }
+    assert!(
+        json["examples"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|example| example.as_str().unwrap().contains("--due-"))
+    );
+    for flag in ["--include-closed", "--closed"] {
+        assert_eq!(
+            opts[flag]["type"], "flag",
+            "card find {flag} should be flag"
+        );
+        assert_eq!(opts[flag]["required"], false);
+    }
+}
+
+#[test]
+fn machine_help_card_update_includes_due_date_option() {
+    let output = plnk()
+        .args(["card", "update", "--help", "--output", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    let opts = &json["options"];
+    assert_eq!(opts["--due-date"]["type"], "date");
+    assert_eq!(opts["--due-date"]["required"], false);
+    assert_eq!(opts["--clear-due-date"]["type"], "flag");
+    assert_eq!(opts["--clear-due-date"]["required"], false);
+    assert!(
+        json["examples"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|example| example.as_str().unwrap().contains("--due-date"))
+    );
+    assert!(
+        json["examples"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|example| example.as_str().unwrap().contains("--clear-due-date"))
     );
 }
 

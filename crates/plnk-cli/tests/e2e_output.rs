@@ -422,3 +422,83 @@ async fn markdown_output_project() {
         .stdout(predicate::str::contains("Platform"))
         .stdout(predicate::str::contains("**"));
 }
+
+// ─── Card dueDate appears in trimmed human output ────────────────────
+
+fn due_board() -> serde_json::Value {
+    serde_json::json!({
+        "item": {
+            "id": "board-1",
+            "name": "Work",
+            "position": 65536.0,
+            "projectId": "project-1",
+            "createdAt": "2026-01-01T12:00:00Z",
+            "updatedAt": null
+        },
+        "included": {
+            "lists": [],
+            "cards": [{
+                "id": "card-1",
+                "listId": "list-1",
+                "boardId": "board-1",
+                "name": "Fix auth",
+                "description": null,
+                "position": 65536.0,
+                "dueDate": "2026-04-25T12:00:00.000Z",
+                "isClosed": false,
+                "isSubscribed": false,
+                "createdAt": "2026-01-01T12:00:00Z",
+                "updatedAt": null
+            }],
+            "labels": [],
+            "cardLabels": [],
+            "boardMemberships": []
+        }
+    })
+}
+
+#[tokio::test]
+async fn markdown_output_card_includes_due_before_closed() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/boards/board-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(due_board()))
+        .mount(&server)
+        .await;
+
+    let stdout = plnk_with_server(&server.uri())
+        .args([
+            "card", "find", "--board", "board-1", "--title", "Fix", "--output", "markdown",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(stdout).unwrap();
+    assert!(text.contains("| Due |"));
+    assert!(text.find("| Due |").unwrap() < text.find("| Closed |").unwrap());
+    assert!(text.contains("2026-04-25T12:00:00.000Z"));
+}
+
+#[tokio::test]
+async fn table_output_card_includes_due_before_closed() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/boards/board-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(due_board()))
+        .mount(&server)
+        .await;
+
+    let stdout = plnk_with_server(&server.uri())
+        .args([
+            "card", "find", "--board", "board-1", "--title", "Fix", "--output", "table",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(stdout).unwrap();
+    assert!(text.find("Due").unwrap() < text.find("Closed").unwrap());
+}
