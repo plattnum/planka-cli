@@ -1,6 +1,6 @@
 use std::io::{BufRead, IsTerminal, Write};
 
-use plnk_core::auth::{ConfigFile, HttpConfig, config_path, read_config, write_config};
+use plnk_core::auth::{AuthScheme, ConfigFile, HttpConfig, config_path, read_config, write_config};
 use plnk_core::error::PlankaError;
 use url::Url;
 
@@ -54,9 +54,11 @@ pub fn execute(
         existing.as_ref().and_then(|c| c.http.clone())
     };
 
+    let auth_scheme = auth_scheme_for_token(existing.as_ref(), &token);
     let new_config = ConfigFile {
         server,
         token,
+        auth_scheme,
         http,
     };
 
@@ -70,6 +72,18 @@ pub fn execute(
     eprintln!("Run `plnk auth status` to verify.");
 
     Ok(())
+}
+
+/// Pick the auth scheme to save alongside `token`.
+///
+/// `init` only ever prompts for an API key, so a newly entered token is always
+/// `ApiKey`. The existing scheme is kept only when the existing token is kept
+/// (e.g. pressing Enter at the prompt after an earlier `plnk auth login`).
+fn auth_scheme_for_token(existing: Option<&ConfigFile>, token: &str) -> AuthScheme {
+    match existing {
+        Some(config) if config.token == token => config.auth_scheme,
+        _ => AuthScheme::ApiKey,
+    }
 }
 
 fn prompt_server(flag: Option<&str>, existing: Option<&str>) -> Result<String, PlankaError> {
@@ -282,6 +296,41 @@ mod tests {
     fn parse_yes_no_unknown_uses_default() {
         assert!(parse_yes_no("maybe", true));
         assert!(!parse_yes_no("maybe", false));
+    }
+
+    fn config_with(token: &str, auth_scheme: AuthScheme) -> ConfigFile {
+        ConfigFile {
+            server: "http://localhost:3000".to_string(),
+            token: token.to_string(),
+            auth_scheme,
+            http: None,
+        }
+    }
+
+    #[test]
+    fn auth_scheme_kept_when_existing_token_is_kept() {
+        let existing = config_with("login-token", AuthScheme::Bearer);
+        assert_eq!(
+            auth_scheme_for_token(Some(&existing), "login-token"),
+            AuthScheme::Bearer
+        );
+    }
+
+    #[test]
+    fn auth_scheme_resets_to_api_key_for_a_new_token() {
+        let existing = config_with("login-token", AuthScheme::Bearer);
+        assert_eq!(
+            auth_scheme_for_token(Some(&existing), "fresh-api-key"),
+            AuthScheme::ApiKey
+        );
+    }
+
+    #[test]
+    fn auth_scheme_defaults_to_api_key_without_existing_config() {
+        assert_eq!(
+            auth_scheme_for_token(None, "fresh-api-key"),
+            AuthScheme::ApiKey
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn plnk() -> Command {
@@ -404,6 +404,88 @@ fn logout_json_output() {
 
     let json: serde_json::Value = serde_json::from_slice(&output).unwrap();
     assert_eq!(json["success"], true);
+}
+
+// ─── Login ───────────────────────────────────────────────────────────
+
+/// Mock `POST /api/access-tokens` returning a session token.
+async fn mock_login_ok(server: &MockServer) {
+    Mock::given(method("POST"))
+        .and(path("/api/access-tokens"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"item": "session-token"})),
+        )
+        .mount(server)
+        .await;
+}
+
+fn plnk_login(server_uri: &str, config_path: &std::path::Path) -> Command {
+    let mut cmd = plnk();
+    cmd.env("PLANKA_CONFIG", config_path.to_str().unwrap())
+        .env_remove("PLANKA_SERVER")
+        .env_remove("PLANKA_TOKEN")
+        .args([
+            "auth",
+            "login",
+            "--server",
+            server_uri,
+            "--email",
+            "claude@example.com",
+            "--password",
+            "secret",
+        ]);
+    cmd
+}
+
+#[tokio::test]
+async fn login_validates_with_bearer_and_saves_bearer_scheme() {
+    let server = MockServer::start().await;
+    mock_login_ok(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/users/me"))
+        .and(header("authorization", "Bearer session-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(user_me_body()))
+        .mount(&server)
+        .await;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let config_path = tmp.path().join("config.toml");
+
+    plnk_login(&server.uri(), &config_path)
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("Logged in as Claude"));
+
+    let content = std::fs::read_to_string(&config_path).unwrap();
+    assert!(content.contains("session-token"));
+    assert!(content.contains("auth_scheme = \"bearer\""));
+}
+
+#[tokio::test]
+async fn login_failed_validation_does_not_write_config() {
+    let server = MockServer::start().await;
+    mock_login_ok(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/api/users/me"))
+        .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+            "code": "E_UNAUTHORIZED",
+            "message": "Access token is missing, invalid or expired"
+        })))
+        .mount(&server)
+        .await;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let config_path = tmp.path().join("config.toml");
+
+    plnk_login(&server.uri(), &config_path)
+        .assert()
+        .failure()
+        .code(3);
+
+    assert!(
+        !config_path.exists(),
+        "a token that fails validation must not be saved"
+    );
 }
 
 // ─── Token set ───────────────────────────────────────────────────────

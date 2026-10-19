@@ -9,6 +9,7 @@ use crate::transport::TransportPolicy;
 /// Request body for `POST /api/access-tokens`.
 #[derive(Serialize)]
 struct LoginRequest<'a> {
+    #[serde(rename = "emailOrUsername")]
     email: &'a str,
     password: &'a str,
 }
@@ -76,6 +77,17 @@ pub async fn validate_token_with_policy(
     policy: TransportPolicy,
 ) -> Result<User, PlankaError> {
     let client = HttpClient::with_policy(server.clone(), token, policy)?;
+    let resp: UserMeResponse = client.get("/api/users/me").await?;
+    Ok(resp.item)
+}
+
+/// Validate a Planka access token using the Bearer authentication scheme.
+pub async fn validate_access_token_with_policy(
+    server: &Url,
+    token: &str,
+    policy: TransportPolicy,
+) -> Result<User, PlankaError> {
+    let client = HttpClient::with_bearer_policy(server.clone(), token, policy)?;
     let resp: UserMeResponse = client.get("/api/users/me").await?;
     Ok(resp.item)
 }

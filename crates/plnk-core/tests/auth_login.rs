@@ -10,7 +10,7 @@ async fn login_success() {
     Mock::given(method("POST"))
         .and(path("/api/access-tokens"))
         .and(body_json(serde_json::json!({
-            "email": "test@example.com",
+            "emailOrUsername": "test@example.com",
             "password": "secret123"
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
