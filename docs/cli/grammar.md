@@ -172,6 +172,10 @@ Rules:
 - Unrecognised values exit `2`. The error names the flag and repeats both
   grammars.
 
+Local midnight uses the UTC offset in force on the resolved date, not today's,
+so a bare date or relative form on the far side of a DST change still lands at
+midnight on the right day.
+
 Because relative dates depend on the current time, two runs across a DST change
 can legitimately return different results for the same input.
 

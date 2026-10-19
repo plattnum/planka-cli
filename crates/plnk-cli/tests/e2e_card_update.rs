@@ -65,34 +65,45 @@ async fn card_update_sets_due_date_as_utc() {
     assert_eq!(json["data"]["dueDate"], "2026-04-20T00:00:00.000Z");
 }
 
-/// A bare date is midnight in the user's timezone before normalisation. Pin a
-/// west-of-UTC zone in DST so the UTC instant is the day before: midnight EDT
-/// (UTC-4) on 20 April is 04:00Z.
-#[tokio::test]
-async fn card_update_bare_due_date_is_local_midnight() {
+/// Run `card update --due-date <raw>` in `tz` and assert the UTC body sent.
+async fn assert_due_date_sent(tz: &str, raw: &str, expected_utc: &str) {
     let server = MockServer::start().await;
     Mock::given(method("PATCH"))
         .and(path("/api/cards/card-1"))
-        .and(body_json(json!({"dueDate": "2026-04-20T04:00:00Z"})))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(card_body(json!("2026-04-20T04:00:00.000Z"))),
-        )
+        .and(body_json(json!({"dueDate": expected_utc})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(card_body(json!(expected_utc))))
         .mount(&server)
         .await;
 
     let mut cmd = plnk_with_server(&server.uri());
-    cmd.env("TZ", "EST5EDT");
+    cmd.env("TZ", tz);
     cmd.args([
         "card",
         "update",
         "card-1",
         "--due-date",
-        "2026-04-20",
+        raw,
         "--output",
         "json",
     ])
     .assert()
     .success();
+}
+
+/// A bare date is midnight in the user's timezone on *that* date, not with
+/// today's offset. `EST5EDT` is UTC-4 in summer and UTC-5 in winter, so the two
+/// dates below get different UTC instants. Using today's offset for both would
+/// fail one of them whatever day the test runs.
+#[tokio::test]
+async fn card_update_bare_due_date_is_local_midnight_in_summer() {
+    // Midnight EDT (UTC-4) on 20 April is 04:00Z.
+    assert_due_date_sent("EST5EDT", "2026-04-20", "2026-04-20T04:00:00Z").await;
+}
+
+#[tokio::test]
+async fn card_update_bare_due_date_is_local_midnight_in_winter() {
+    // Midnight EST (UTC-5) on 1 December is 05:00Z.
+    assert_due_date_sent("EST5EDT", "2026-12-01", "2026-12-01T05:00:00Z").await;
 }
 
 #[tokio::test]

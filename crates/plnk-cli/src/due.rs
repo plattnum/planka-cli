@@ -27,22 +27,22 @@ impl DueDateRange {
     /// Build a range from optional raw bound expressions.
     ///
     /// `after_field` and `before_field` name the originating CLI flags so a
-    /// parse failure maps to the right `InvalidOptionValue` field. `now` is the
-    /// reference instant for relative expressions; callers derive it from the
-    /// environment, tests pass a frozen value.
+    /// parse failure maps to the right `InvalidOptionValue` field. `clock`
+    /// supplies the reference instant and local offsets; callers use
+    /// [`LocalClock::system`], tests pass a frozen one.
     pub fn parse(
         after: Option<&str>,
         after_field: &str,
         before: Option<&str>,
         before_field: &str,
-        now: OffsetDateTime,
+        clock: LocalClock,
     ) -> Result<Self, PlankaError> {
         Ok(Self {
             after: after
-                .map(|raw| parse_bound(raw, after_field, now))
+                .map(|raw| parse_bound(raw, after_field, clock))
                 .transpose()?,
             before: before
-                .map(|raw| parse_bound(raw, before_field, now))
+                .map(|raw| parse_bound(raw, before_field, clock))
                 .transpose()?,
         })
     }
@@ -97,11 +97,11 @@ const DUE_DATE_GRAMMAR: &str = "expected an ISO 8601 timestamp (YYYY-MM-DD or \
 
 /// Resolve a due-date expression to an instant.
 ///
-/// Relative forms are tried first, then ISO 8601. `now` is the reference
-/// instant for relative expressions and supplies the offset used to derive the
-/// calendar day.
-fn parse_bound(raw: &str, field: &str, now: OffsetDateTime) -> Result<OffsetDateTime, PlankaError> {
-    match parse_relative(raw, now) {
+/// Relative forms are tried first, then ISO 8601. `clock` supplies the
+/// reference instant for relative expressions and the local offset of each
+/// resolved date.
+fn parse_bound(raw: &str, field: &str, clock: LocalClock) -> Result<OffsetDateTime, PlankaError> {
+    match parse_relative(raw, clock) {
         Ok(Some(relative)) => return Ok(relative),
         Ok(None) => {}
         Err(reason) => return Err(invalid_due_date(raw, field, &reason)),
@@ -113,7 +113,7 @@ fn parse_bound(raw: &str, field: &str, now: OffsetDateTime) -> Result<OffsetDate
     if is_bare_date(raw) {
         let midnight =
             parse_iso8601_utc(raw).map_err(|reason| invalid_due_date(raw, field, &reason))?;
-        return Ok(midnight.date().midnight().assume_offset(now.offset()));
+        return Ok(clock.local_midnight(midnight.date()));
     }
 
     parse_iso8601_utc(raw).map_err(|reason| invalid_due_date(raw, field, &reason))
@@ -132,22 +132,59 @@ fn is_bare_date(raw: &str) -> bool {
     raw.len() == 10 && !raw.contains(['T', 't', ' '])
 }
 
-/// Build the reference instant for relative due dates.
+/// The reference instant for relative due dates, plus the local UTC offset at
+/// any other instant.
 ///
-/// Prefers the system's local offset, which `time` reads from `TZ` /
-/// `/etc/localtime`. Falls back to UTC when the offset cannot be determined.
-///
-/// `time` caches the offset lookup in a thread-local and documents the call as
-/// unsound if another thread mutates `TZ` concurrently; `plnk` calls this once,
-/// at parse time, before meaningful threading starts.
-#[must_use]
-pub fn reference_now() -> OffsetDateTime {
-    OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc())
+/// The offset is looked up per date, not taken from `now`: across a DST change
+/// the offset on the target date differs from today's, and reusing today's would
+/// move local midnight by an hour, onto the previous day.
+#[derive(Debug, Clone, Copy)]
+pub struct LocalClock {
+    now: OffsetDateTime,
+    /// Local offset in force at an instant, or `None` when it cannot be
+    /// determined.
+    offset_at: fn(OffsetDateTime) -> Option<UtcOffset>,
 }
 
-/// Start of the calendar day containing `now`, in `now`'s offset.
-fn start_of_day(now: OffsetDateTime) -> OffsetDateTime {
-    now.replace_time(time::Time::MIDNIGHT)
+impl LocalClock {
+    /// The system clock and timezone.
+    ///
+    /// `time` reads the offset from `TZ` / `/etc/localtime`. When the current
+    /// offset cannot be determined, everything falls back to UTC.
+    ///
+    /// `time` documents the offset lookup as unsound if another thread mutates
+    /// `TZ` concurrently; `plnk` never does.
+    #[must_use]
+    pub fn system() -> Self {
+        match OffsetDateTime::now_local() {
+            Ok(now) => Self {
+                now,
+                offset_at: |instant| UtcOffset::local_offset_at(instant).ok(),
+            },
+            Err(_) => Self {
+                now: OffsetDateTime::now_utc(),
+                offset_at: |_| Some(UtcOffset::UTC),
+            },
+        }
+    }
+
+    /// Midnight at the start of `date`, in the local offset in force then.
+    ///
+    /// The offset depends on the instant, which depends on the offset, so start
+    /// from today's offset and refine. One refinement settles every ordinary DST
+    /// change; the second covers a transition that lands exactly on midnight.
+    fn local_midnight(self, date: time::Date) -> OffsetDateTime {
+        let mut offset = self.now.offset();
+        for _ in 0..2 {
+            let resolved =
+                (self.offset_at)(date.midnight().assume_offset(offset)).unwrap_or(offset);
+            if resolved == offset {
+                break;
+            }
+            offset = resolved;
+        }
+        date.midnight().assume_offset(offset)
+    }
 }
 
 /// Parse a relative date expression against `now`.
@@ -155,18 +192,20 @@ fn start_of_day(now: OffsetDateTime) -> OffsetDateTime {
 /// Returns `Ok(None)` for anything the grammar does not recognise, leaving ISO
 /// 8601 parsing to the caller, and `Err` when a recognised expression resolves
 /// to a date outside the representable range. Bare relative dates resolve to the
-/// start of the day in `now`'s offset; `now` is the exception and returns the
-/// reference instant itself, keeping the time of day.
-fn parse_relative(raw: &str, now: OffsetDateTime) -> Result<Option<OffsetDateTime>, String> {
+/// start of the day in the local offset in force on that day; `now` is the
+/// exception and returns the reference instant itself, keeping the time of day.
+fn parse_relative(raw: &str, clock: LocalClock) -> Result<Option<OffsetDateTime>, String> {
     let text = raw.trim().to_ascii_lowercase();
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let today = start_of_day(now);
+    let now = clock.now;
+    let today = now.date();
+    let at_midnight = |date| Ok(Some(clock.local_midnight(date)));
 
     match text.as_str() {
         "now" => return Ok(Some(now)),
-        "today" => return Ok(Some(today)),
-        "tomorrow" => return Ok(Some(shift(today, Unit::Day, 1)?)),
-        "yesterday" => return Ok(Some(shift(today, Unit::Day, -1)?)),
+        "today" => return at_midnight(today),
+        "tomorrow" => return at_midnight(shift(today, Unit::Day, 1)?),
+        "yesterday" => return at_midnight(shift(today, Unit::Day, -1)?),
         _ => {}
     }
 
@@ -179,30 +218,29 @@ fn parse_relative(raw: &str, now: OffsetDateTime) -> Result<Option<OffsetDateTim
             0 => 7,
             days => i64::from(days),
         };
-        return Ok(Some(shift(today, Unit::Day, delta)?));
+        return at_midnight(shift(today, Unit::Day, delta)?);
     }
 
     if let Some(unit) = text.strip_prefix("this ").and_then(parse_unit) {
-        return Ok(Some(start_of_unit(today, unit)));
+        return at_midnight(start_of_unit(today, unit));
     }
     if let Some(unit) = text.strip_prefix("next ").and_then(parse_unit) {
-        return Ok(Some(shift(start_of_unit(today, unit), unit, 1)?));
+        return at_midnight(shift(start_of_unit(today, unit), unit, 1)?);
     }
     if let Some(unit) = text.strip_prefix("last ").and_then(parse_unit) {
-        return Ok(Some(shift(start_of_unit(today, unit), unit, -1)?));
+        return at_midnight(shift(start_of_unit(today, unit), unit, -1)?);
     }
 
-    if let Some(rest) = text.strip_prefix("in ") {
-        return parse_quantity(rest, today, 1);
-    }
-    if let Some(rest) = text.strip_suffix(" ago") {
-        return parse_quantity(rest, today, -1);
-    }
-    if let Some(rest) = text.strip_suffix(" from today") {
-        return parse_quantity(rest, today, 1);
-    }
-
-    Ok(None)
+    let quantity = if let Some(rest) = text.strip_prefix("in ") {
+        parse_quantity(rest, today, 1)?
+    } else if let Some(rest) = text.strip_suffix(" ago") {
+        parse_quantity(rest, today, -1)?
+    } else if let Some(rest) = text.strip_suffix(" from today") {
+        parse_quantity(rest, today, 1)?
+    } else {
+        None
+    };
+    Ok(quantity.map(|date| clock.local_midnight(date)))
 }
 
 /// A calendar unit that relative expressions can shift by.
@@ -242,11 +280,7 @@ fn parse_weekday(word: &str) -> Option<time::Weekday> {
 ///
 /// Returns `Ok(None)` when `text` is not a quantity expression, and `Err` when it
 /// is one but the resulting date cannot be represented.
-fn parse_quantity(
-    text: &str,
-    today: OffsetDateTime,
-    sign: i64,
-) -> Result<Option<OffsetDateTime>, String> {
+fn parse_quantity(text: &str, today: time::Date, sign: i64) -> Result<Option<time::Date>, String> {
     let mut parts = text.split(' ');
     let Some(Ok(count)) = parts.next().map(str::parse::<i64>) else {
         return Ok(None);
@@ -261,10 +295,9 @@ fn parse_quantity(
     shift(today, unit, count).map(Some)
 }
 
-/// Start of the calendar unit containing `day`, in `day`'s offset.
-fn start_of_unit(day: OffsetDateTime, unit: Unit) -> OffsetDateTime {
-    let date = day.date();
-    let start = match unit {
+/// First day of the calendar unit containing `date`.
+fn start_of_unit(date: time::Date, unit: Unit) -> time::Date {
+    match unit {
         Unit::Day => date,
         Unit::Week => {
             date - time::Duration::days(i64::from(date.weekday().number_days_from_monday()))
@@ -274,8 +307,7 @@ fn start_of_unit(day: OffsetDateTime, unit: Unit) -> OffsetDateTime {
             .replace_month(time::Month::January)
             .and_then(|d| d.replace_day(1))
             .unwrap_or(date),
-    };
-    start.midnight().assume_offset(day.offset())
+    }
 }
 
 /// The reason a recognised relative form cannot be represented.
@@ -294,7 +326,7 @@ fn duration_days(days: i64) -> Option<time::Duration> {
 }
 
 /// Shift `from` by `count` units, reporting an out-of-range result as an error.
-fn shift(from: OffsetDateTime, unit: Unit, count: i64) -> Result<OffsetDateTime, String> {
+fn shift(from: time::Date, unit: Unit, count: i64) -> Result<time::Date, String> {
     shift_units(from, unit, count).ok_or_else(out_of_range)
 }
 
@@ -303,15 +335,13 @@ fn shift(from: OffsetDateTime, unit: Unit, count: i64) -> Result<OffsetDateTime,
 /// Returns `None` when the result leaves the range `time::Date` can represent.
 /// A fixed `Duration` would be wrong for months: `31 Jan + 1 month` is not
 /// `+28..31 days`, it is 28 or 29 Feb depending on the year.
-fn shift_units(from: OffsetDateTime, unit: Unit, count: i64) -> Option<OffsetDateTime> {
-    let date = from.date();
-    let shifted = match unit {
-        Unit::Day => date.checked_add(duration_days(count)?)?,
-        Unit::Week => date.checked_add(duration_days(count.checked_mul(7)?)?)?,
-        Unit::Month => shift_months(date, count)?,
-        Unit::Year => shift_months(date, count.checked_mul(12)?)?,
-    };
-    Some(shifted.midnight().assume_offset(from.offset()))
+fn shift_units(date: time::Date, unit: Unit, count: i64) -> Option<time::Date> {
+    match unit {
+        Unit::Day => date.checked_add(duration_days(count)?),
+        Unit::Week => date.checked_add(duration_days(count.checked_mul(7)?)?),
+        Unit::Month => shift_months(date, count),
+        Unit::Year => shift_months(date, count.checked_mul(12)?),
+    }
 }
 
 /// Add `count` calendar months to `date`, clamping the day to the target month.
@@ -392,7 +422,7 @@ pub fn parse_due_date_input(
     raw: Option<&str>,
     clear: bool,
     field: &str,
-    now: OffsetDateTime,
+    clock: LocalClock,
 ) -> Result<DueDateUpdate, PlankaError> {
     if clear {
         return Ok(DueDateUpdate::Clear);
@@ -400,7 +430,7 @@ pub fn parse_due_date_input(
     let Some(raw) = raw else {
         return Ok(DueDateUpdate::Unchanged);
     };
-    let parsed = parse_bound(raw, field, now)?;
+    let parsed = parse_bound(raw, field, clock)?;
     let formatted = parsed
         .to_offset(UtcOffset::UTC)
         .format(&Rfc3339)
@@ -429,9 +459,64 @@ mod tests {
             .assume_offset(offset)
     }
 
+    /// A clock frozen at `now` whose offset never changes, so results depend only
+    /// on `now`.
+    fn fixed(now: OffsetDateTime) -> LocalClock {
+        LocalClock {
+            now,
+            offset_at: |_| None,
+        }
+    }
+
+    /// A clock frozen at `now` with a fake DST rule: UTC+02:00 from April to
+    /// October (by UTC month), UTC+01:00 otherwise. Close enough to Central
+    /// European time to exercise a change of offset between today and the
+    /// target date.
+    fn dst(now: OffsetDateTime) -> LocalClock {
+        LocalClock {
+            now,
+            offset_at: |instant| {
+                let summer =
+                    (4..=10).contains(&u8::from(instant.to_offset(UtcOffset::UTC).month()));
+                Some(UtcOffset::from_hms(if summer { 2 } else { 1 }, 0, 0).unwrap())
+            },
+        }
+    }
+
+    /// A bare date across a DST change gets the offset in force on that date,
+    /// not today's. `test_now()` is in summer (UTC+02:00); 1 December is in
+    /// winter (UTC+01:00), so its local midnight is 23:00Z the day before, not
+    /// 22:00Z.
+    #[test]
+    fn bare_date_uses_the_offset_on_that_date() {
+        assert_eq!(
+            parse_due_date_input(Some("2026-12-01"), false, "--due-date", dst(test_now())).unwrap(),
+            DueDateUpdate::Set("2026-11-30T23:00:00Z".to_string())
+        );
+        // Same season as today: unchanged.
+        assert_eq!(
+            parse_due_date_input(Some("2026-05-01"), false, "--due-date", dst(test_now())).unwrap(),
+            DueDateUpdate::Set("2026-04-30T22:00:00Z".to_string())
+        );
+    }
+
+    /// Relative forms that land across a DST change get that date's offset too.
+    #[test]
+    fn relative_date_uses_the_offset_on_that_date() {
+        let parsed = parse_bound("in 8 months", "--due-before", dst(test_now())).unwrap();
+        assert_eq!(
+            parsed.date(),
+            time::Date::from_calendar_date(2026, time::Month::December, 25).unwrap()
+        );
+        assert_eq!(parsed.offset(), UtcOffset::from_hms(1, 0, 0).unwrap());
+        assert_eq!(parsed.time(), time::Time::MIDNIGHT);
+    }
+
     /// Parse one relative expression against the frozen instant, as a date.
     fn relative(raw: &str) -> time::Date {
-        parse_bound(raw, "--due-before", test_now()).unwrap().date()
+        parse_bound(raw, "--due-before", fixed(test_now()))
+            .unwrap()
+            .date()
     }
 
     fn card(due: Option<&str>) -> Card {
@@ -476,7 +561,7 @@ mod tests {
     /// agrees with `today`. `test_now()` is UTC+02:00.
     #[test]
     fn bare_date_is_local_midnight() {
-        let parsed = parse_bound("2026-04-20", "--due-before", test_now()).unwrap();
+        let parsed = parse_bound("2026-04-20", "--due-before", fixed(test_now())).unwrap();
         assert_eq!(parsed.offset(), test_now().offset());
         assert_eq!(parsed.time(), time::Time::MIDNIGHT);
         // 2026-04-20T00:00+02:00 is 2026-04-19T22:00Z.
@@ -531,7 +616,8 @@ mod tests {
     #[test]
     fn unbounded_range_keeps_null_due_dates() {
         let range =
-            DueDateRange::parse(None, "--due-after", None, "--due-before", test_now()).unwrap();
+            DueDateRange::parse(None, "--due-after", None, "--due-before", fixed(test_now()))
+                .unwrap();
         let cards = range.filter(vec![card(None), card(Some("2026-04-20T00:00:00Z"))], false);
         assert_eq!(cards.len(), 2);
     }
@@ -543,7 +629,7 @@ mod tests {
             "--due-after",
             None,
             "--due-before",
-            test_now(),
+            fixed(test_now()),
         )
         .unwrap();
         let cards = range.filter(vec![card(None), card(Some("2026-04-20T00:00:00Z"))], false);
@@ -558,7 +644,7 @@ mod tests {
             "--due-after",
             None,
             "--due-before",
-            test_now(),
+            fixed(test_now()),
         )
         .unwrap();
         let cards = range.filter(
@@ -585,7 +671,7 @@ mod tests {
             "--due-after",
             Some("2026-04-20T00:00:00Z"),
             "--due-before",
-            test_now(),
+            fixed(test_now()),
         )
         .unwrap();
         let cards = range.filter(
@@ -612,7 +698,7 @@ mod tests {
             "--due-after",
             Some("2026-04-22T00:00:00Z"),
             "--due-before",
-            test_now(),
+            fixed(test_now()),
         )
         .unwrap();
         let cards = range.filter(
@@ -635,7 +721,7 @@ mod tests {
             "--due-after",
             None,
             "--due-before",
-            test_now(),
+            fixed(test_now()),
         )
         .unwrap();
         let cards = range.filter(
@@ -658,7 +744,7 @@ mod tests {
             "--due-after",
             None,
             "--due-before",
-            test_now(),
+            fixed(test_now()),
         )
         .unwrap();
         let cards = range.filter(
@@ -679,7 +765,7 @@ mod tests {
             "--due-after",
             None,
             "--due-before",
-            test_now(),
+            fixed(test_now()),
         )
         .unwrap();
         let cards = range.filter(
@@ -697,7 +783,8 @@ mod tests {
     #[test]
     fn unbounded_range_keeps_closed_cards_regardless_of_include_closed() {
         let range =
-            DueDateRange::parse(None, "--due-after", None, "--due-before", test_now()).unwrap();
+            DueDateRange::parse(None, "--due-after", None, "--due-before", fixed(test_now()))
+                .unwrap();
         let cards = range.filter(vec![closed_card(Some("2026-04-21T00:00:00Z"))], false);
         assert_eq!(cards.len(), 1);
         let cards = range.filter(vec![closed_card(Some("2026-04-21T00:00:00Z"))], true);
@@ -711,7 +798,7 @@ mod tests {
                 Some("2026-04-20T02:30:00+02:00"),
                 false,
                 "--due-date",
-                test_now()
+                fixed(test_now())
             )
             .unwrap(),
             DueDateUpdate::Set("2026-04-20T00:30:00Z".to_string())
@@ -723,7 +810,8 @@ mod tests {
     fn parse_due_date_input_bare_date_is_local_midnight() {
         // test_now() is UTC+02:00, so 2026-04-20T00:00+02:00 is 22:00Z the day before.
         assert_eq!(
-            parse_due_date_input(Some("2026-04-20"), false, "--due-date", test_now()).unwrap(),
+            parse_due_date_input(Some("2026-04-20"), false, "--due-date", fixed(test_now()))
+                .unwrap(),
             DueDateUpdate::Set("2026-04-19T22:00:00Z".to_string())
         );
     }
@@ -731,7 +819,7 @@ mod tests {
     #[test]
     fn parse_due_date_input_clear_flag_clears() {
         assert_eq!(
-            parse_due_date_input(None, true, "--due-date", test_now()).unwrap(),
+            parse_due_date_input(None, true, "--due-date", fixed(test_now())).unwrap(),
             DueDateUpdate::Clear
         );
     }
@@ -741,7 +829,8 @@ mod tests {
     #[test]
     fn parse_due_date_input_clear_wins_over_value() {
         assert_eq!(
-            parse_due_date_input(Some("2026-04-20"), true, "--due-date", test_now()).unwrap(),
+            parse_due_date_input(Some("2026-04-20"), true, "--due-date", fixed(test_now()))
+                .unwrap(),
             DueDateUpdate::Clear
         );
     }
@@ -749,7 +838,7 @@ mod tests {
     #[test]
     fn parse_due_date_input_absent_is_unchanged() {
         assert_eq!(
-            parse_due_date_input(None, false, "--due-date", test_now()).unwrap(),
+            parse_due_date_input(None, false, "--due-date", fixed(test_now())).unwrap(),
             DueDateUpdate::Unchanged
         );
     }
@@ -757,14 +846,15 @@ mod tests {
     /// A bare `-` is not a clear sentinel any more — it is an invalid date.
     #[test]
     fn parse_due_date_input_dash_is_not_a_sentinel() {
-        let error = parse_due_date_input(Some("-"), false, "--due-date", test_now()).unwrap_err();
+        let error =
+            parse_due_date_input(Some("-"), false, "--due-date", fixed(test_now())).unwrap_err();
         assert_eq!(error.error_type(), "InvalidOptionValue");
     }
 
     #[test]
     fn parse_due_date_input_rejects_invalid() {
         let error =
-            parse_due_date_input(Some("nope"), false, "--due-date", test_now()).unwrap_err();
+            parse_due_date_input(Some("nope"), false, "--due-date", fixed(test_now())).unwrap_err();
         assert_eq!(error.error_type(), "InvalidOptionValue");
         assert!(error.to_string().contains("--due-date"));
     }
@@ -776,7 +866,7 @@ mod tests {
             "--due-after",
             None,
             "--due-before",
-            test_now(),
+            fixed(test_now()),
         )
         .unwrap_err();
         assert_eq!(error.error_type(), "InvalidOptionValue");
@@ -808,12 +898,12 @@ mod tests {
     /// instant itself, time of day and offset included.
     #[test]
     fn relative_now_keeps_the_time_of_day() {
-        let parsed = parse_bound("now", "--due-before", test_now()).unwrap();
+        let parsed = parse_bound("now", "--due-before", fixed(test_now())).unwrap();
         assert_eq!(parsed, test_now());
         assert_eq!(parsed.time(), time::Time::from_hms(15, 30, 0).unwrap());
         assert_eq!(parsed.offset(), test_now().offset());
         // Contrast with `today`, which collapses to midnight.
-        assert_ne!(parsed, start_of_day(test_now()));
+        assert_ne!(parsed, test_now().replace_time(time::Time::MIDNIGHT));
     }
 
     /// Case and surrounding whitespace must not matter.
@@ -822,8 +912,8 @@ mod tests {
         assert_eq!(relative("  TODAY  "), relative("today"));
         assert_eq!(relative("ToMoRrOw"), relative("tomorrow"));
         assert_eq!(
-            parse_bound("  NOW  ", "--due-before", test_now()).unwrap(),
-            parse_bound("now", "--due-before", test_now()).unwrap()
+            parse_bound("  NOW  ", "--due-before", fixed(test_now())).unwrap(),
+            parse_bound("now", "--due-before", fixed(test_now())).unwrap()
         );
     }
 
@@ -933,7 +1023,7 @@ mod tests {
     /// A relative date resolves to the start of the local day, not the UTC day.
     #[test]
     fn relative_dates_use_the_reference_offset() {
-        let parsed = parse_bound("today", "--due-before", test_now()).unwrap();
+        let parsed = parse_bound("today", "--due-before", fixed(test_now())).unwrap();
         assert_eq!(parsed.offset(), test_now().offset());
         assert_eq!(parsed.time(), time::Time::MIDNIGHT);
         // 2026-04-25T00:00+02:00 is 2026-04-24T22:00Z.
@@ -949,7 +1039,7 @@ mod tests {
             .midnight()
             .assume_utc();
         assert_eq!(
-            shift_units(jan31, Unit::Month, 1).unwrap().date(),
+            shift_units(jan31.date(), Unit::Month, 1).unwrap(),
             time::Date::from_calendar_date(2026, time::Month::February, 28).unwrap()
         );
 
@@ -959,7 +1049,7 @@ mod tests {
             .midnight()
             .assume_utc();
         assert_eq!(
-            shift_units(jan31_leap, Unit::Month, 1).unwrap().date(),
+            shift_units(jan31_leap.date(), Unit::Month, 1).unwrap(),
             time::Date::from_calendar_date(2028, time::Month::February, 29).unwrap()
         );
     }
@@ -971,11 +1061,11 @@ mod tests {
             .midnight()
             .assume_utc();
         assert_eq!(
-            shift_units(dec15, Unit::Month, 1).unwrap().date(),
+            shift_units(dec15.date(), Unit::Month, 1).unwrap(),
             time::Date::from_calendar_date(2027, time::Month::January, 15).unwrap()
         );
         assert_eq!(
-            shift_units(dec15, Unit::Month, 13).unwrap().date(),
+            shift_units(dec15.date(), Unit::Month, 13).unwrap(),
             time::Date::from_calendar_date(2028, time::Month::January, 15).unwrap()
         );
     }
@@ -992,7 +1082,7 @@ mod tests {
             "3 from today",
             "2 weeks from yesterday",
         ] {
-            let error = parse_bound(raw, "--due-before", test_now()).unwrap_err();
+            let error = parse_bound(raw, "--due-before", fixed(test_now())).unwrap_err();
             assert_eq!(
                 error.error_type(),
                 "InvalidOptionValue",
@@ -1015,7 +1105,7 @@ mod tests {
             "in 100000 years",
             "100000 years ago",
         ] {
-            let error = parse_bound(raw, "--due-before", test_now()).unwrap_err();
+            let error = parse_bound(raw, "--due-before", fixed(test_now())).unwrap_err();
             assert_eq!(
                 error.error_type(),
                 "InvalidOptionValue",
@@ -1039,13 +1129,13 @@ mod tests {
             .unwrap()
             .assume_utc();
         assert_eq!(
-            parse_bound("next month", "--due-before", jan31)
+            parse_bound("next month", "--due-before", fixed(jan31))
                 .unwrap()
                 .date(),
             time::Date::from_calendar_date(2026, time::Month::February, 1).unwrap()
         );
         assert_eq!(
-            parse_bound("in 1 month", "--due-before", jan31)
+            parse_bound("in 1 month", "--due-before", fixed(jan31))
                 .unwrap()
                 .date(),
             time::Date::from_calendar_date(2026, time::Month::February, 28).unwrap()
@@ -1062,7 +1152,7 @@ mod tests {
             "2026-04-20T12:30:00.500Z",
         ] {
             assert_eq!(
-                parse_bound(raw, "--due-before", test_now()).unwrap(),
+                parse_bound(raw, "--due-before", fixed(test_now())).unwrap(),
                 parse_iso8601_utc(raw).unwrap(),
                 "{raw} must parse the same as before"
             );
@@ -1073,7 +1163,7 @@ mod tests {
     #[test]
     fn due_date_input_accepts_relative_dates() {
         assert_eq!(
-            parse_due_date_input(Some("tomorrow"), false, "--due-date", test_now()).unwrap(),
+            parse_due_date_input(Some("tomorrow"), false, "--due-date", fixed(test_now())).unwrap(),
             DueDateUpdate::Set("2026-04-25T22:00:00Z".to_string())
         );
     }
@@ -1083,7 +1173,7 @@ mod tests {
     fn due_date_input_accepts_now() {
         // test_now() is 2026-04-25T15:30+02:00, i.e. 13:30 UTC.
         assert_eq!(
-            parse_due_date_input(Some("now"), false, "--due-date", test_now()).unwrap(),
+            parse_due_date_input(Some("now"), false, "--due-date", fixed(test_now())).unwrap(),
             DueDateUpdate::Set("2026-04-25T13:30:00Z".to_string())
         );
     }
@@ -1097,7 +1187,7 @@ mod tests {
             .midnight()
             .assume_utc();
         assert_eq!(
-            shift_units(mar31, Unit::Month, -1).unwrap().date(),
+            shift_units(mar31.date(), Unit::Month, -1).unwrap(),
             time::Date::from_calendar_date(2026, time::Month::February, 28).unwrap()
         );
 
@@ -1107,7 +1197,7 @@ mod tests {
             .midnight()
             .assume_utc();
         assert_eq!(
-            shift_units(feb29, Unit::Month, -1).unwrap().date(),
+            shift_units(feb29.date(), Unit::Month, -1).unwrap(),
             time::Date::from_calendar_date(2028, time::Month::January, 29).unwrap()
         );
     }

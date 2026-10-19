@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use crate::app::OutputFormat;
 use crate::commands::project::confirm_delete;
-use crate::due::{DueDateRange, parse_due_date_input, reference_now};
+use crate::due::{DueDateRange, LocalClock, parse_due_date_input};
 use crate::input::resolve_text;
 use crate::output::{
     render_collection, render_collection_with_meta, render_item, render_message, render_snapshot,
@@ -195,7 +195,7 @@ pub async fn execute(
                 "--due-after",
                 due_before.as_deref(),
                 "--due-before",
-                reference_now(),
+                LocalClock::system(),
             )?;
             let cards = if let Some((board_id, list_id, label_ids)) =
                 resolve_label_scope(client, list.as_deref(), board.as_deref(), &label).await?
@@ -304,7 +304,7 @@ pub async fn execute(
                 "--due-after",
                 due_before.as_deref(),
                 "--due-before",
-                reference_now(),
+                LocalClock::system(),
             )?;
 
             let cards = if let Some((board_id, list_id, label_ids)) =
@@ -390,7 +390,7 @@ pub async fn execute(
                 due_date.as_deref(),
                 clear_due_date,
                 "--due-date",
-                reference_now(),
+                LocalClock::system(),
             )?;
             let params = UpdateCard {
                 name: title,
