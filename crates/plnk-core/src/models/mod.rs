@@ -79,7 +79,27 @@ impl Tabular for Card {
 
 impl Tabular for Task {
     fn trimmed_columns() -> &'static [(&'static str, &'static str)] {
-        &[("id", "ID"), ("name", "Name"), ("isCompleted", "Completed")]
+        // `taskListId` is in the trimmed view because a card can carry several
+        // named checklists; without it a multi-list card reads as one pile.
+        &[
+            ("id", "ID"),
+            ("name", "Name"),
+            ("isCompleted", "Completed"),
+            ("taskListId", "Task List"),
+        ]
+    }
+}
+
+impl Tabular for TaskList {
+    fn trimmed_columns() -> &'static [(&'static str, &'static str)] {
+        &[
+            ("id", "ID"),
+            ("name", "Name"),
+            ("cardId", "Card"),
+            ("position", "Position"),
+            ("showOnFrontOfCard", "On Front"),
+            ("hideCompletedTasks", "Hide Done"),
+        ]
     }
 }
 

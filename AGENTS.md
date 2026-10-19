@@ -89,6 +89,7 @@ Real-world wire format differences worth knowing when contributing:
 - **There is no server-side filter by card due date.** `card find --due-after` / `--due-before`
   filter client-side over the fetched snapshot, comparing the `dueDate` ISO 8601 string as a UTC
   instant (strict `<`, nulls excluded when bounded). Do not invent a query parameter for it.
+- Tasks live inside **task lists** (`card → task list → task`). `POST /api/task-lists/{id}/tasks` is the only way to create one. `GET /api/task-lists/{id}` exists and returns `item` plus `included.tasks`. A task list's `showOnFrontOfCard` **defaults to `true`** server-side and `hideCompletedTasks` to `false`; omit them on create unless you want the non-default. Verified 2026-09-12.
 
 ### Custom fields
 
