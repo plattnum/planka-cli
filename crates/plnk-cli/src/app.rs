@@ -448,7 +448,7 @@ pub enum ListAction {
         #[arg(long)]
         position: Option<String>,
         /// List type; cards moved into a closed list are marked closed [default: active]
-        #[arg(long = "type", value_parser = clap::builder::PossibleValuesParser::new(plnk_core::models::LIST_TYPES))]
+        #[arg(long = "type", value_name = "TYPE", value_parser = clap::builder::PossibleValuesParser::new(plnk_core::models::LIST_TYPES))]
         list_type: Option<String>,
         /// List color
         #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(plnk_core::models::LIST_COLORS))]
@@ -465,7 +465,7 @@ pub enum ListAction {
         #[arg(long)]
         position: Option<f64>,
         /// New list type; cards moved into a closed list are marked closed
-        #[arg(long = "type", value_parser = clap::builder::PossibleValuesParser::new(plnk_core::models::LIST_TYPES))]
+        #[arg(long = "type", value_name = "TYPE", value_parser = clap::builder::PossibleValuesParser::new(plnk_core::models::LIST_TYPES))]
         list_type: Option<String>,
         /// New list color
         #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(plnk_core::models::LIST_COLORS))]
