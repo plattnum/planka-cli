@@ -444,6 +444,15 @@ pub enum ListAction {
         /// List name
         #[arg(long)]
         name: String,
+        /// Position: top, bottom, or a numeric position
+        #[arg(long)]
+        position: Option<String>,
+        /// List type; cards moved into a closed list are marked closed [default: active]
+        #[arg(long = "type", value_parser = clap::builder::PossibleValuesParser::new(plnk_core::models::LIST_TYPES))]
+        list_type: Option<String>,
+        /// List color
+        #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(plnk_core::models::LIST_COLORS))]
+        color: Option<String>,
     },
     /// Update a list
     Update {
@@ -455,6 +464,15 @@ pub enum ListAction {
         /// New position
         #[arg(long)]
         position: Option<f64>,
+        /// New list type; cards moved into a closed list are marked closed
+        #[arg(long = "type", value_parser = clap::builder::PossibleValuesParser::new(plnk_core::models::LIST_TYPES))]
+        list_type: Option<String>,
+        /// New list color
+        #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(plnk_core::models::LIST_COLORS))]
+        color: Option<String>,
+        /// Remove the list's color
+        #[arg(long, conflicts_with = "color")]
+        clear_color: bool,
     },
     /// Move a list to a new position
     Move {

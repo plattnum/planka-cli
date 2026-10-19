@@ -286,6 +286,8 @@ fn infer_type(name: &str) -> String {
         "position" | "to_position" => "enum(top|bottom|int)".to_string(),
         "show_on_front" | "hide_completed" => "enum(true|false)".to_string(),
         "role" => "enum(admin|editor|viewer)".to_string(),
+        "list_type" => format!("enum({})", plnk_core::models::LIST_TYPES.join("|")),
+        "color" => format!("enum({})", plnk_core::models::LIST_COLORS.join("|")),
         "file" | "out" => "path".to_string(),
         "due_after" | "due_before" | "due_date" => "date".to_string(),
         "concurrency"
@@ -296,7 +298,7 @@ fn infer_type(name: &str) -> String {
         | "retry_base_delay_ms"
         | "retry_max_delay_ms" => "integer".to_string(),
         "allow_missing" | "no_retry" | "quiet" | "yes" | "full" | "no_color" | "verbose"
-        | "clear_due_date" | "include_closed" | "closed" => "flag".to_string(),
+        | "clear_due_date" | "include_closed" | "closed" | "clear_color" => "flag".to_string(),
         _ => "string".to_string(),
     }
 }
@@ -340,7 +342,16 @@ fn get_examples(resource: &str, action: &str) -> Vec<String> {
         ("list", "list") => vec!["plnk list list --board 456".into()],
         ("list", "get") => vec!["plnk list get 789".into()],
         ("list", "find") => vec!["plnk list find --board 456 --name 'Backlog'".into()],
-        ("list", "create") => vec!["plnk list create --board 456 --name 'Doing'".into()],
+        ("list", "create") => vec![
+            "plnk list create --board 456 --name 'Doing'".into(),
+            "plnk list create --board 456 --name Done --type closed".into(),
+            "plnk list create --board 456 --name Blocked --color berry-red --position top".into(),
+        ],
+        ("list", "update") => vec![
+            "plnk list update 789 --color lagoon-blue".into(),
+            "plnk list update 789 --clear-color".into(),
+            "plnk list update 789 --type closed".into(),
+        ],
         ("list", "move") => vec!["plnk list move 789 --to-position 2".into()],
         ("list", "delete") => vec!["plnk list delete 789".into()],
 

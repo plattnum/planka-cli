@@ -79,6 +79,7 @@ fn list_roundtrip() {
         board_id: "456".to_string(),
         name: "Backlog".to_string(),
         position: 65536.0,
+        list_type: "active".to_string(),
         color: None,
         created_at: "2026-04-14T12:00:00Z".to_string(),
         updated_at: None,
@@ -86,6 +87,7 @@ fn list_roundtrip() {
 
     let json = serde_json::to_value(&list).unwrap();
     assert_eq!(json["boardId"], "456");
+    assert_eq!(json["type"], "active");
     let deserialized: List = serde_json::from_value(json).unwrap();
     assert_eq!(deserialized, list);
 }
@@ -106,7 +108,48 @@ fn list_deserialize_from_planka_api() {
     let list: List = serde_json::from_value(api_json).unwrap();
     assert_eq!(list.id, "1753741387863426522");
     assert_eq!(list.name, "Backlog");
+    assert_eq!(list.list_type, "active");
     assert!(list.color.is_none());
+}
+
+/// Archive and trash lists come back with null name and position; the type is
+/// what identifies them, and a null type must not break deserialization.
+#[test]
+fn list_deserialize_system_list_with_nulls() {
+    let list: List = serde_json::from_value(serde_json::json!({
+        "id": "1",
+        "boardId": "2",
+        "type": "archive",
+        "name": null,
+        "position": null,
+        "color": null,
+        "createdAt": "t"
+    }))
+    .unwrap();
+    assert_eq!(list.list_type, "archive");
+
+    let untyped: List = serde_json::from_value(serde_json::json!({
+        "id": "1", "boardId": "2", "type": null, "name": "x", "position": 1.0, "createdAt": "t"
+    }))
+    .unwrap();
+    assert_eq!(untyped.list_type, "");
+}
+
+#[test]
+fn update_list_unset_fields_are_omitted() {
+    let json = serde_json::to_value(UpdateList::default()).unwrap();
+    assert_eq!(json, serde_json::json!({}));
+}
+
+#[test]
+fn update_list_clear_color_sends_null_and_type_uses_wire_name() {
+    let json = serde_json::to_value(UpdateList {
+        list_type: Some("closed".to_string()),
+        color: Some(None),
+        ..UpdateList::default()
+    })
+    .unwrap();
+    assert_eq!(json, serde_json::json!({"type": "closed", "color": null}));
 }
 
 #[test]
@@ -435,6 +478,7 @@ fn tabular_fields_exist_in_serde_representation() {
             board_id: "2".into(),
             name: "l".into(),
             position: 1.0,
+            list_type: "active".into(),
             color: None,
             created_at: "t".into(),
             updated_at: None,

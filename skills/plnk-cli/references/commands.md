@@ -159,15 +159,17 @@ Alias: `plnk boards --project <projectId>`
 plnk list list --board <boardId>
 plnk list get <listId>
 plnk list find --board <boardId> --name <name>
-plnk list create --board <boardId> --name <name>
-plnk list update <listId> [--name <name>] [--position <float>]
+plnk list create --board <boardId> --name <name> [--position top|bottom|<float>] [--type active|closed] [--color <color>]
+plnk list update <listId> [--name <name>] [--position <float>] [--type active|closed] [--color <color> | --clear-color]
 plnk list move <listId> --to-position <float>
 plnk list delete <listId> [--yes]
 ```
 
 Alias: `plnk lists --board <boardId>`
 
-- `list` returns only active lists (filters out archive lists with empty names).
+- `list` returns user lists (`active` and `closed`) and filters out the board's archive and trash system lists. The `Type` column identifies the closed list.
+- Moving a card into a `closed` list marks it closed; that is how "done" works in Planka 2.
+- `--color` is one of: `berry-red`, `pumpkin-orange`, `lagoon-blue`, `pink-tulip`, `light-mud`, `orange-peel`, `bright-moss`, `antique-blue`, `dark-granite`, `turquoise-sea`. `list create --color` is two requests (create, then set the color).
 - Position values are typically powers of 2 starting at 65536.
 
 ## Card

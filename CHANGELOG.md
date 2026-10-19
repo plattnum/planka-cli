@@ -39,11 +39,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `plnk task create` and `plnk task list` take `--task-list <id|name>`, resolved within the card's own checklists by the house three-tier match. An ambiguous name exits `2` naming every candidate; an unknown name exits `4`.
 - `plnk-core`: `TaskListApi` (list, find, get, create, update, delete), `UpdateTaskList`, `TaskApi::list_tasks_in_list`. `TaskList` now carries `showOnFrontOfCard` and `hideCompletedTasks`.
 - Docs: [Task lists](docs/cli/task-lists.md); [Tasks](docs/cli/tasks.md) rewritten around checklists.
+- `plnk list create` takes `--type active|closed`, `--color <color>`, and `--position top|bottom|<n>`. `plnk list update` takes `--type`, `--color`, and `--clear-color`. A `closed` list is how Planka 2 marks cards done. Planka ignores `color` on create, so a colored create is two requests; if the second fails, the error names the new list's ID. Colors are Planka's ten named colors, validated client-side.
+- `plnk list list` table and markdown output show `Type` and `Color` columns; trimmed JSON gains `type` and `color`.
 
 ### Changed
 - **Breaking** (`plnk-core`) — `TaskApi::create_task` takes a **task list ID**, not a card ID. The SDK used to fetch the card and post to whichever task list came first, silently misplacing tasks on any card with more than one checklist. Choosing a list is now the caller's decision; the CLI makes it explicitly.
 - **Breaking** (`plnk`) — `task create` on a card with **two or more** task lists and no `--task-list` now exits `2` listing the candidates, instead of silently using the first. Cards with zero or one task list behave as before (create "Tasks" / use the only one).
 - `task list` table output gains a `Task List` column. JSON is unchanged; it already carried `taskListId`.
+- **Breaking** (`plnk-core`) — `List` gains `list_type` (`"type"` on the wire), and `UpdateList` gains `list_type` and `color` and now derives `Default`. Code constructing either with a struct literal must add the new fields (or use `..UpdateList::default()`). New constants `LIST_TYPES` and `LIST_COLORS`.
 
 ## [0.3.0] - 2026-08-10
 

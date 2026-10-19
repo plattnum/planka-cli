@@ -60,6 +60,8 @@ impl Tabular for List {
             ("name", "Name"),
             ("boardId", "Board"),
             ("position", "Position"),
+            ("type", "Type"),
+            ("color", "Color"),
         ]
     }
 }

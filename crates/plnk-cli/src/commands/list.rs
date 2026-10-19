@@ -3,6 +3,7 @@ use plnk_core::error::PlankaError;
 use plnk_core::models::{CreateList, UpdateList};
 
 use crate::app::OutputFormat;
+use crate::commands::card::parse_position;
 use crate::commands::project::confirm_delete;
 use crate::output::{render_collection, render_item, render_message};
 
@@ -26,26 +27,68 @@ pub async fn execute(
             let lists = client.find_lists(&board, &name).await?;
             render_collection(&lists, format, full)?;
         }
-        crate::app::ListAction::Create { board, name } => {
+        crate::app::ListAction::Create {
+            board,
+            name,
+            position,
+            list_type,
+            color,
+        } => {
             let params = CreateList {
                 board_id: board.clone(),
                 name,
-                list_type: "active".to_string(),
-                position: 65536.0,
+                list_type: list_type.unwrap_or_else(|| "active".to_string()),
+                position: position
+                    .as_deref()
+                    .map(parse_position)
+                    .transpose()?
+                    .unwrap_or(65536.0),
             };
-            let list = client.create_list(&board, params).await?;
+            let mut list = client.create_list(&board, params).await?;
+            // The create endpoint drops `color`, so set it with a second request.
+            if let Some(color) = color {
+                let update = UpdateList {
+                    color: Some(Some(color)),
+                    ..UpdateList::default()
+                };
+                list = client
+                    .update_list(&list.id, update)
+                    .await
+                    .map_err(|error| color_after_create_failed(&list.id, &error))?;
+            }
             render_item(&list, format, full)?;
         }
-        crate::app::ListAction::Update { id, name, position } => {
-            if name.is_none() && position.is_none() {
+        crate::app::ListAction::Update {
+            id,
+            name,
+            position,
+            list_type,
+            color,
+            clear_color,
+        } => {
+            if name.is_none()
+                && position.is_none()
+                && list_type.is_none()
+                && color.is_none()
+                && !clear_color
+            {
                 return Err(PlankaError::InvalidOptionValue {
-                    field: "--name / --position".to_string(),
+                    field: "--name / --position / --type / --color / --clear-color".to_string(),
                     message: "At least one field must be provided for update".to_string(),
                 });
             }
-            let list = client
-                .update_list(&id, UpdateList { name, position })
-                .await?;
+            let color = if clear_color {
+                Some(None)
+            } else {
+                color.map(Some)
+            };
+            let params = UpdateList {
+                name,
+                position,
+                list_type,
+                color,
+            };
+            let list = client.update_list(&id, params).await?;
             render_item(&list, format, full)?;
         }
         crate::app::ListAction::Move { id, to_position } => {
@@ -53,8 +96,8 @@ pub async fn execute(
                 .update_list(
                     &id,
                     UpdateList {
-                        name: None,
                         position: Some(to_position),
+                        ..UpdateList::default()
                     },
                 )
                 .await?;
@@ -70,4 +113,27 @@ pub async fn execute(
         }
     }
     Ok(())
+}
+
+/// Report a failed color update after the list was already created.
+///
+/// The list exists at this point, so the message names its ID; the exit code
+/// stays that of the underlying failure.
+fn color_after_create_failed(list_id: &str, error: &PlankaError) -> PlankaError {
+    let message = format!("list {list_id} was created but setting its color failed: {error}");
+    match error.exit_code() {
+        2 => PlankaError::InvalidOptionValue {
+            field: "--color".to_string(),
+            message,
+        },
+        3 => PlankaError::AuthenticationFailed { message },
+        4 => PlankaError::NotFoundMessage { message },
+        _ => PlankaError::ApiError {
+            status: match error {
+                PlankaError::ApiError { status, .. } => *status,
+                _ => 0,
+            },
+            message,
+        },
+    }
 }
