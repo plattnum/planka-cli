@@ -100,27 +100,19 @@ async fn do_login(
         auth::login_with_policy(&server, &email_str, &password_str, transport_policy.clone())
             .await?;
 
+    // A password-login token is a session token, so it is only valid as
+    // `Authorization: Bearer`. Validate it before writing the config so a
+    // failed check does not leave a broken config behind.
+    let user = validate_access_token_with_policy(&server, &token, transport_policy.clone()).await?;
+
     // Save to config, preserving any existing transport settings.
     let existing_http = read_config()?.and_then(|config| config.http);
     write_config(&ConfigFile {
         server: server_url,
-        token: token.clone(),
+        token,
         auth_scheme: AuthScheme::Bearer,
         http: existing_http,
     })?;
-
-    // Validate and show user identity
-    // Planka deployments differ in how they accept access tokens on the
-    // authenticated API. Prefer the documented Bearer scheme, but fall back
-    // to the API-key header for older/self-hosted deployments.
-    let user = match validate_access_token_with_policy(&server, &token, transport_policy.clone())
-        .await
-    {
-        Ok(user) => user,
-        Err(bearer_error) => validate_token_with_policy(&server, &token, transport_policy.clone())
-            .await
-            .map_err(|_| bearer_error)?,
-    };
 
     if format == OutputFormat::Json {
         render_item(&user, format, false)?;

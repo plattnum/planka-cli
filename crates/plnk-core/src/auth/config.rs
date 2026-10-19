@@ -40,6 +40,7 @@ pub struct ConfigFile {
     pub http: Option<HttpConfig>,
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde's skip_serializing_if passes &T
 fn is_default_auth_scheme(scheme: &AuthScheme) -> bool {
     *scheme == AuthScheme::ApiKey
 }
